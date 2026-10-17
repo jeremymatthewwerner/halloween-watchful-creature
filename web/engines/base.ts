@@ -126,7 +126,11 @@ export abstract class WebRtcEngine {
   }
 
   /** Calls the server's vision backend, counting it as "thinking" while it runs. */
-  protected async describe(image: string, reason: string, opts: { withTranscript?: boolean; quiet?: boolean } = {}): Promise<string> {
+  protected async look(
+    image: string,
+    reason: string,
+    opts: { withTranscript?: boolean; quiet?: boolean; previous?: string } = {},
+  ): Promise<{ text: string; sameGroup?: boolean }> {
     // Quiet (background) looks don't show as "thinking" on the eyes.
     const counted = !opts.quiet;
     if (counted) this.pendingVision++;
@@ -134,12 +138,22 @@ export abstract class WebRtcEngine {
       const res = await fetch("/api/vision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image, reason, transcript: opts.withTranscript ? this.deps.recentTranscript() : undefined }),
+        body: JSON.stringify({
+          image,
+          reason,
+          transcript: opts.withTranscript ? this.deps.recentTranscript() : undefined,
+          previous: opts.previous,
+        }),
       });
-      const body = (await res.json()) as { text?: string; error?: string; usage?: { inputTokens: number; outputTokens: number } };
+      const body = (await res.json()) as {
+        text?: string;
+        sameGroup?: boolean;
+        error?: string;
+        usage?: { inputTokens: number; outputTokens: number };
+      };
       if (!res.ok || !body.text) throw new Error(body.error ?? `vision failed (${res.status})`);
       if (body.usage) this.emit({ type: "usage", tokens: body.usage.inputTokens + body.usage.outputTokens });
-      return body.text;
+      return { text: body.text, sameGroup: body.sameGroup };
     } finally {
       if (counted) this.pendingVision = Math.max(0, this.pendingVision - 1);
     }

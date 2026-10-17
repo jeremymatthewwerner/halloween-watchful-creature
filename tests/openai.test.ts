@@ -8,6 +8,7 @@ import { createLiveSession, describeFrame } from "../server/openai.ts";
 let server: Server;
 const requests: { url: string; body: Record<string, unknown> }[] = [];
 let rejectReasoning = true;
+let visionReply = "A witch.";
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   let data = "";
@@ -29,7 +30,7 @@ beforeAll(async () => {
         res.end(JSON.stringify({ error: { message: "Unsupported parameter: 'reasoning'", param: "reasoning" } }));
         return;
       }
-      res.end(JSON.stringify({ output: [{ type: "message", content: [{ type: "output_text", text: "A witch." }] }], usage: { input_tokens: 90, output_tokens: 5 } }));
+      res.end(JSON.stringify({ output: [{ type: "message", content: [{ type: "output_text", text: visionReply }] }], usage: { input_tokens: 90, output_tokens: 5 } }));
     } else {
       res.statusCode = 404;
       res.end("{}");
@@ -72,5 +73,23 @@ describe("OpenAI calls", () => {
     // Remembered: the next call goes straight through without reasoning.
     await describeFrame(config, { image: "data:image/jpeg;base64,AAA", reason: "background" });
     expect(requests.filter((r) => r.url === "/v1/responses")).toHaveLength(3);
+  });
+
+  it("compares a returning group with the previous one and parses the SAME/NEW verdict", async () => {
+    const image = "data:image/jpeg;base64,AAA";
+    visionReply = "NEW: One visitor in a skeleton mask.";
+    const fresh = await describeFrame(config, { image, reason: "returned", previous: "A dinosaur." });
+    expect(fresh).toMatchObject({ text: "One visitor in a skeleton mask.", sameGroup: false });
+    const prompt = (requests.at(-1)!.body.input as { content: { text?: string }[] }[])[0]!.content[0]!.text!;
+    expect(prompt).toContain('"A dinosaur."');
+    expect(prompt).toContain("If anything about the costumes differs, or you are unsure");
+
+    visionReply = "SAME: The dinosaur is back.";
+    expect(await describeFrame(config, { image, reason: "returned", previous: "A dinosaur." })).toMatchObject({ sameGroup: true, text: "The dinosaur is back." });
+
+    // No verdict prefix: treat as new rather than ignoring a possible new visitor.
+    visionReply = "A ghost.";
+    expect(await describeFrame(config, { image, reason: "returned", previous: "A dinosaur." })).toMatchObject({ sameGroup: false });
+    visionReply = "A witch.";
   });
 });

@@ -19,7 +19,7 @@ export interface Engine {
   connect(): Promise<void>;
   close(): Promise<void>;
   /** Make the creature greet whoever is in this frame. */
-  greet(image: string | null, reason: GreetReason): Promise<void>;
+  greet(image: string | null, reason: GreetReason, opts?: { awayMs?: number }): Promise<void>;
   /** Silently update what the creature can see. */
   observe(image: string): Promise<void>;
   /** Operator puppeteering: have the creature say this line, in character. */

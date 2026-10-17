@@ -19,8 +19,8 @@ class FakeEngine implements Engine {
     this.calls.push("close");
     this.status = "closed";
   });
-  greet = vi.fn(async (image: string | null, reason: string) => {
-    this.calls.push(`greet:${reason}:${image}`);
+  greet = vi.fn(async (image: string | null, reason: string, opts?: { awayMs?: number }) => {
+    this.calls.push(`greet:${reason}:${image}${opts?.awayMs ? `:${opts.awayMs}` : ""}`);
   });
   observe = vi.fn(async (image: string) => {
     this.calls.push(`observe:${image}`);
@@ -118,24 +118,15 @@ describe("Director", () => {
     expect(engine.close).not.toHaveBeenCalled();
   });
 
-  it("stays quiet when someone is back after only a few seconds", async () => {
+  it("hands a returning group to the engine to decide same vs new, with how long they were away", async () => {
     const { engine, director } = setup();
     await director.onVisitorEvent({ type: "arrived", count: 1 });
     await director.onVisitorEvent({ type: "left" });
     engine.calls = [];
     await director.onVisitorEvent({ type: "returned", count: 1, awayMs: 10_000 });
-    expect(engine.calls).toEqual(["observe:frame"]);
+    expect(engine.calls).toEqual(["greet:returned:frame:10000"]);
     expect(engine.mic).toBe(true);
     expect(director.visitorsPresent).toBe(true);
-  });
-
-  it("takes a fresh look and lets the creature decide when someone arrives after a longer gap", async () => {
-    const { engine, director } = setup();
-    await director.onVisitorEvent({ type: "arrived", count: 1 });
-    await director.onVisitorEvent({ type: "left" });
-    engine.calls = [];
-    await director.onVisitorEvent({ type: "returned", count: 2, awayMs: 30_000 });
-    expect(engine.calls).toEqual(["greet:returned:frame"]);
   });
 
   it("reconnects before greeting a returning group if the session went to sleep", async () => {
@@ -145,7 +136,7 @@ describe("Director", () => {
     await engine.close();
     engine.calls = [];
     await director.onVisitorEvent({ type: "returned", count: 1, awayMs: 45_000 });
-    expect(engine.calls).toEqual(["connect", "greet:returned:frame"]);
+    expect(engine.calls).toEqual(["connect", "greet:returned:frame:45000"]);
   });
 
   it("reconnects (without re-greeting) if the session drops mid-visit", async () => {

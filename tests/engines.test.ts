@@ -19,6 +19,7 @@ class TestLive extends LiveEngine {
   events: EngineEvent[] = [];
   looks: { reason: string; opts: unknown }[] = [];
   vision = "One visitor in a green dinosaur costume with a sparkly tail.";
+  sameGroup: boolean | undefined = undefined;
   constructor(d = deps()) {
     super(d);
     this.status = "open";
@@ -29,9 +30,9 @@ class TestLive extends LiveEngine {
     this.sent.push(event);
     return true;
   }
-  protected async describe(_image: string, reason: string, opts?: unknown): Promise<string> {
+  protected async look(_image: string, reason: string, opts?: unknown): Promise<{ text: string; sameGroup?: boolean }> {
     this.looks.push({ reason, opts });
-    return this.vision;
+    return { text: this.vision, sameGroup: this.sameGroup };
   }
   server(event: { type: string; [key: string]: unknown }) {
     this.onServerEvent(event);
@@ -60,10 +61,44 @@ describe("LiveEngine", () => {
   it("greets by appending spoken commentary with what the vision model saw", async () => {
     const e = new TestLive();
     await e.greet("data:image/jpeg;base64,AAA", "arrived");
-    expect(e.looks).toEqual([{ reason: "arrived", opts: undefined }]);
+    expect(e.looks).toEqual([{ reason: "arrived", opts: { previous: undefined } }]);
     expect(e.sent[0]).toMatchObject({ type: "session.commentary.append", delegation_id: null });
     expect(String(e.sent[0]!.content)).toContain("green dinosaur");
     expect(String(e.sent[0]!.content)).toMatch(/^\[CAMERA\]/);
+  });
+
+  it("compares a returning group with the last one and greets them as new when different", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    e.vision = "One visitor in a skeleton mask and a striped shirt.";
+    e.sameGroup = false;
+    e.sent = [];
+    await e.greet("img", "returned", { awayMs: 30_000 });
+    expect(e.looks[1]).toEqual({ reason: "returned", opts: { previous: "One visitor in a green dinosaur costume with a sparkly tail." } });
+    expect(e.sent[0]).toMatchObject({ type: "session.commentary.append" });
+    expect(String(e.sent[0]!.content)).toContain("New visitors just walked up");
+    expect(String(e.sent[0]!.content)).toContain("skeleton mask");
+  });
+
+  it("stays quiet for the same group back soon, and welcomes them back after a longer gap", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    e.sameGroup = true;
+    e.sent = [];
+    await e.greet("img", "returned", { awayMs: 20_000 });
+    expect(e.sent.map((s) => s.type)).toEqual(["session.thinking.append"]);
+    e.sent = [];
+    await e.greet("img", "returned", { awayMs: 60_000 });
+    expect(e.sent[0]).toMatchObject({ type: "session.commentary.append" });
+    expect(String(e.sent[0]!.content)).toContain("welcome back");
+  });
+
+  it("treats a returning group as new when there's no previous group to compare", async () => {
+    const e = new TestLive();
+    e.sameGroup = true; // ignored without a previous description
+    await e.greet("img", "returned", { awayMs: 60_000 });
+    expect(e.looks[0]).toEqual({ reason: "returned", opts: { previous: undefined } });
+    expect(String(e.sent[0]!.content)).toContain("New visitors just walked up");
   });
 
   it("asks the visitor what they are when there's no camera frame", async () => {

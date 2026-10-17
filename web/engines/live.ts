@@ -7,9 +7,12 @@ const GREETING: Record<GreetReason, (seen: string) => string> = {
   arrived: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.`,
   grew: (seen) => `[CAMERA] More visitors just joined the group. What you see now: ${seen} Welcome the newcomers and compliment their costumes.`,
   manual: (seen) => `[CAMERA] What you see right now: ${seen} Greet whoever is there and compliment their costumes.`,
-  returned: (seen) =>
-    `[CAMERA] Someone just walked up after the porch was empty for a bit. What you see: ${seen} If these are clearly the same visitors you were just talking to, give a quick "welcome back". Otherwise they're new visitors: greet them and compliment their costumes.`,
+  // "returned" is resolved to "arrived" (new visitors) or a welcome-back before speaking.
+  returned: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.`,
 };
+
+/** Same visitors back after at least this long get a quick "welcome back"; sooner, silence. */
+const WELCOME_BACK_AFTER_MS = 45_000;
 
 /**
  * GPT-Live engine (gpt-live-1) using client delegation. GPT-Live can't take images,
@@ -23,6 +26,8 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   private onStarted: (() => void) | null = null;
   private onClosed: (() => void) | null = null;
   private lastObservation = "";
+  /** How the current/most recent group was described when greeted. */
+  private lastGroup = "";
   private eventSeq = 0;
   private lastSpokeAt = 0;
   private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -37,6 +42,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     switch (event.type) {
       case "session.started":
         this.lastObservation = "";
+        this.lastGroup = "";
         this.onStarted?.();
         this.onStarted = null;
         // Apply the director's mic gating to the new session as well as the local track.
@@ -76,17 +82,35 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     }
   }
 
-  async greet(image: string | null, reason: GreetReason): Promise<void> {
+  async greet(image: string | null, reason: GreetReason, opts: { awayMs?: number } = {}): Promise<void> {
     let seen = "Your eyes aren't working right now, so you can't see their costumes; ask what they're dressed as.";
+    let sameGroup = false;
     if (image) {
       try {
-        seen = await this.describe(image, reason);
+        const previous = reason === "returned" && this.lastGroup ? this.lastGroup : undefined;
+        const result = await this.look(image, reason, { previous });
+        seen = result.text;
+        sameGroup = Boolean(previous) && result.sameGroup === true;
       } catch (err) {
         this.emit({ type: "error", message: `vision: ${(err as Error).message}` });
         seen = "It's too hard to see their costumes right now; ask what they're dressed as.";
       }
     }
     this.lastObservation = seen;
+    if (reason === "returned") {
+      if (sameGroup) {
+        this.emit({ type: "note", text: "same visitors as before" });
+        if ((opts.awayMs ?? 0) >= WELCOME_BACK_AFTER_MS) {
+          this.append("session.commentary.append", null, `[CAMERA] The same visitors you were talking to are back: ${seen} Give them a quick, fun "welcome back".`);
+        } else {
+          this.append("session.thinking.append", null, `[CAMERA] Background update, for reference only (don't greet again): ${seen}`);
+        }
+        return;
+      }
+      this.emit({ type: "note", text: "new visitors" });
+    }
+    if (reason !== "grew") this.lastGroup = seen;
+    else this.lastGroup = `${this.lastGroup} ${seen}`.trim();
     this.append("session.commentary.append", null, GREETING[reason](seen));
     this.scheduleNudge();
   }
@@ -121,7 +145,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
 
   async observe(image: string): Promise<void> {
     try {
-      const seen = await this.describe(image, "background", { quiet: true });
+      const seen = (await this.look(image, "background", { quiet: true })).text;
       if (seen === this.lastObservation) return;
       this.lastObservation = seen;
       this.append(
@@ -160,7 +184,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       content = "[CAMERA] Your eyes couldn't get a look just now. Ask the visitor to describe it.";
     } else {
       try {
-        content = `[CAMERA] Fresh look: ${await this.describe(image, "delegation", { withTranscript: true })}`;
+        content = `[CAMERA] Fresh look: ${(await this.look(image, "delegation", { withTranscript: true })).text}`;
       } catch (err) {
         this.emit({ type: "error", message: `vision: ${(err as Error).message}` });
         content = "[CAMERA] Your eyes couldn't get a clear look just now. Ask the visitor to describe it.";

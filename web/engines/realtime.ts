@@ -8,7 +8,7 @@ const GREETING: Record<GreetReason, string> = {
   grew: "[CAMERA] More visitors just joined the group. Welcome the newcomers and compliment their costumes.",
   manual: "[CAMERA] Greet whoever is there and compliment their costumes.",
   returned:
-    '[CAMERA] Someone just walked up after the porch was empty for a bit. If these are clearly the same visitors you were just talking to, give a quick "welcome back". Otherwise greet them as new visitors and compliment their costumes.',
+    '[CAMERA] Someone just walked up after the porch was empty for a bit. Unless their costumes are clearly identical to the visitors you just greeted, treat them as NEW visitors: greet them and compliment their costumes. Only if clearly identical, give a quick "welcome back".',
 };
 
 interface OutputItem {

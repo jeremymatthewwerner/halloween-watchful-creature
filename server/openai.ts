@@ -117,6 +117,14 @@ let reasoningUnsupported = false;
 /** Describes a camera frame with a vision-capable Responses model. */
 export async function describeFrame(config: Config, req: VisionRequest): Promise<VisionResult> {
   let prompt = REASON_PROMPTS[req.reason];
+  const comparing = req.reason === "returned" && Boolean(req.previous);
+  if (comparing) {
+    prompt =
+      `The visitors who were here a minute ago were described as: "${req.previous!.slice(0, 600)}"\n\n` +
+      `Compare them with who is in this image. Begin your reply with exactly "SAME:" only if these are clearly the same people ` +
+      `(the same costumes, masks, hats and props). If anything about the costumes differs, or you are unsure, begin with "NEW:". ` +
+      `Then describe who is there and their costumes.`;
+  }
   if (req.transcript) prompt += `\n\nRecent conversation (oldest first, transcripts may have mistakes):\n${req.transcript.slice(-2000)}`;
   const body: Record<string, unknown> = {
     model: config.visionModel,
@@ -146,8 +154,16 @@ export async function describeFrame(config: Config, req: VisionRequest): Promise
     res = await post(config, "/responses", JSON.stringify(body), { "Content-Type": "application/json" });
   }
   const data = (await res.json()) as ResponsesResult;
+  let text = extractOutputText(data) || "Too dark or blurry to make out any costumes.";
+  let sameGroup: boolean | undefined;
+  if (comparing) {
+    const verdict = /^\s*(SAME|NEW)\s*:\s*/i.exec(text);
+    sameGroup = verdict?.[1]?.toUpperCase() === "SAME";
+    if (verdict) text = text.slice(verdict[0].length);
+  }
   return {
-    text: extractOutputText(data) || "Too dark or blurry to make out any costumes.",
+    text,
+    sameGroup,
     usage: data.usage ? { inputTokens: data.usage.input_tokens ?? 0, outputTokens: data.usage.output_tokens ?? 0 } : undefined,
   };
 }

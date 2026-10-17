@@ -49,9 +49,13 @@ export interface VisionRequest {
   reason: LookReason;
   /** Recent conversation transcript, oldest first. */
   transcript?: string;
+  /** For "returned": how the previous visitors were described, to decide same vs new. */
+  previous?: string;
 }
 
 export interface VisionResult {
   text: string;
+  /** For "returned" with `previous`: true only if clearly the same visitors. */
+  sameGroup?: boolean;
   usage?: { inputTokens: number; outputTokens: number };
 }
