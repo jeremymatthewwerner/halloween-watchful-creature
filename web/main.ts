@@ -210,7 +210,8 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
     const people = detector.detect(ui.video, now);
     drawOverlay(people, Number(ui.minArea.value));
     for (const event of tracker.update(people, now)) void director.onVisitorEvent(event);
-    ui.presence.textContent = `${tracker.state}${tracker.count ? ` · ${tracker.count} visitor${tracker.count > 1 ? "s" : ""}` : ""} · ${people.length} detected`;
+    const best = people.reduce((m, p) => Math.max(m, p.score), 0);
+    ui.presence.textContent = `${tracker.state}${tracker.count ? ` · ${tracker.count} visitor${tracker.count > 1 ? "s" : ""}` : ""} · ${people.length} detected${people.length ? ` (best ${Math.round(best * 100)}%)` : ""}`;
   }, 200);
 
   // --- director heartbeat + daily awake-time cap ---

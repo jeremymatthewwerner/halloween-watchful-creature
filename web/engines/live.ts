@@ -99,7 +99,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     this.lastObservation = seen;
     if (reason === "returned") {
       if (sameGroup) {
-        this.emit({ type: "note", text: "same visitors as before" });
+        this.emit({ type: "note", text: `same visitors as before (vision saw: ${seen})` });
         if ((opts.awayMs ?? 0) >= WELCOME_BACK_AFTER_MS) {
           this.append("session.commentary.append", null, `[CAMERA] The same visitors you were talking to are back: ${seen} Give them a quick, fun "welcome back".`);
         } else {
@@ -107,7 +107,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         }
         return;
       }
-      this.emit({ type: "note", text: "new visitors" });
+      this.emit({ type: "note", text: `new visitors (vision saw: ${seen})` });
     }
     if (reason !== "grew") this.lastGroup = seen;
     else this.lastGroup = `${this.lastGroup} ${seen}`.trim();

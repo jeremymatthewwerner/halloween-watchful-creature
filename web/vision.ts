@@ -70,7 +70,8 @@ export class PersonDetector {
       baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
       runningMode: "VIDEO",
       categoryAllowlist: ["person"],
-      scoreThreshold: 0.45,
+      // Fairly low: masks and close-up framing lower person confidence. minArea filters far/false hits.
+      scoreThreshold: 0.3,
       maxResults: 8,
     });
     return new PersonDetector(detector);
