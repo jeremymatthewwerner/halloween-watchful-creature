@@ -43,7 +43,7 @@ Not available at Central Computers: a **speakerphone** (they only list online dr
 | ✔ | Item | Price seen | Alternate |
 |---|---|---|---|
 | [x] | ~~Craft pumpkin~~: **bought a 13" hollow carvable plastic craft pumpkin** | | |
-| [ ] | **Black tulle** (e.g. Wyla Black Shiny Tulle, or Casa Collection Nylon Tulle) | $0.89–$7.99 | Black chiffon or any sheer black fabric |
+| [x] | ~~Black tulle~~ (bought) | | |
 | [x] | ~~Costume bits: beret or chef's hat, monocle or round glasses, bow tie~~ | **bought at Diddams** | Michaels' costume aisle also has them (beret ~$4, Adult Satin Costume Bow Tie $1.99) |
 | [x] | ~~Glue gun and glue sticks~~ | already have one | |
 | [ ] | **Pumpkin Masters® Craft Pumpkin Carving Tools** (made for craft pumpkins; usually shelved by the pumpkins) | $4.19 | Pumpkin Masters® Power Saw ($8.39). Or use your own soldering iron as a hot knife (see PROP_BUILD.md). |
