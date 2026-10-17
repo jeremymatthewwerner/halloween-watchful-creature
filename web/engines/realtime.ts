@@ -1,4 +1,4 @@
-import { WebRtcEngine } from "./base.ts";
+import { UNSURE_RETURN, WebRtcEngine } from "./base.ts";
 import type { Engine, GreetReason } from "./types.ts";
 
 type ServerEvent = { type: string; [key: string]: unknown };
@@ -10,6 +10,14 @@ const GREETING: Record<GreetReason, string> = {
   returned:
     '[CAMERA] Someone just walked up after the porch was empty for a bit. Unless their costumes are clearly identical to the visitors you just greeted, treat them as NEW visitors: greet them and compliment their costumes. Only if clearly identical, give a quick "welcome back".',
 };
+
+/** Greeting without a camera frame: ask instead of guessing (a return may be the same people). */
+function blindGreeting(reason: GreetReason): string {
+  if (reason === "returned") {
+    return UNSURE_RETURN;
+  }
+  return `${GREETING[reason]} (Your eyes aren't working; ask what they're dressed as.)`;
+}
 
 interface OutputItem {
   type: string;
@@ -73,7 +81,7 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
     this.whenIdle(() => {
       const content: Record<string, string>[] = [];
       if (image) content.push({ type: "input_image", image_url: image });
-      content.push({ type: "input_text", text: image ? GREETING[reason] : `${GREETING[reason]} (Your eyes aren't working; ask what they're dressed as.)` });
+      content.push({ type: "input_text", text: image ? GREETING[reason] : blindGreeting(reason) });
       this.send({ type: "conversation.item.create", item: { type: "message", role: "user", content } });
       this.createResponse();
     });

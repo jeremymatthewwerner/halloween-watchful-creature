@@ -1,4 +1,4 @@
-import { WebRtcEngine, withTimeout } from "./base.ts";
+import { UNSURE_RETURN, WebRtcEngine, withTimeout } from "./base.ts";
 import type { Engine, GreetReason } from "./types.ts";
 
 type ServerEvent = { type: string; [key: string]: unknown };
@@ -85,12 +85,14 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   async greet(image: string | null, reason: GreetReason, opts: { awayMs?: number } = {}): Promise<void> {
     let seen = "Your eyes aren't working right now, so you can't see their costumes; ask what they're dressed as.";
     let sameGroup = false;
+    let looked = false;
     if (image) {
       try {
         const previous = reason === "returned" && this.lastGroup ? this.lastGroup : undefined;
         const result = await this.look(image, reason, { previous });
         seen = result.text;
         sameGroup = Boolean(previous) && result.sameGroup === true;
+        looked = true;
       } catch (err) {
         this.emit({ type: "error", message: `vision: ${(err as Error).message}` });
         seen = "It's too hard to see their costumes right now; ask what they're dressed as.";
@@ -98,6 +100,13 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     }
     this.lastObservation = seen;
     if (reason === "returned") {
+      if (!looked && this.lastGroup) {
+        // Keep lastGroup: the next return that gets a clear look still compares with them.
+        this.emit({ type: "note", text: "couldn't check whether these are the same visitors (no clear look): asking them" });
+        this.append("session.commentary.append", null, UNSURE_RETURN);
+        this.scheduleNudge();
+        return;
+      }
       if (sameGroup) {
         this.emit({ type: "note", text: `same visitors as before (vision saw: ${seen})` });
         if ((opts.awayMs ?? 0) >= WELCOME_BACK_AFTER_MS) {

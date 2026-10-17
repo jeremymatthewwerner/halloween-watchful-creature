@@ -20,6 +20,7 @@ class TestLive extends LiveEngine {
   looks: { reason: string; opts: unknown }[] = [];
   vision = "One visitor in a green dinosaur costume with a sparkly tail.";
   sameGroup: boolean | undefined = undefined;
+  visionError: Error | null = null;
   constructor(d = deps()) {
     super(d);
     this.status = "open";
@@ -32,6 +33,7 @@ class TestLive extends LiveEngine {
   }
   protected async look(_image: string, reason: string, opts?: unknown): Promise<{ text: string; sameGroup?: boolean }> {
     this.looks.push({ reason, opts });
+    if (this.visionError) throw this.visionError;
     return { text: this.vision, sameGroup: this.sameGroup };
   }
   server(event: { type: string; [key: string]: unknown }) {
@@ -99,6 +101,33 @@ describe("LiveEngine", () => {
     await e.greet("img", "returned", { awayMs: 60_000 });
     expect(e.looks[0]).toEqual({ reason: "returned", opts: { previous: undefined } });
     expect(String(e.sent[0]!.content)).toContain("New visitors just walked up");
+  });
+
+  it("hedges instead of assuming strangers when the return check fails, and compares with them next time", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    e.visionError = new Error("Failed to fetch");
+    e.sent = [];
+    await e.greet("img", "returned", { awayMs: 20_000 });
+    expect(e.sent).toHaveLength(1);
+    expect(e.sent[0]).toMatchObject({ type: "session.commentary.append" });
+    expect(String(e.sent[0]!.content)).toContain("can't tell whether they're the visitors you were just talking to");
+    expect(String(e.sent[0]!.content)).not.toContain("New visitors");
+    expect(e.events).toContainEqual({ type: "note", text: expect.stringContaining("couldn't check whether these are the same visitors") });
+    e.visionError = null;
+    await e.greet("img", "returned", { awayMs: 20_000 });
+    expect(e.looks.at(-1)).toEqual({ reason: "returned", opts: { previous: "One visitor in a green dinosaur costume with a sparkly tail." } });
+  });
+
+  it("hedges on a return with no camera frame", async () => {
+    let frame: string | null = "img";
+    const e = new TestLive(deps(() => frame));
+    await e.greet("img", "arrived");
+    frame = null;
+    e.sent = [];
+    await e.greet(null, "returned", { awayMs: 20_000 });
+    expect(e.looks).toHaveLength(1);
+    expect(String(e.sent[0]!.content)).toContain("ask whether they're back or new");
   });
 
   it("asks the visitor what they are when there's no camera frame", async () => {
@@ -187,6 +216,14 @@ describe("RealtimeEngine", () => {
     expect(e.sent.map((s) => s.type)).toEqual(["conversation.item.create", "response.create"]);
     const item = e.sent[0]!.item as { content: { type: string }[] };
     expect(item.content.map((c) => c.type)).toEqual(["input_image", "input_text"]);
+  });
+
+  it("hedges a return it can't see instead of assuming strangers", async () => {
+    const e = new TestRealtime();
+    await e.greet(null, "returned");
+    const item = e.sent[0]!.item as { content: { type: string; text?: string }[] };
+    expect(item.content.map((c) => c.type)).toEqual(["input_text"]);
+    expect(item.content[0]!.text).toContain("ask whether they're back or new");
   });
 
   it("queues a greeting until the current response finishes", async () => {

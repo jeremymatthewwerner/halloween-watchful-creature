@@ -61,6 +61,7 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ arrived / grew / ret
     - **NEW:** a full greeting.
     - **SAME, back in under 45 s:** silence (a background update only). This covers detection flicker and someone stepping aside.
     - **SAME, back after 45 s or more:** a quick "welcome back".
+    - **No clear look** (vision call failed, or no camera frame): the creature says it can't see well and asks whether they're back or new, instead of assuming strangers. The next return with a clear look still compares with the group greeted before.
     - **Over 90 s away:** a normal `arrived` greeting with no comparison.
 - **arrived:** unmute the mic, connect the voice session if it's asleep, then **greet with a snapshot**.
 - **grew:** greet the newcomers.

@@ -1,5 +1,11 @@
 import type { EngineDeps, EngineEvent, EngineStatus } from "./types.ts";
 
+/** For a return we couldn't check against the last group: don't assume strangers, or the same people. */
+export const UNSURE_RETURN =
+  "[CAMERA] Someone just walked up after the porch was empty for a bit, but your eyes aren't working right now, " +
+  "so you can't tell whether they're the visitors you were just talking to or someone new. Greet them warmly " +
+  "without assuming either way: ask whether they're back or new, and what they're dressed as.";
+
 /** Shared WebRTC plumbing for both OpenAI voice engines. */
 export abstract class WebRtcEngine {
   status: EngineStatus = "closed";
