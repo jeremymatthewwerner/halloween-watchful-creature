@@ -2,7 +2,18 @@
 
 The Pi runs the **same code**: the Node server plus Chromium in kiosk mode, showing the same dashboard. The webcam, speakerphone, hub and Arduino all move from the Mac to the Pi's USB ports.
 
-## Setup (Pi 5, Raspberry Pi OS Bookworm, 64-bit, desktop)
+## Quick setup
+```bash
+git clone https://github.com/jeremymatthewwerner/halloween-watchful-creature.git
+cd halloween-watchful-creature
+bash scripts/pi/setup.sh    # installs Node 22 and Chromium, builds, sets up the service and kiosk
+nano .env                   # add OPENAI_API_KEY
+sudo systemctl restart creature-server && npm run doctor
+sudo reboot
+```
+The manual steps below do the same thing.
+
+## Manual setup (Pi 5, Raspberry Pi OS Bookworm, 64-bit, desktop)
 ```bash
 # Node 22
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -

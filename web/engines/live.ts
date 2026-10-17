@@ -22,6 +22,10 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   private onClosed: (() => void) | null = null;
   private lastObservation = "";
   private eventSeq = 0;
+  private lastSpokeAt = 0;
+  private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** If a greeting hasn't started this long after we asked, nudge with an instruction. */
+  protected nudgeMs = 5000;
 
   protected waitUntilReady(): Promise<void> {
     return new Promise((resolve) => (this.onStarted = resolve));
@@ -49,6 +53,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         this.emit({ type: "transcript", who: "visitor", delta: String(event.delta ?? "") });
         break;
       case "session.output_transcript.delta":
+        this.lastSpokeAt = Date.now();
         this.emit({ type: "transcript", who: "creature", delta: String(event.delta ?? "") });
         break;
       case "session.delegation.created": {
@@ -81,6 +86,32 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     }
     this.lastObservation = seen;
     this.append("session.commentary.append", null, GREETING[reason](seen));
+    this.scheduleNudge();
+  }
+
+  /**
+   * GPT-Live's docs say appended context "may" be spoken, not that it will be.
+   * If the creature stays silent after a greeting request, ask more firmly, once.
+   */
+  private scheduleNudge(): void {
+    const sentAt = Date.now();
+    if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
+    this.nudgeTimer = setTimeout(() => {
+      this.nudgeTimer = null;
+      if (this.status !== "open" || this.lastSpokeAt >= sentAt) return;
+      this.emit({ type: "note", text: "greeting didn't start; nudging" });
+      this.append(
+        "session.instructions.append",
+        null,
+        "Visitors are standing in front of you right now. Greet them immediately and compliment their costumes.",
+      );
+    }, this.nudgeMs);
+  }
+
+  protected teardown(reason: string): void {
+    if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
+    this.nudgeTimer = null;
+    super.teardown(reason);
   }
 
   async observe(image: string): Promise<void> {

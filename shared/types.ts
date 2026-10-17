@@ -30,6 +30,8 @@ export interface ClientConfig {
   idleCloseSeconds: number;
   backgroundFrameSeconds: number;
   liveCostPerMinute: number;
+  /** Safety cap: the creature goes to sleep after this many awake minutes in a day. */
+  maxVoiceMinutesPerDay: number;
   hasApiKey: boolean;
 }
 

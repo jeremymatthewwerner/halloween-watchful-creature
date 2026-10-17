@@ -212,8 +212,22 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
     ui.presence.textContent = `${tracker.state}${tracker.count ? ` · ${tracker.count} visitor${tracker.count > 1 ? "s" : ""}` : ""} · ${people.length} detected`;
   }, 200);
 
-  // --- director heartbeat ---
-  setInterval(() => void director.tick(), 1000);
+  // --- director heartbeat + daily awake-time cap ---
+  const today = new Date().toISOString().slice(0, 10);
+  let awakeToday = Number(prefs.get(`awake.${today}`) ?? 0);
+  let capOverridden = false; // pressing Wake after the cap means "keep going today
+  setInterval(() => {
+    if (engine.status === "open") {
+      awakeToday++;
+      if (awakeToday % 10 === 0) prefs.set(`awake.${today}`, String(awakeToday));
+      if (awakeToday >= cfg.maxVoiceMinutesPerDay * 60 && director.autopilot && !capOverridden) {
+        log(`Daily limit of ${cfg.maxVoiceMinutesPerDay} awake minutes reached: going to sleep (raise MAX_VOICE_MINUTES_PER_DAY to change)`);
+        void director.sleep();
+        ui.sleep.textContent = "▶️ Wake (autopilot on)";
+      }
+    }
+    void director.tick();
+  }, 1000);
 
   // --- body + voice meter loop ---
   let attached: MediaStream | null = null;
@@ -257,6 +271,7 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
       log("Kill switch: asleep until you press Wake");
     } else {
       director.wake();
+      if (awakeToday >= cfg.maxVoiceMinutesPerDay * 60) capOverridden = true;
       ui.sleep.textContent = "🛑 Sleep (kill switch)";
       log("Autopilot on");
     }

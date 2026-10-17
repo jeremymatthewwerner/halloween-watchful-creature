@@ -111,6 +111,8 @@ const REASON_PROMPTS: Record<LookReason, string> = {
   manual: "Describe the visitors' costumes.",
 };
 
+let reasoningUnsupported = false;
+
 /** Describes a camera frame with a vision-capable Responses model. */
 export async function describeFrame(config: Config, req: VisionRequest): Promise<VisionResult> {
   let prompt = REASON_PROMPTS[req.reason];
@@ -130,8 +132,18 @@ export async function describeFrame(config: Config, req: VisionRequest): Promise
     max_output_tokens: 400,
     store: false,
   };
-  if (config.visionReasoningEffort) body.reasoning = { effort: config.visionReasoningEffort };
-  const res = await post(config, "/responses", JSON.stringify(body), { "Content-Type": "application/json" });
+  if (config.visionReasoningEffort && !reasoningUnsupported) body.reasoning = { effort: config.visionReasoningEffort };
+  let res: Response;
+  try {
+    res = await post(config, "/responses", JSON.stringify(body), { "Content-Type": "application/json" });
+  } catch (err) {
+    // Non-reasoning vision models reject the reasoning setting; drop it and remember.
+    if (!(err instanceof OpenAIError) || err.status !== 400 || !body.reasoning || !/reasoning/i.test(err.body)) throw err;
+    console.warn(`[vision] ${config.visionModel} doesn't accept reasoning settings; retrying without`);
+    reasoningUnsupported = true;
+    delete body.reasoning;
+    res = await post(config, "/responses", JSON.stringify(body), { "Content-Type": "application/json" });
+  }
   const data = (await res.json()) as ResponsesResult;
   return {
     text: extractOutputText(data) || "Too dark or blurry to make out any costumes.",

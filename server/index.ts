@@ -42,6 +42,7 @@ app.get("/api/config", (c) => {
     idleCloseSeconds: config.idleCloseSeconds,
     backgroundFrameSeconds: config.backgroundFrameSeconds,
     liveCostPerMinute: config.liveCostPerMinute,
+    maxVoiceMinutesPerDay: config.maxVoiceMinutesPerDay,
     hasApiKey: Boolean(config.apiKey),
   };
   return c.json(body);

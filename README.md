@@ -20,16 +20,21 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**, who reviews costum
    ```bash
    git clone https://github.com/jeremymatthewwerner/halloween-watchful-creature.git
    cd halloween-watchful-creature
+   git checkout claude/laughing-ramanujan-tc0edf   # until this branch is merged into main
    npm install
    cp .env.example .env
    ```
 3. **Add your OpenAI key:** edit `.env` and set `OPENAI_API_KEY=sk-...`. Also set a monthly spend limit on the OpenAI project.
-4. **Run it:**
+4. **Check your setup** (Node, key, model access, a test vision call, Arduino):
+   ```bash
+   npm run doctor
+   ```
+5. **Run it:**
    ```bash
    npm run dev
    ```
-5. **Open Chrome at http://localhost:5173**, click **🎃 Wake the creature**, and allow camera and microphone access.
-6. **Walk up to the camera.** It greets you and compliments your outfit. Try asking "what am I dressed as?" or "tell me a joke".
+6. **Open Chrome at http://localhost:5173**, click **🎃 Wake the creature**, and allow camera and microphone access.
+7. **Walk up to the camera.** It greets you and compliments your outfit. Try asking "what am I dressed as?" or "tell me a joke".
 
 The Mac's built-in camera and mic are fine for testing. Once the USB webcam and speakerphone are plugged in, choose them under **Settings** on the dashboard (your choice is remembered).
 
@@ -75,6 +80,7 @@ GPT-Live costs about **$0.05 per minute** of voice, plus small vision-model call
 | `BODY_MODES` | `eyes` | Any of `eyes,jaw,relay` |
 | `IDLE_CLOSE_SECONDS` | `180` | Close the voice session after the porch has been empty this long |
 | `BACKGROUND_FRAME_SECONDS` | `15` | While visitors stay, refresh what it sees this often |
+| `MAX_VOICE_MINUTES_PER_DAY` | `240` | Safety cap. After this many awake minutes in a day (about $12 on GPT-Live), it goes to sleep until you press Wake. |
 
 Set `BODY_DEBUG=1` to log the commands sent to the Arduino.
 
