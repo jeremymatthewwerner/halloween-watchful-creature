@@ -40,7 +40,7 @@ export const config = {
   bodySerialPort: str("BODY_SERIAL_PORT", "auto"),
   bodyModes: bodyModes as BodyMode[],
   idleCloseSeconds: num("IDLE_CLOSE_SECONDS", 180),
-  backgroundFrameSeconds: num("BACKGROUND_FRAME_SECONDS", 15),
+  backgroundFrameSeconds: num("BACKGROUND_FRAME_SECONDS", 30),
   liveCostPerMinute: num("LIVE_COST_PER_MINUTE", 0.05),
   maxVoiceMinutesPerDay: num("MAX_VOICE_MINUTES_PER_DAY", 240),
   port: num("PORT", 8787),

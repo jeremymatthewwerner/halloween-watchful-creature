@@ -79,7 +79,7 @@ GPT-Live costs about **$0.05 per minute** of voice, plus small vision-model call
 | `BODY_SERIAL_PORT` | `auto` | `auto` finds the Arduino; `none` disables it; or a device path |
 | `BODY_MODES` | `eyes` | Any of `eyes,jaw,relay` |
 | `IDLE_CLOSE_SECONDS` | `180` | Close the voice session after the porch has been empty this long |
-| `BACKGROUND_FRAME_SECONDS` | `15` | While visitors stay, refresh what it sees this often |
+| `BACKGROUND_FRAME_SECONDS` | `30` | While visitors stay, refresh what it sees this often |
 | `MAX_VOICE_MINUTES_PER_DAY` | `240` | Safety cap. After this many awake minutes in a day (about $12 on GPT-Live), it goes to sleep until you press Wake. |
 
 Set `BODY_DEBUG=1` to log the commands sent to the Arduino.

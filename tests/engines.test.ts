@@ -10,6 +10,7 @@ const deps = (capture: () => string | null = () => "data:image/jpeg;base64,AAA")
   character: "pumpkin",
   capture,
   recentTranscript: () => "Visitor: what am I?",
+  lastVoiceAt: () => -Infinity,
 });
 
 /** Live engine with the network replaced by in-memory fakes. */
@@ -77,6 +78,16 @@ describe("LiveEngine", () => {
     await e.greet("img", "arrived");
     vi.advanceTimersByTime(5100);
     expect(e.sent.map((s) => s.type)).toEqual(["session.commentary.append", "session.instructions.append"]);
+  });
+
+  it("doesn't nudge when the voice was audible even without a transcript", async () => {
+    let voiceAt = -Infinity;
+    const e = new TestLive({ ...deps(), lastVoiceAt: () => voiceAt });
+    await e.greet("img", "arrived");
+    vi.advanceTimersByTime(1000);
+    voiceAt = performance.now();
+    vi.advanceTimersByTime(5000);
+    expect(e.sent).toHaveLength(1);
   });
 
   it("doesn't nudge when the creature started talking", async () => {

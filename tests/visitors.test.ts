@@ -65,9 +65,25 @@ describe("VisitorTracker", () => {
     expect(events).toEqual([{ t: 3800, e: { type: "grew", count: 2, from: 1 } }]);
   });
 
-  it("can greet a new group after the previous one left", () => {
-    const tracker = new VisitorTracker({ leaveMs: 400 });
-    const events = [...run(tracker, [1, 1, 1, 1, 1, 0, 0, 0, 0]), ...run(tracker, [2, 2, 2, 2, 2], 5000)];
+  it("treats someone re-detected soon after leaving as the same group (no re-greet)", () => {
+    const tracker = new VisitorTracker({ leaveMs: 400, regreetAfterMs: 60000 });
+    const events = [...run(tracker, [1, 1, 1, 1, 1, 0, 0, 0, 0]), ...run(tracker, [1, 1, 1, 1, 1], 5000)];
+    expect(events.map((x) => x.e)).toEqual([{ type: "arrived", count: 1 }, { type: "left" }, { type: "returned", count: 1 }]);
+  });
+
+  it("greets a new group once enough time has passed since the last one left", () => {
+    const tracker = new VisitorTracker({ leaveMs: 400, regreetAfterMs: 60000 });
+    const events = [...run(tracker, [1, 1, 1, 1, 1, 0, 0, 0, 0]), ...run(tracker, [2, 2, 2, 2, 2], 70000)];
     expect(events.map((x) => x.e)).toEqual([{ type: "arrived", count: 1 }, { type: "left" }, { type: "arrived", count: 2 }]);
+  });
+
+  it("uses conservative defaults so detection flicker doesn't trigger greetings", () => {
+    const tracker = new VisitorTracker();
+    run(tracker, [1, 1, 1, 1, 1]); // arrived
+    // 6 s of nothing (a long flicker) then back: still the same visit, no event at all.
+    const events = run(tracker, [...Array(30).fill(0), 1, 1, 1], 1000);
+    expect(events).toEqual([]);
+    // A brief second box (2 s) doesn't count as a bigger group.
+    expect(run(tracker, Array(10).fill(2), 20000)).toEqual([]);
   });
 });

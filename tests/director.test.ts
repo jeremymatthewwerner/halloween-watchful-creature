@@ -118,6 +118,17 @@ describe("Director", () => {
     expect(engine.close).not.toHaveBeenCalled();
   });
 
+  it("does not greet again when the same group returns", async () => {
+    const { engine, director } = setup();
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    engine.calls = [];
+    await director.onVisitorEvent({ type: "returned", count: 1 });
+    expect(engine.calls).toEqual([]);
+    expect(engine.mic).toBe(true);
+    expect(director.visitorsPresent).toBe(true);
+  });
+
   it("reconnects (without re-greeting) if the session drops mid-visit", async () => {
     const { engine, director } = setup();
     await director.onVisitorEvent({ type: "arrived", count: 1 });

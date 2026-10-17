@@ -139,6 +139,7 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
     character: cfg.character.id,
     capture: () => camera.capture(),
     recentTranscript: () => transcript.recent(),
+    lastVoiceAt: () => meter.lastLoudTime,
   };
   const engine: Engine = cfg.engine === "live" ? new LiveEngine(deps) : new RealtimeEngine(deps);
   const meter = new VoiceMeter(audioCtx);

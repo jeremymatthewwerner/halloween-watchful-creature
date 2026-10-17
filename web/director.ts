@@ -58,6 +58,15 @@ export class Director {
         log(`More visitors (${event.from} → ${event.count})`);
         await this.greet("grew");
         break;
+      case "returned":
+        // Same group re-detected shortly after "leaving": keep talking, no new greeting.
+        this.present = true;
+        this.emptySince = null;
+        if (!this.autopilot) return;
+        log(`Visitors back (${event.count}); not greeting again`);
+        engine.setMicEnabled(true);
+        if (engine.status !== "open" && (await this.ensureOpen())) await this.observe();
+        break;
       case "left":
         this.present = false;
         this.emptySince = this.deps.now();

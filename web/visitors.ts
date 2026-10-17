@@ -16,15 +16,18 @@ export interface VisitorOptions {
   growMs: number;
   /** Minimum time between greetings for the same group. */
   growCooldownMs: number;
+  /** Someone re-appearing within this long after "left" counts as the same group (no new greeting). */
+  regreetAfterMs: number;
 }
 
 export const DEFAULT_VISITOR_OPTIONS: VisitorOptions = {
   minArea: 0.03,
   arriveMs: 700,
   dropoutMs: 500,
-  leaveMs: 5000,
-  growMs: 1200,
-  growCooldownMs: 10000,
+  leaveMs: 8000,
+  growMs: 2500,
+  growCooldownMs: 30000,
+  regreetAfterMs: 60000,
 };
 
 export type PresenceState = "empty" | "arriving" | "present" | "leaving";
@@ -32,6 +35,8 @@ export type PresenceState = "empty" | "arriving" | "present" | "leaving";
 export type VisitorEvent =
   | { type: "arrived"; count: number }
   | { type: "grew"; count: number; from: number }
+  /** The same group came back soon after leaving (e.g. detection flicker): don't greet again. */
+  | { type: "returned"; count: number }
   | { type: "left" };
 
 export interface PersonBox {
@@ -46,6 +51,7 @@ export class VisitorTracker {
   private since = 0;
   private lastSeenAt = 0;
   private lastGreetAt = -Infinity;
+  private lastLeftAt = -Infinity;
   private growSince: number | null = null;
   private shrinkSince: number | null = null;
   private readonly opts: VisitorOptions;
@@ -80,7 +86,8 @@ export class VisitorTracker {
           this.count = close;
           this.lastGreetAt = now;
           this.growSince = this.shrinkSince = null;
-          events.push({ type: "arrived", count: close });
+          const returning = now - this.lastLeftAt < this.opts.regreetAfterMs;
+          events.push(returning ? { type: "returned", count: close } : { type: "arrived", count: close });
         }
         break;
 
@@ -101,6 +108,7 @@ export class VisitorTracker {
         } else if (now - this.since >= this.opts.leaveMs) {
           this.state = "empty";
           this.count = 0;
+          this.lastLeftAt = now;
           events.push({ type: "left" });
         }
         break;

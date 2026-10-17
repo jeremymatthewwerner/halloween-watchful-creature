@@ -95,10 +95,13 @@ export class LiveEngine extends WebRtcEngine implements Engine {
    */
   private scheduleNudge(): void {
     const sentAt = Date.now();
+    const sentAtPerf = performance.now();
     if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
     this.nudgeTimer = setTimeout(() => {
       this.nudgeTimer = null;
-      if (this.status !== "open" || this.lastSpokeAt >= sentAt) return;
+      // Spoken = a transcript arrived or the voice was audible (transcripts can lag or be missing).
+      const spoke = this.lastSpokeAt >= sentAt || this.deps.lastVoiceAt() >= sentAtPerf;
+      if (this.status !== "open" || spoke) return;
       this.emit({ type: "note", text: "greeting didn't start; nudging" });
       this.append(
         "session.instructions.append",
@@ -119,7 +122,11 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       const seen = await this.describe(image, "background", { quiet: true });
       if (seen === this.lastObservation) return;
       this.lastObservation = seen;
-      this.append("session.thinking.append", null, `[CAMERA] Current view: ${seen}`);
+      this.append(
+        "session.thinking.append",
+        null,
+        `[CAMERA] Background update, for reference only (don't respond to it or greet again): ${seen}`,
+      );
     } catch (err) {
       this.emit({ type: "error", message: `vision: ${(err as Error).message}` });
     }

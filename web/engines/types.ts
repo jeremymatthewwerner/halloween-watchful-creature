@@ -39,4 +39,6 @@ export interface EngineDeps {
   capture(): string | null;
   /** Recent conversation for vision context. */
   recentTranscript(): string;
+  /** When the creature's voice was last audible (performance.now() ms). */
+  lastVoiceAt(): number;
 }

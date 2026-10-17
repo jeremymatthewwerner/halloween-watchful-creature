@@ -39,6 +39,11 @@ export class VoiceMeter {
     return this.level;
   }
 
+  /** When the voice was last above the speaking threshold. */
+  get lastLoudTime(): number {
+    return this.lastLoudAt;
+  }
+
   speaking(now: number): boolean {
     return now - this.lastLoudAt < this.hangoverMs;
   }

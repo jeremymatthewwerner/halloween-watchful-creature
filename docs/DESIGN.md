@@ -49,17 +49,18 @@ Both engines implement the same `Engine` interface (`web/engines/types.ts`), so 
 ## Behavior: the Director (`web/director.ts`)
 
 ```
-person detector (5 fps, local) ─▶ VisitorTracker ─▶ arrived / grew / left ─▶ Director
+person detector (5 fps, local) ─▶ VisitorTracker ─▶ arrived / grew / returned / left ─▶ Director
 ```
 
 - **VisitorTracker** (`web/visitors.ts`, pure logic, unit tested):
   - A person only counts when they're **close**: their box covers at least `minArea` of the frame. You set this with a slider on the dashboard.
   - They must be seen for 0.7 s before they count as arrived. Detection dropouts shorter than 0.5 s are ignored.
-  - `grew` fires when a bigger group is stable for 1.2 s, with a 10 s cooldown between greetings.
-  - `left` fires after 5 s with nobody visible.
+  - `grew` fires when a bigger group is stable for 2.5 s, with a 30 s cooldown between greetings.
+  - `left` fires after 8 s with nobody visible.
+  - `returned` (no greeting) fires when someone reappears within 60 s of `left`. That's usually the same people, or detection flicker.
 - **arrived:** unmute the mic, connect the voice session if it's asleep, then **greet with a snapshot**.
 - **grew:** greet the newcomers.
-- **While present:** a silent background frame every `BACKGROUND_FRAME_SECONDS` (default 15), skipped while it's talking.
+- **While present:** a silent background frame every `BACKGROUND_FRAME_SECONDS` (default 30), skipped while it's talking. These updates are marked "reference only, don't greet again".
 - **left:** mute the mic, so street noise doesn't get answers. After `IDLE_CLOSE_SECONDS` (default 180) of empty porch, **close the session** to stop the meter. Visitors reconnect it automatically, in about 1–2 s.
 - **Session drops mid-visit** (expired or network): it reconnects and catches up silently, without greeting again.
 - **Failed start** (bad key or no network): it backs off 15 s instead of retrying every second.
