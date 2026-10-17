@@ -42,7 +42,7 @@ export type BodyMessage =
   | { type: "palette"; eyes: EyePalette; eyeStyle: CharacterInfo["eyeStyle"] };
 
 /** Why the client is asking the vision backend to look. */
-export type LookReason = "arrived" | "grew" | "background" | "delegation" | "manual";
+export type LookReason = "arrived" | "grew" | "returned" | "background" | "delegation" | "manual";
 
 export interface VisionRequest {
   image: string; // data URL

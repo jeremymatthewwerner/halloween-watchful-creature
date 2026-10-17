@@ -68,12 +68,14 @@ describe("VisitorTracker", () => {
   it("treats someone re-detected soon after leaving as the same group (no re-greet)", () => {
     const tracker = new VisitorTracker({ leaveMs: 400, regreetAfterMs: 60000 });
     const events = [...run(tracker, [1, 1, 1, 1, 1, 0, 0, 0, 0]), ...run(tracker, [1, 1, 1, 1, 1], 5000)];
-    expect(events.map((x) => x.e)).toEqual([{ type: "arrived", count: 1 }, { type: "left" }, { type: "returned", count: 1 }]);
+    // Last seen at t=800; seen again and confirmed at t=5800, so about 5 s away.
+    expect(events.map((x) => x.e)).toEqual([{ type: "arrived", count: 1 }, { type: "left" }, { type: "returned", count: 1, awayMs: 4800 }]);
   });
 
   it("greets a new group once enough time has passed since the last one left", () => {
     const tracker = new VisitorTracker({ leaveMs: 400, regreetAfterMs: 60000 });
     const events = [...run(tracker, [1, 1, 1, 1, 1, 0, 0, 0, 0]), ...run(tracker, [2, 2, 2, 2, 2], 70000)];
+    // (Within the window they'd be "returned"; past it, a plain arrival.)
     expect(events.map((x) => x.e)).toEqual([{ type: "arrived", count: 1 }, { type: "left" }, { type: "arrived", count: 2 }]);
   });
 

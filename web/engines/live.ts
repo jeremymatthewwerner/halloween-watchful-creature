@@ -7,6 +7,8 @@ const GREETING: Record<GreetReason, (seen: string) => string> = {
   arrived: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.`,
   grew: (seen) => `[CAMERA] More visitors just joined the group. What you see now: ${seen} Welcome the newcomers and compliment their costumes.`,
   manual: (seen) => `[CAMERA] What you see right now: ${seen} Greet whoever is there and compliment their costumes.`,
+  returned: (seen) =>
+    `[CAMERA] Someone just walked up after the porch was empty for a bit. What you see: ${seen} If these are clearly the same visitors you were just talking to, give a quick "welcome back". Otherwise they're new visitors: greet them and compliment their costumes.`,
 };
 
 /**

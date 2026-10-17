@@ -118,15 +118,34 @@ describe("Director", () => {
     expect(engine.close).not.toHaveBeenCalled();
   });
 
-  it("does not greet again when the same group returns", async () => {
+  it("stays quiet when someone is back after only a few seconds", async () => {
     const { engine, director } = setup();
     await director.onVisitorEvent({ type: "arrived", count: 1 });
     await director.onVisitorEvent({ type: "left" });
     engine.calls = [];
-    await director.onVisitorEvent({ type: "returned", count: 1 });
-    expect(engine.calls).toEqual([]);
+    await director.onVisitorEvent({ type: "returned", count: 1, awayMs: 10_000 });
+    expect(engine.calls).toEqual(["observe:frame"]);
     expect(engine.mic).toBe(true);
     expect(director.visitorsPresent).toBe(true);
+  });
+
+  it("takes a fresh look and lets the creature decide when someone arrives after a longer gap", async () => {
+    const { engine, director } = setup();
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    engine.calls = [];
+    await director.onVisitorEvent({ type: "returned", count: 2, awayMs: 30_000 });
+    expect(engine.calls).toEqual(["greet:returned:frame"]);
+  });
+
+  it("reconnects before greeting a returning group if the session went to sleep", async () => {
+    const { engine, director } = setup();
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    await engine.close();
+    engine.calls = [];
+    await director.onVisitorEvent({ type: "returned", count: 1, awayMs: 45_000 });
+    expect(engine.calls).toEqual(["connect", "greet:returned:frame"]);
   });
 
   it("reconnects (without re-greeting) if the session drops mid-visit", async () => {

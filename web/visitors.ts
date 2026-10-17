@@ -16,7 +16,10 @@ export interface VisitorOptions {
   growMs: number;
   /** Minimum time between greetings for the same group. */
   growCooldownMs: number;
-  /** Someone re-appearing within this long after "left" counts as the same group (no new greeting). */
+  /**
+   * Someone re-appearing within this long after "left" is reported as "returned" (with how long
+   * they were away) instead of "arrived", so the director can decide whether it's the same group.
+   */
   regreetAfterMs: number;
 }
 
@@ -27,7 +30,7 @@ export const DEFAULT_VISITOR_OPTIONS: VisitorOptions = {
   leaveMs: 8000,
   growMs: 2500,
   growCooldownMs: 30000,
-  regreetAfterMs: 60000,
+  regreetAfterMs: 90000,
 };
 
 export type PresenceState = "empty" | "arriving" | "present" | "leaving";
@@ -36,7 +39,7 @@ export type VisitorEvent =
   | { type: "arrived"; count: number }
   | { type: "grew"; count: number; from: number }
   /** The same group came back soon after leaving (e.g. detection flicker): don't greet again. */
-  | { type: "returned"; count: number }
+  | { type: "returned"; count: number; awayMs: number }
   | { type: "left" };
 
 export interface PersonBox {
@@ -86,8 +89,10 @@ export class VisitorTracker {
           this.count = close;
           this.lastGreetAt = now;
           this.growSince = this.shrinkSince = null;
+          // "left" fires leaveMs after the last sighting, so add it back to get the real gap.
+          const awayMs = now - this.lastLeftAt + this.opts.leaveMs;
           const returning = now - this.lastLeftAt < this.opts.regreetAfterMs;
-          events.push(returning ? { type: "returned", count: close } : { type: "arrived", count: close });
+          events.push(returning ? { type: "returned", count: close, awayMs } : { type: "arrived", count: close });
         }
         break;
 

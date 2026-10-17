@@ -105,6 +105,7 @@ Rules:
 const REASON_PROMPTS: Record<LookReason, string> = {
   arrived: "Visitors just walked up. Describe their costumes.",
   grew: "More visitors just joined the group. Describe everyone's costumes, noting who seems new if you can tell.",
+  returned: "Someone just walked up to the decoration. Describe who is there and their costumes.",
   background: "Briefly describe who is in front of the decoration right now.",
   delegation:
     "The character asked for a fresh look during a conversation. Using the recent conversation below, describe what the visitors are asking about (usually their costume or something they're holding up), plus anything else useful.",

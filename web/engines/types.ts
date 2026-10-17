@@ -2,7 +2,7 @@
 
 export type EngineStatus = "closed" | "connecting" | "open" | "closing";
 
-export type GreetReason = "arrived" | "grew" | "manual";
+export type GreetReason = "arrived" | "grew" | "returned" | "manual";
 
 export type EngineEvent =
   | { type: "status"; status: EngineStatus; detail?: string }

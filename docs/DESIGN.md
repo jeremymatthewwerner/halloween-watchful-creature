@@ -57,7 +57,10 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ arrived / grew / ret
   - They must be seen for 0.7 s before they count as arrived. Detection dropouts shorter than 0.5 s are ignored.
   - `grew` fires when a bigger group is stable for 2.5 s, with a 30 s cooldown between greetings.
   - `left` fires after 8 s with nobody visible.
-  - `returned` (no greeting) fires when someone reappears within 60 s of `left`. That's usually the same people, or detection flicker.
+  - `returned` fires when someone reappears within 90 s of `left`, and carries how long the porch was empty:
+    - **back within 20 s:** treated as the same people stepping aside, or detection flicker. No greeting; just a silent look.
+    - **20–90 s:** a fresh look goes to the creature with "if it's the same visitors, a quick welcome back; otherwise greet the new ones", and the model decides from what it sees and what it remembers.
+    - **over 90 s:** a normal `arrived` greeting.
 - **arrived:** unmute the mic, connect the voice session if it's asleep, then **greet with a snapshot**.
 - **grew:** greet the newcomers.
 - **While present:** a silent background frame every `BACKGROUND_FRAME_SECONDS` (default 30), skipped while it's talking. These updates are marked "reference only, don't greet again".

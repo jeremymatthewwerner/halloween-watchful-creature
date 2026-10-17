@@ -1,5 +1,8 @@
-import type { Engine } from "./engines/types.ts";
+import type { Engine, GreetReason } from "./engines/types.ts";
 import type { VisitorEvent } from "./visitors.ts";
+
+/** Back within this long after leaving: assume the same people stepped aside, stay quiet. */
+const SAME_GROUP_MS = 20_000;
 
 export interface DirectorOptions {
   /** Close the voice session after the porch has been empty this long. */
@@ -58,15 +61,24 @@ export class Director {
         log(`More visitors (${event.from} → ${event.count})`);
         await this.greet("grew");
         break;
-      case "returned":
-        // Same group re-detected shortly after "leaving": keep talking, no new greeting.
+      case "returned": {
         this.present = true;
         this.emptySince = null;
         if (!this.autopilot) return;
-        log(`Visitors back (${event.count}); not greeting again`);
         engine.setMicEnabled(true);
-        if (engine.status !== "open" && (await this.ensureOpen())) await this.observe();
+        const seconds = Math.round(event.awayMs / 1000);
+        if (!(await this.ensureOpen())) return;
+        if (event.awayMs < SAME_GROUP_MS) {
+          // Gone briefly: almost certainly the same people (or detection flicker). Stay quiet.
+          log(`Visitors back after ${seconds}s; not greeting again`);
+          await this.observe();
+        } else {
+          // Could be the same people or the next group: take a fresh look and let the creature decide.
+          log(`Someone's here after ${seconds}s; checking whether they're new`);
+          await this.greet("returned");
+        }
         break;
+      }
       case "left":
         this.present = false;
         this.emptySince = this.deps.now();
@@ -126,7 +138,7 @@ export class Director {
     return this.deps.isSpeaking() || this.deps.engine.isThinking();
   }
 
-  private async greet(reason: "arrived" | "grew" | "manual"): Promise<void> {
+  private async greet(reason: GreetReason): Promise<void> {
     this.lastObserveAt = this.deps.now();
     await this.deps.engine.greet(this.deps.capture(), reason);
   }
