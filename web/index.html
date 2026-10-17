@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Watchful Creature</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>🎃 <span id="character-name">Watchful Creature</span></h1>
+      <div class="pills">
+        <span class="pill" id="engine-pill">engine</span>
+        <span class="pill" id="status-pill">asleep</span>
+        <span class="pill" id="state-pill">sleeping</span>
+        <span class="pill" id="cost-pill">$0.00</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel camera-panel">
+        <div class="video-wrap">
+          <video id="video" muted playsinline></video>
+          <canvas id="overlay"></canvas>
+          <div class="presence" id="presence">camera off</div>
+        </div>
+        <div class="eyes" aria-label="eye preview">
+          <div class="eye" id="eye-left"></div>
+          <div class="eye" id="eye-right"></div>
+        </div>
+      </section>
+
+      <section class="panel controls-panel">
+        <div id="start-card" class="start-card">
+          <p id="start-hint">Click to give the creature its eyes, ears and voice.</p>
+          <button id="start" class="big">🎃 Wake the creature</button>
+          <p class="warn" id="key-warning" hidden>OPENAI_API_KEY isn't set on the server. Copy <code>.env.example</code> to <code>.env</code>, add your key and restart.</p>
+        </div>
+
+        <div class="buttons">
+          <button id="greet" disabled>👋 Greet now</button>
+          <button id="sleep" disabled>🛑 Sleep (kill switch)</button>
+        </div>
+
+        <form id="say-form" class="say">
+          <input id="say-input" placeholder="Make it say… (e.g. 'Only one piece each, please!')" autocomplete="off" disabled />
+          <button type="submit" disabled id="say-button">Say</button>
+        </form>
+
+        <details class="settings">
+          <summary>Settings</summary>
+          <label>Character <select id="character-select"></select></label>
+          <label>Camera <select id="camera-select"></select></label>
+          <label>Microphone <select id="mic-select"></select></label>
+          <label>Speaker <select id="speaker-select"></select></label>
+          <label>How close counts as a visitor
+            <input type="range" id="min-area" min="0.005" max="0.15" step="0.005" />
+            <span id="min-area-value"></span>
+          </label>
+          <p class="hint">Changing character or microphone reloads the page.</p>
+        </details>
+
+        <h2>Conversation</h2>
+        <ol id="transcript" class="transcript"></ol>
+      </section>
+    </main>
+
+    <audio id="voice" autoplay></audio>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

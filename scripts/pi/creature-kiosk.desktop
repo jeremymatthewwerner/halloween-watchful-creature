@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Watchful Creature kiosk
+Exec=sh -c 'sleep 8; chromium-browser --kiosk --noerrdialogs --disable-infobars --use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required "http://localhost:8787/?autowake"'
+X-GNOME-Autostart-enabled=true
