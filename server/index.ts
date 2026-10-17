@@ -1,12 +1,26 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { WebSocketServer } from "ws";
-import type { BodyMessage, ClientConfig, VisionRequest } from "../shared/types.ts";
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+import type { BodyMessage, ClientConfig, ConversationLogRequest, ServerLogEntry, VisionRequest } from "../shared/types.ts";
 import { BodyController, NullSink, SerialSink } from "./body/driver.ts";
 import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "./characters.ts";
 import { config } from "./config.ts";
+import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId } from "./logs.ts";
 import { OpenAIError, createLiveSession, createRealtimeCall, describeFrame, voiceFor } from "./openai.ts";
+
+// Everything this process prints also goes to the dashboard's server log, and (unless
+// LOG_DIR=none) to today's log on disk along with the conversation and greeting snapshots.
+const logs = new LogBuffer();
+captureConsole(logs);
+const sessionLog = config.logDir === "none" ? null : new SessionLog(config.logDir, "Watchful Creature log");
+if (sessionLog) {
+  sessionLog.start(`engine ${config.engine}, character ${config.character}`);
+  logs.subscribe((entry) => sessionLog.server(entry));
+}
 
 const app = new Hono();
 
@@ -44,6 +58,7 @@ app.get("/api/config", (c) => {
     liveCostPerMinute: config.liveCostPerMinute,
     maxVoiceMinutesPerDay: config.maxVoiceMinutesPerDay,
     hasApiKey: Boolean(config.apiKey),
+    sessionLogUrl: sessionLog ? `/api/session-logs/${sessionLog.currentDay}/log.html` : null,
   };
   return c.json(body);
 });
@@ -67,6 +82,58 @@ app.post("/api/session", async (c) => {
   return c.json({ engine: "realtime", sdp }, 201);
 });
 
+/** Streams server log lines (Server-Sent Events): the backlog first, then new lines as they happen. */
+app.get("/api/logs", (c) =>
+  streamSSE(c, async (stream) => {
+    let sending = Promise.resolve();
+    const send = (entry: ServerLogEntry) => {
+      sending = sending.then(() => stream.writeSSE({ id: logEventId(entry), data: JSON.stringify(entry) })).catch(() => undefined);
+    };
+    for (const entry of logs.since(c.req.header("last-event-id"))) send(entry);
+    const unsubscribe = logs.subscribe(send);
+    // Heartbeats let the dashboard notice a dead stream (a dev proxy can hold one open after a restart).
+    const ping = setInterval(() => void stream.writeSSE({ event: "ping", data: "" }).catch(() => undefined), 5_000);
+    await new Promise<void>((resolve) => stream.onAbort(resolve));
+    clearInterval(ping);
+    unsubscribe();
+  }),
+);
+
+/** Finished Conversation-panel lines (visitor and creature speech, system notes) for the on-disk log. */
+app.post("/api/conversation", async (c) => {
+  const { lines } = await c.req.json<ConversationLogRequest>();
+  if (!Array.isArray(lines)) return c.json({ error: "lines must be an array" }, 400);
+  for (const line of lines.slice(0, 100)) {
+    if (!["visitor", "creature", "system"].includes(line?.who) || typeof line.text !== "string" || !Number.isFinite(line.at)) continue;
+    sessionLog?.conversation(line.who, line.text.slice(0, 4000), line.at);
+  }
+  return c.body(null, 204);
+});
+
+/** Past days' logs, newest first. */
+app.get("/api/session-logs", async (c) => {
+  const days = sessionLog ? (await readdir(config.logDir).catch(() => [])).filter((d) => LOG_DAY.test(d)).sort().reverse() : [];
+  const items = days.map((d) => `<li><a href="/api/session-logs/${d}/log.html">${d}</a> · <a href="/api/session-logs/${d}/log.txt">text</a></li>`);
+  return c.html(
+    `<!doctype html><meta charset="utf-8"><title>Creature logs</title><style>body{background:#120a1c;color:#f3eaff;font:15px system-ui;padding:16px}a{color:#ff7a1a}</style>` +
+      `<h1>🎃 Creature logs</h1><ul>${items.join("") || "<li>No logs yet.</li>"}</ul>`,
+  );
+});
+
+const LOG_FILES: Record<string, string> = { html: "text/html; charset=utf-8", txt: "text/plain; charset=utf-8", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
+
+/** One file from a day's log folder: log.html, log.txt or a snapshot. */
+app.get("/api/session-logs/:day/:file{(?:log\\.(?:html|txt)|snapshots/[\\w-]+\\.(?:jpg|png|webp))}", async (c) => {
+  const { day, file } = c.req.param();
+  if (!sessionLog || !LOG_DAY.test(day)) return c.notFound();
+  const data = await readFile(join(config.logDir, day, file)).catch(() => null);
+  if (!data) return c.notFound();
+  return c.body(data, 200, { "content-type": LOG_FILES[file.split(".").pop()!]!, "cache-control": "no-store" });
+});
+
+/** Looks that start a greeting: their camera frame is worth keeping in the log. */
+const GREETING_LOOKS = new Set(["arrived", "grew", "returned", "manual"]);
+
 /** Describes a camera frame for GPT-Live (which can't take images directly). */
 app.post("/api/vision", async (c) => {
   const req = await c.req.json<VisionRequest>();
@@ -76,7 +143,15 @@ app.post("/api/vision", async (c) => {
   if (req.image.length > 2_000_000) return c.json({ error: "image too large" }, 413);
   const started = Date.now();
   const result = await describeFrame(config, req);
-  console.log(`[vision] ${req.reason} in ${Date.now() - started} ms: ${result.text}`);
+  const verdict = result.sameGroup === undefined ? undefined : result.sameGroup ? "SAME" : "NEW";
+  console.log(`[vision] ${req.reason}${verdict ? ` (${verdict})` : ""} in ${Date.now() - started} ms: ${result.text}`);
+  if (sessionLog && config.logSnapshots && GREETING_LOOKS.has(req.reason)) {
+    try {
+      sessionLog.snapshot(req.image, req.reason, result.text, verdict);
+    } catch (err) {
+      console.warn(`[log] couldn't save snapshot: ${(err as Error).message}`);
+    }
+  }
   return c.json(result);
 });
 

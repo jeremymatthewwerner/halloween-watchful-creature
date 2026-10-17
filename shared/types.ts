@@ -33,6 +33,8 @@ export interface ClientConfig {
   /** Safety cap: the creature goes to sleep after this many awake minutes in a day. */
   maxVoiceMinutesPerDay: number;
   hasApiKey: boolean;
+  /** Today's on-disk log (log.html), or null when disk logging is off. */
+  sessionLogUrl: string | null;
 }
 
 /** Messages from the browser to the server over /ws/body. */
@@ -58,4 +60,20 @@ export interface VisionResult {
   /** For "returned" with `previous`: true only if clearly the same visitors. */
   sameGroup?: boolean;
   usage?: { inputTokens: number; outputTokens: number };
+}
+
+/** One line of server console output, streamed to the dashboard's server log. */
+export interface ServerLogEntry {
+  /** Identifies the server process, so the dashboard can tell when it restarted. */
+  boot: string;
+  seq: number;
+  /** Epoch milliseconds. */
+  at: number;
+  level: "info" | "warn" | "error";
+  text: string;
+}
+
+/** Finished Conversation-panel lines the dashboard sends for the on-disk log. */
+export interface ConversationLogRequest {
+  lines: { who: "visitor" | "creature" | "system"; text: string; /** Epoch milliseconds. */ at: number }[];
 }

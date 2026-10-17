@@ -63,6 +63,17 @@
         <h2>Conversation</h2>
         <ol id="transcript" class="transcript"></ol>
       </section>
+
+      <section class="panel log-panel">
+        <div class="log-head">
+          <h2>Server log <span id="server-log-status" class="log-status">connecting…</span></h2>
+          <div class="log-links">
+            <a id="session-log-link" target="_blank" hidden>📜 Today's log (with snapshots)</a>
+            <a href="/api/session-logs" target="_blank">All logs</a>
+          </div>
+        </div>
+        <ol id="server-log" class="server-log"></ol>
+      </section>
     </main>
 
     <audio id="voice" autoplay></audio>

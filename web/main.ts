@@ -1,6 +1,7 @@
-import type { BodyState, ClientConfig } from "../shared/types.ts";
+import type { BodyState, ClientConfig, ConversationLogRequest } from "../shared/types.ts";
 import { BodyLink } from "./bodyLink.ts";
 import { Director } from "./director.ts";
+import { followServerLog } from "./serverLog.ts";
 import { LiveEngine } from "./engines/live.ts";
 import { RealtimeEngine } from "./engines/realtime.ts";
 import type { Engine, EngineDeps } from "./engines/types.ts";
@@ -55,6 +56,9 @@ const ui = {
   minArea: $<HTMLInputElement>("min-area"),
   minAreaValue: $<HTMLSpanElement>("min-area-value"),
   transcript: $<HTMLOListElement>("transcript"),
+  serverLog: $<HTMLOListElement>("server-log"),
+  serverLogStatus: $<HTMLSpanElement>("server-log-status"),
+  sessionLogLink: $<HTMLAnchorElement>("session-log-link"),
   voice: $<HTMLAudioElement>("voice"),
 };
 
@@ -75,18 +79,34 @@ function show(who: Speaker, text: string): void {
   ui.transcript.scrollTop = ui.transcript.scrollHeight;
 }
 
+/** Sends finished Conversation lines (speech and notes) to the server's on-disk log. */
+function saveConversation(all = false): void {
+  const now = performance.now();
+  const lines: ConversationLogRequest["lines"] = transcript
+    .takeFinished(now, all)
+    .map((line) => ({ who: line.who, text: line.text.trim(), at: Date.now() - (now - line.start) }));
+  if (!lines.length) return;
+  const body = JSON.stringify({ lines } satisfies ConversationLogRequest);
+  void fetch("/api/conversation", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => undefined);
+}
+setInterval(saveConversation, 1000);
+addEventListener("pagehide", () => saveConversation(true));
+
 const log = (text: string) => {
   console.log(`[creature] ${text}`);
   show("system", text);
 };
 
 async function main(): Promise<void> {
+  followServerLog(ui.serverLog, ui.serverLogStatus);
   const savedCharacter = prefs.get("character") ?? "";
   const cfg = (await (await fetch(`/api/config?character=${encodeURIComponent(savedCharacter)}`)).json()) as ClientConfig;
   ui.characterName.textContent = cfg.character.name;
   document.title = cfg.character.name;
   ui.enginePill.textContent = cfg.engine === "live" ? "GPT-Live" : "gpt-realtime";
   ui.keyWarning.hidden = cfg.hasApiKey;
+  ui.sessionLogLink.hidden = !cfg.sessionLogUrl;
+  if (cfg.sessionLogUrl) ui.sessionLogLink.href = cfg.sessionLogUrl;
   for (const c of cfg.characters) ui.characterSelect.add(new Option(c.name, c.id, false, c.id === cfg.character.id));
   ui.characterSelect.addEventListener("change", () => {
     prefs.set("character", ui.characterSelect.value);

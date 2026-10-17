@@ -43,6 +43,10 @@ export const config = {
   backgroundFrameSeconds: num("BACKGROUND_FRAME_SECONDS", 30),
   liveCostPerMinute: num("LIVE_COST_PER_MINUTE", 0.05),
   maxVoiceMinutesPerDay: num("MAX_VOICE_MINUTES_PER_DAY", 240),
+  /** Where the per-day logs go (log.txt, log.html, snapshots/); "none" turns disk logging off. */
+  logDir: str("LOG_DIR", "logs"),
+  /** Save the camera frame of each greeting in the day's log. */
+  logSnapshots: str("LOG_SNAPSHOTS", "true") !== "false",
   port: num("PORT", 8787),
   production: process.env.NODE_ENV === "production",
 };

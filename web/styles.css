@@ -87,3 +87,21 @@ button.big { font-size: 18px; padding: 12px 20px; background: #3b2160; border-co
 .transcript li.creature::before { content: "🎃 "; }
 .transcript li.system { color: var(--muted); font-size: 13px; }
 code { background: #140c22; padding: 0 4px; border-radius: 4px; }
+.log-panel { grid-column: 1 / -1; }
+.log-head { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; justify-content: space-between; }
+.log-head h2 { margin: 0 0 8px; }
+.log-links { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; }
+.log-links a { color: var(--orange); }
+.log-links a[hidden] { display: none; }
+.log-status { font-weight: normal; font-size: 12px; margin-left: 6px; }
+.log-status.on { color: var(--green); }
+.log-status.bad { color: var(--red); }
+.server-log {
+  list-style: none; margin: 0; padding: 6px 8px; height: 28vh; min-height: 140px; overflow-y: auto;
+  background: #140c22; border-radius: 8px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.server-log li { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); }
+.server-log li time { color: #6f5f8a; }
+.server-log li.warn { color: var(--orange); }
+.server-log li.error { color: var(--red); }
+.server-log li.restart { color: var(--purple); border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }

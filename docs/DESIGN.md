@@ -123,7 +123,7 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ arrived / grew / ret
   - OpenAI's built-in moderation;
   - the operator kill switch;
   - the vision model is told to describe costumes only, never bodies.
-- **Privacy:** frames are sent to OpenAI only when someone is close, and nothing is saved to disk. Consider a small sign saying the decoration is AI-powered.
+- **Privacy:** frames are sent to OpenAI only when someone is close. The day's log in `logs/` keeps the conversation and one snapshot per greeting on the local disk (`LOG_SNAPSHOTS=false` skips the photos, `LOG_DIR=none` keeps nothing). Consider a small sign saying the decoration is AI-powered and records.
 - **Cost controls:**
   - the voice session only runs while visitors are around (plus the idle timeout);
   - background frames are rate-limited;

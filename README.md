@@ -57,6 +57,15 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**.
 - **🛑 Sleep (kill switch):** ends the voice session and ignores visitors until you press Wake.
 - **Make it say…:** type a line and the creature says it in character.
 - **Conversation:** live transcript plus system notes.
+- **Server log:** the server's terminal output, live. Its links open **today's log** and **all logs**.
+
+## Logs on disk
+Each day gets a folder in `logs/` (for example `logs/2026-10-31/`). Server restarts append to the same day.
+- `log.html`: everything in one readable page: server lines, what visitors and the creature said, system notes, and a **snapshot** of each greeting with the vision verdict (click a snapshot for full size).
+- `log.txt`: the same as plain text, for `grep`.
+- `snapshots/`: the camera frame of each greeting.
+
+This keeps photos and speech of visitors (often children) on your computer. Set `LOG_SNAPSHOTS=false` to skip the photos, or `LOG_DIR=none` to keep no logs at all. Delete old days by deleting their folders.
 
 ## How it saves money
 The voice session only runs while someone is at the porch.
