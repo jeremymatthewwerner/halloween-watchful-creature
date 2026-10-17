@@ -15,7 +15,7 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**, who reviews costum
 
 ## Quick start (Mac)
 
-1. **Install Node.js 22+**: `brew install node`, or use the installer from nodejs.org. Also install **Google Chrome**.
+1. **Install Node.js 22+**. To keep it isolated from the rest of your Mac, use [nvm](https://github.com/nvm-sh/nvm): it installs to `~/.nvm`, no sudo needed. Run `nvm install && nvm use` in the project folder, which picks up `.nvmrc`. Or use `brew install node`, or the installer from nodejs.org. Also install **Google Chrome**. All project dependencies install into `./node_modules` only.
 2. **Get the code and install dependencies:**
    ```bash
    git clone https://github.com/jeremymatthewwerner/halloween-watchful-creature.git
