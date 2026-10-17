@@ -1,0 +1,132 @@
+# Design
+
+## System overview
+
+```
+                 ┌──────────────────────── Porch (the prop) ────────────────────────┐
+                 │  Foam pumpkin:  webcam (behind mouth)   NeoPixel eyes            │
+                 │                 speakerphone (inside)   [jaw servo]  [relay]     │
+                 │        └───────────── powered USB hub ──── Arduino ─┘            │
+                 └──────────────────────────────┬───────────────────────────────────┘
+                                                │ one 16 ft active USB cable
+┌─────────────────────────────── Mac (or Pi 5) ─┴──────────────────────────────────┐
+│  Chrome dashboard (web/)                         Node server (server/)            │
+│  ├─ Camera + MediaPipe person detector  ──────▶  POST /api/vision ──▶ OpenAI      │
+│  ├─ VisitorTracker → Director                    POST /api/session ─▶ OpenAI      │
+│  ├─ Voice engine (WebRTC) ◀════ audio + events ════════════════════▶ GPT-Live     │
+│  ├─ VoiceMeter → body state ── WS /ws/body ───▶  BodyController ── USB serial ──▶ Arduino
+│  └─ Operator UI: transcript, cost, kill switch, "make it say…"                    │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Why a browser page?** Chrome gives us WebRTC (low-latency audio to OpenAI), **echo cancellation** (so the creature doesn't hear itself through the speaker), camera access and a GPU person detector, all for free. The same page runs in Chromium on a Raspberry Pi, so Pi mode needs no new code.
+
+**Why a local server?** It keeps the OpenAI API key off the page, starts voice sessions, calls the vision model, and talks USB serial to the Arduino.
+
+## Voice engines
+
+Choose an engine with `ENGINE` in `.env`.
+
+| | `live` (default) | `realtime` |
+|---|---|---|
+| Model | **GPT-Live-1** (`gpt-live-1`) | `gpt-realtime-2.1` |
+| Why | OpenAI's newest and most natural voice, full duplex (it can listen while it talks) | Takes images natively; a single model does everything |
+| Seeing | Camera frames go to a **vision model** (`VISION_MODEL`, a Responses model). Its text description is passed into the conversation. | `input_image` items sent straight to the voice model |
+| Greeting | `session.commentary.append` ("say this, in your own words") | image + `response.create` |
+| Fresh look on request | GPT-Live **delegates** to our client. We capture a frame, describe it, and reply on that delegation. | Model calls the `look` tool |
+| Silent background view | `session.thinking.append` | image item without a response |
+| Operator "say…" | `session.instructions.append` | system item + `response.create` |
+| Cost | $0.05 per minute of voice, plus vision tokens | tokens (audio + images) |
+
+Both engines implement the same `Engine` interface (`web/engines/types.ts`), so the rest of the app doesn't care which one is running.
+
+### GPT-Live specifics we rely on
+- `POST /v1/live/sessions` with `{ session: { model, instructions, audio.output.voice, delegation: { type: "client" } }, transport: { type: "webrtc", sdp } }` returns `{ session.id, transport.sdp }`. The server makes this call (`server/openai.ts`).
+- Data channel `oai-events`. The browser waits for `session.started` before sending commands, and does a graceful `session.close` followed by `session.closed`.
+- Transcripts arrive as `session.input_transcript.delta` / `session.output_transcript.delta`, and usage as `session.usage.updated` (`usage.seconds`).
+- Context appends take ≤ 500 tokens each. `delegation_id: null` means general context.
+
+## Behavior: the Director (`web/director.ts`)
+
+```
+person detector (5 fps, local) ─▶ VisitorTracker ─▶ arrived / grew / left ─▶ Director
+```
+
+- **VisitorTracker** (`web/visitors.ts`, pure logic, unit tested):
+  - A person only counts when they're **close**: their box covers at least `minArea` of the frame. You set this with a slider on the dashboard.
+  - They must be seen for 0.7 s before they count as arrived. Detection dropouts shorter than 0.5 s are ignored.
+  - `grew` fires when a bigger group is stable for 1.2 s, with a 10 s cooldown between greetings.
+  - `left` fires after 5 s with nobody visible.
+- **arrived:** unmute the mic, connect the voice session if it's asleep, then **greet with a snapshot**.
+- **grew:** greet the newcomers.
+- **While present:** a silent background frame every `BACKGROUND_FRAME_SECONDS` (default 15), skipped while it's talking.
+- **left:** mute the mic, so street noise doesn't get answers. After `IDLE_CLOSE_SECONDS` (default 180) of empty porch, **close the session** to stop the meter. Visitors reconnect it automatically, in about 1–2 s.
+- **Session drops mid-visit** (expired or network): it reconnects and catches up silently, without greeting again.
+- **Failed start** (bad key or no network): it backs off 15 s instead of retrying every second.
+- **Kill switch:** closes the session and ignores visitors until you press Wake.
+
+## Characters (`prompts/`)
+
+- `base.md` holds the shared rules, so every character is kid-safe:
+  - never scary;
+  - compliment **costumes only**, never bodies or appearance;
+  - be brief;
+  - no personal questions;
+  - reply in the visitor's language.
+- `characters/<id>.md` holds the persona and gimmick, with frontmatter for the voice, the realtime voice, and the eye colors and style.
+- The server builds the instructions from `base.md`, then the persona, then engine-specific notes on how sight works.
+- To add a character, add a file. It then shows up in the dashboard's character picker.
+
+| id | Character | GPT-Live voice | Eyes |
+|---|---|---|---|
+| `pumpkin` | Jacques O'Lantern, Pumpkin Critic: reviews costumes like fine dishes | `meridian` | orange candle flicker |
+| `reginald` | Sir Reginald Bonesworth, Skeleton Butler: announces guests at a ball | `vesper` | cool blue glow |
+| `raven` | Edgar the Raven, Rhyming Critic: rhyming couplets | `stone` | amber, blinks |
+
+## Body (`server/body/`, `firmware/creature_body/`)
+
+- The browser derives one **body state** about 60×/s:
+  - `sleeping`: no session;
+  - `speaking`: the voice is audible;
+  - `thinking`: waiting on vision or the model;
+  - `listening`: a visitor spoke within the last 1.5 s;
+  - `idle`: none of the above.
+- The voice **loudness** comes from a WebAudio analyser on the remote voice track.
+- Both go over a WebSocket to the server's `BodyController`, which:
+  - auto-detects the Arduino;
+  - replays the palette and state when the Arduino reconnects;
+  - heartbeats only while a dashboard is attached.
+- Serial line protocol (115200 baud):
+
+| Command | Meaning |
+|---|---|
+| `M eyes,jaw,relay` | enable modes (`BODY_MODES`) |
+| `P <state> r g b` | eye color per state (from the character file) |
+| `Y flicker\|glow\|blink` | idle eye style |
+| `S <state>` | current state |
+| `L 0-255` | voice loudness |
+
+- **Fail-safe:** if no line arrives for 2 s, the firmware dims the eyes to "sleeping", opens the relay and closes the jaw.
+- **Modes:**
+  - **eyes:** two NeoPixel jewels whose color follows the state and whose brightness follows the voice.
+  - **jaw:** an SG90 servo whose angle follows the loudness.
+  - **relay:** a 400 ms "button press" on a store animatronic's trigger when speech starts, with an 8 s cooldown.
+
+## Safety, privacy and cost
+- **Kid safety:**
+  - the prompt rules above;
+  - OpenAI's built-in moderation;
+  - the operator kill switch;
+  - the vision model is told to describe costumes only, never bodies.
+- **Privacy:** frames are sent to OpenAI only when someone is close, and nothing is saved to disk. Consider a small sign saying the decoration is AI-powered.
+- **Cost controls:**
+  - the voice session only runs while visitors are around (plus the idle timeout);
+  - background frames are rate-limited;
+  - vision uses `detail: "low"` on 768 px JPEGs;
+  - the dashboard shows a live cost meter.
+  - Also set a monthly limit on the OpenAI project.
+
+## Known limits and risks
+- I couldn't test GPT-Live against the real API in the build sandbox (no key), so the first run on the Mac is the real integration test. The Realtime engine is the fallback (`ENGINE=realtime`).
+- GPT-Live's docs say startup and appended context "may" be paraphrased, and greetings aren't guaranteed. Check on the porch that it greets reliably, and tune the wording in `web/engines/live.ts` if needed.
+- At night, the camera needs light on visitors. Detection and costume descriptions both degrade in the dark.

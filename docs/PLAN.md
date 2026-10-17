@@ -11,23 +11,25 @@ Halloween is 2026-10-31. We buy off-the-shelf parts wherever possible and write 
 ## Decisions
 | Topic | Decision | Why |
 |---|---|---|
-| Brain | OpenAI Realtime speech-to-speech (`gpt-realtime-2.1`, configurable) | It's the best live voice model. It also takes **image input** in the same session, so one model sees and talks. |
+| Voice | **OpenAI GPT-Live** (`gpt-live-1`, launched Sep 2026), with `gpt-realtime-2.1` kept as a fallback engine | GPT-Live is OpenAI's newest and most natural full-duplex voice, at $0.05/min. It can't take images, so a vision model describes the camera frames and the descriptions are fed in as context. |
+| Vision | A vision-capable Responses model (`VISION_MODEL`, default `gpt-6-luna`) | Describes costumes from a snapshot. The text goes into GPT-Live as `commentary` (spoken) or `thinking` (silent). |
 | Where it runs | **Mac first.** A Raspberry Pi 5 mode comes later on the same code. | The fastest path. The prop holds only USB devices. |
 | Client | A web page in Chrome, using WebRTC to OpenAI | Low latency, plus built-in **echo cancellation** so it doesn't hear itself. The Pi just runs Chromium. |
-| Vision | A local MediaPipe person detector decides **when** to send a snapshot | The camera is "always watching" for free. We only pay to send a frame when someone walks up or asks. |
+| Person detection | A local MediaPipe person detector decides **when** to send a snapshot | The camera is "always watching" for free. We only pay to send a frame when someone walks up or asks. |
 | Characters | Pluggable persona files. **Pumpkin Critic first**, then Sir Reginald (skeleton) and Edgar the Raven. | One file per character. Switch from `.env` or the dashboard. |
 | Body | One USB Arduino with three modes: **eyes** (NeoPixels) → **jaw** (servo) → **relay** (animatronic, parked) | One kit covers everything, and it works with both Mac and Pi. |
 | Animatronic | Parked | No friendly store prop that can be triggered was confirmed, and props with built-in voices would talk over ours. |
 
 ## Milestones
 - [ ] **0. Buy parts.** See [SHOPPING_LIST.md](SHOPPING_LIST.md) and [BOM.md](BOM.md).
-- [ ] **1. Talks.** Repo scaffold, the ephemeral-key server, the WebRTC voice loop and the Pumpkin Critic persona. Talk to it with the Mac's built-in cam and mic.
-- [ ] **2. Sees.** Person detection, the visitor state machine, arrival greetings with a snapshot, the `look` tool, and the dashboard video.
-- [ ] **3. Porch-ready.** Mic gating when nobody's there, idle sleep and reconnect, device pickers, cost meter, kill switch, and the operator "make it say…" box.
-- [ ] **4. Glowing eyes.** Body WebSocket, Arduino serial driver, and firmware eyes mode.
+- [x] **1. Talks.** Repo scaffold, the session server, the WebRTC voice loop and the Pumpkin Critic persona. *Code done; first live test needs your API key.*
+- [x] **2. Sees.** Person detection, the visitor state machine, arrival greetings with a snapshot, fresh looks on request (GPT-Live delegation or the realtime `look` tool), and the dashboard video. *Code done.*
+- [x] **3. Porch-ready.** Mic gating when nobody's there, idle sleep and reconnect, device pickers, cost meter, kill switch, and the operator "make it say…" box. *Code done.*
+- [x] **4. Glowing eyes.** Body WebSocket, Arduino serial driver, and firmware eyes mode. *Firmware compiles for Uno; needs a hardware test.*
+- [ ] **4b. First real run on the Mac.** Add the key, run `npm run dev`, then tune the greeting reliability and the vision prompt.
 - [ ] **5. Prop build and porch tuning.** Pumpkin assembly, lighting, volume, VAD tuning, detection distance.
 - [ ] **6. Pi mode.** Chromium kiosk, systemd services, setup script.
-- [ ] **7. More characters.** Sir Reginald Bonesworth and Edgar the Raven.
+- [ ] **7. More characters.** Sir Reginald Bonesworth and Edgar the Raven. *Persona files are written; their props still need building.*
 - [ ] **8. Jaw servo** (optional). The animatronic relay mode stays in the firmware for later.
 
 ## Safety and privacy
