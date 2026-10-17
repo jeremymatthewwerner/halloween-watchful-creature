@@ -21,21 +21,21 @@ Store stock changes during the day. "In stock: 2" means grab it early or call ah
 ## 1. Central Computers, San Mateo (verified stock)
 | ✔ | Item | Store SKU | Price | In stock (San Mateo) | If they're out |
 |---|---|---|---|---|---|
-| [ ] | **Logitech C920S webcam** | VGALOGC920SR | $59.99 | 5 | SF has 11, Sunnyvale 23. Or Best Buy (Logitech 960-001257). |
-| [ ] | **"Raspberry Pi Starter Kit"**. Despite the name, this is the **Arduino kit**: UNO board, USB cable, breadboard, **9g servo**, **relay module**, LEDs, resistors, jumpers. | DIY-JIARPISK | $29.95 | 3 | Sunnyvale 2, East Bay 6. Or the Elegoo kit at Micro Center (SKU 961201). |
-| [ ] | **Unitek U304A USB-C → USB-A active extension, 5 m (16.5 ft).** Plugs straight into a USB-C Mac, so no adapter is needed. | CAB-UNU304A1 | $24.95 | 7 | Unitek Y-277 USB 2.0 active extension 5 m (CAB-UY2775M1, $14.95, 6 in stock) **plus** a Mcdodo OT-3800 USB-C→USB-A adapter (ADA-OT3800A1, $5.95, 13 in stock) |
-| [ ] | **Unitek Y-HB03001 USB 3.0 4-port hub with 12V 2A power adapter** | ADA-UNY03001 | $22.95 | 11 | Unitek Y-3184 7-port hub with 12V 3A adapter (ADA-UNY3184R, $29.95, 9 in stock) |
+| [x] | **Logitech C920S webcam** | VGALOGC920SR | $59.99 | 5 | SF has 11, Sunnyvale 23. Or Best Buy (Logitech 960-001257). |
+| [x] | **"Raspberry Pi Starter Kit"**. Despite the name, this is the **Arduino kit**: UNO board, USB cable, breadboard, **9g servo**, **relay module**, LEDs, resistors, jumpers. | DIY-JIARPISK | $29.95 | 3 | Sunnyvale 2, East Bay 6. Or the Elegoo kit at Micro Center (SKU 961201). |
+| [x] | **Unitek U304A USB-C → USB-A active extension, 5 m (16.5 ft).** Plugs straight into a USB-C Mac, so no adapter is needed. | CAB-UNU304A1 | $24.95 | 7 | Unitek Y-277 USB 2.0 active extension 5 m (CAB-UY2775M1, $14.95, 6 in stock) **plus** a Mcdodo OT-3800 USB-C→USB-A adapter (ADA-OT3800A1, $5.95, 13 in stock) |
+| [x] | **Unitek Y-HB03001 USB 3.0 4-port hub with 12V 2A power adapter** | ADA-UNY03001 | $22.95 | 11 | Unitek Y-3184 7-port hub with 12V 3A adapter (ADA-UNY3184R, $29.95, 9 in stock) |
 | [ ] | **Lead-free rosin-core solder, 0.8 mm** | MIS-UFKS2825 | $7.95 | 2 | Soldering wire 1.0 mm (MIS-UFSDW12, $2.95, 6 in stock). The Home Depot Weller kit also includes a little solder. |
-| [ ] | 20 cm jumper wire set, 120 pcs, M-M/M-F/F-F (extra wires for the eyes) | DIY-JF20CMJC | $7.95 | 26 | 30 cm set (DIY-JF30CMJC, $9.95, 7 in stock) |
+| [x] | ~~20 cm jumper wire set~~ (skipped: the kit has jumpers), 120 pcs, M-M/M-F/F-F (extra wires for the eyes) | DIY-JF20CMJC | $7.95 | 26 | 30 cm set (DIY-JF30CMJC, $9.95, 7 in stock) |
 | | **Speaker plan B** (only if no store has a USB speakerphone). The C920S's built-in mics become the ears, and Chrome's echo cancellation keeps it from hearing itself. | | | | |
-| [ ] | **Logitech Z150 2.0 speakers, 6 W** (3.5 mm input, plugs into the wall) | CDDLOGZ1501R | $34.99 | 1 | Logitech Z207 10 W, Bluetooth + 3.5 mm (CDDLOGZ2071R, $69.99, 5 in stock). Skip the S-150 USB speakers: too quiet for a porch. |
-| [ ] | **Zoweetek S03 USB sound card** (goes in the hub at the pumpkin and drives the speaker's 3.5 mm plug, so no long audio cable) | MIS-VACSS031 | $12.95 | 4 | Any USB-to-3.5 mm audio adapter |
+| [x] | **Logitech Z150 2.0 speakers, 6 W** (3.5 mm input, plugs into the wall) | CDDLOGZ1501R | $34.99 | 1 | Logitech Z207 10 W, Bluetooth + 3.5 mm (CDDLOGZ2071R, $69.99, 5 in stock). Skip the S-150 USB speakers: too quiet for a porch. |
+| [x] | ~~Zoweetek S03~~ → **bought Unitek Y-247A USB sound card instead** (same job). Original pick: **Zoweetek S03 USB sound card** (goes in the hub at the pumpkin and drives the speaker's 3.5 mm plug, so no long audio cable) | MIS-VACSS031 | $12.95 | 4 | Any USB-to-3.5 mm audio adapter |
 | | **Pi mode parts:** | | | | |
-| [ ] | **Raspberry Pi 5 8GB board** | DIYRASC1112R | $174.99 | 2 | Sunnyvale 64, Santa Clara 17. Or the CanaKit at Best Buy (unverified). |
-| [ ] | **Raspberry Pi 27W USB-C power supply** | DIYRASC1153R (white) / DIYRASC1158R (black) | $11.99 | 44 | Generic 27W PD supply (ADA-RPI27WC1, $10.99, 15 in stock) |
-| [ ] | **Raspberry Pi 5 official case** (has a built-in fan) | DIYRASC1159R | $9.99 | 26 | Aluminum Pi 5 case with fan (DIY-ODSB8071, $15.95, 17 in stock), or the Pi 5 Active Cooler (DIYRASC1148R, $9.99, 92 in stock) |
-| [ ] | **SanDisk Ultra 64GB microSD** | MEMSAN0646AR | $27.99 | 2 | SanDisk High Endurance 128GB (MEMSAN128QQR, $39.99, 10 in stock) |
-| [ ] | **Micro-HDMI to HDMI cable, 3 ft** | CAB-ZH4KMHC1 | $7.95 | 92 | Unitek Y-C182 2 m (CAB-UNYC1821, $9.95, 11 in stock) |
+| [x] | **Raspberry Pi 5 8GB board** | DIYRASC1112R | $174.99 | 2 | Sunnyvale 64, Santa Clara 17. Or the CanaKit at Best Buy (unverified). |
+| [x] | **Raspberry Pi 27W USB-C power supply** | DIYRASC1153R (white) / DIYRASC1158R (black) | $11.99 | 44 | Generic 27W PD supply (ADA-RPI27WC1, $10.99, 15 in stock) |
+| [x] | **Raspberry Pi 5 official case** (has a built-in fan) | DIYRASC1159R | $9.99 | 26 | Aluminum Pi 5 case with fan (DIY-ODSB8071, $15.95, 17 in stock), or the Pi 5 Active Cooler (DIYRASC1148R, $9.99, 92 in stock) |
+| [x] | ~~SanDisk Ultra 64GB~~ → **bought SanDisk Extreme 128GB instead**. Original pick: **SanDisk Ultra 64GB microSD** | MEMSAN0646AR | $27.99 | 2 | SanDisk High Endurance 128GB (MEMSAN128QQR, $39.99, 10 in stock) |
+| [x] | **Micro-HDMI to HDMI cable, 3 ft** | CAB-ZH4KMHC1 | $7.95 | 92 | Unitek Y-C182 2 m (CAB-UNYC1821, $9.95, 11 in stock) |
 
 Not available at Central Computers: a **speakerphone** (they only list online drop-ship Jabra accessories), **NeoPixels**, a **soldering iron** (accessories only) and hookup wire.
 
