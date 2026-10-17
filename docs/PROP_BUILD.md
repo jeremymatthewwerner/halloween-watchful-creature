@@ -28,6 +28,11 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
 3. Hot-glue one jewel behind each carved eye, facing out. A scrap of white paper or tulle in front diffuses the light nicely.
 4. Plug the Arduino into the USB hub.
 
+**No NeoPixels yet?** Use two plain LEDs from the Arduino kit:
+1. In the firmware, set `#define EYES_NEOPIXEL 0`.
+2. Wire each LED's long leg to **D3** or **D5** through a 220 Ω resistor, and its short leg to GND.
+3. They glow and pulse with the voice in one color. Switch back to `1` when the jewels arrive.
+
 ### Flash the firmware
 1. Install the [Arduino IDE](https://www.arduino.cc/en/software).
 2. In **Tools → Manage Libraries**, install **Adafruit NeoPixel**.

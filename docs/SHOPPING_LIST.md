@@ -1,91 +1,87 @@
-# Shopping list by store (Burlingame route)
+# Shopping list by store (stock checked Sat 2026-10-17, evening)
 
-This is the "buy everything now" list: Mac mode, the Pi kit, eyes, jaw and relay parts. The animatronic itself stays parked.
+**How each store was checked:**
+- **Central Computers** and **Home Depot:** I read each store's own per-store inventory on their websites. The counts below are what those pages showed for the **San Mateo** stores when I checked.
+- **Michaels:** its website shows products and prices, but not per-store stock without picking a store. Items are listed, but stock isn't confirmed.
+- **Best Buy** and **Micro Center:** their sites block automated checks, so nothing there is confirmed. Check their apps with your store selected.
 
-Call Central Computers first (650-345-5888) and read them the stop 2 list. Stock and hours change; pickup-today checks on bestbuy.com and microcenter.com are the fastest way to confirm.
+Store stock changes during the day. "In stock: 2" means grab it early or call ahead.
 
-| Stop | Store | Address | From Burlingame |
+## Route
+| # | Store | Address | Why |
 |---|---|---|---|
-| 1 | Michaels | 2925 S El Camino Real, San Mateo | ~10 min |
-| 2 | Central Computers | 2727 S El Camino Real, San Mateo · 650-345-5888 | a block from Michaels |
-| 3 | Home Depot | 2001 Chess Dr, San Mateo | ~10 min |
-| 4 | Best Buy | 1127 Industrial Rd, San Carlos | ~12 min |
-| 5 | Micro Center (only if something is still missing) | 5201 Stevens Creek Blvd, Santa Clara | ~30 min |
+| 1 | **Central Computers** | 2727 S El Camino Real, San Mateo · 650-345-5888 | Webcam, Arduino kit, USB cables and hub, solder, all the Pi parts (verified) |
+| 2 | **Michaels** | 2925 S El Camino Real, San Mateo (a block away) | Pumpkin and costume bits |
+| 3 | **Home Depot #632** | 2001 Chess Dr, San Mateo | Soldering iron, light, cord, ties, tape, Velcro (verified) |
+| 4 | **Best Buy** | 1127 Industrial Rd, San Carlos | **Only the speakerphone.** No store I could check stocks one. |
+| — | **Order online now** | adafruit.com | NeoPixel eye LEDs. No local store had them in stock (Micro Center couldn't be checked). |
 
 ---
 
-## Stop 1: Michaels (the pumpkin)
-- [ ] **Hollow carvable foam craft pumpkin, 13–18" tall.** The label must say "carvable" or "craft", and it must be hollow, with an opening at least 5" wide inside for the speakerphone.
-  - Alternate: Target's foam craft pumpkins, or a hollow plastic light-up pumpkin with the light removed.
-  - **Not** a real pumpkin: it rots and gets wet inside.
-- [ ] **Black tulle**, 1 roll or ¼ yd (goes behind the mouth to hide the camera).
-  - Alternate: black chiffon, black organza, or black speaker-grille cloth.
-- [ ] **Critic accessories:** a mini beret or chef's toque, a round monocle or round costume glasses, and a bow tie.
-  - Alternate: a mini top hat, from the doll and costume aisle or Spirit Halloween.
-- [ ] **Hot glue gun and glue sticks**, full size.
-- [ ] **Craft knife plus a small keyhole or foam saw.**
-  - Alternate: a serrated pumpkin-carving kit.
-- [ ] Optional: a sheet of white vellum or tissue paper to diffuse the eye LEDs.
+## 1. Central Computers, San Mateo (verified stock)
+| ✔ | Item | Store SKU | Price | In stock (San Mateo) | If they're out |
+|---|---|---|---|---|---|
+| [ ] | **Logitech C920S webcam** | VGALOGC920SR | $59.99 | 5 | SF has 11, Sunnyvale 23. Or Best Buy (Logitech 960-001257). |
+| [ ] | **"Raspberry Pi Starter Kit"**. Despite the name, this is the **Arduino kit**: UNO board, USB cable, breadboard, **9g servo**, **relay module**, LEDs, resistors, jumpers. | DIY-JIARPISK | $29.95 | 3 | Sunnyvale 2, East Bay 6. Or the Elegoo kit at Micro Center (SKU 961201). |
+| [ ] | **Unitek U304A USB-C → USB-A active extension, 5 m (16.5 ft).** Plugs straight into a USB-C Mac, so no adapter is needed. | CAB-UNU304A1 | $24.95 | 7 | Unitek Y-277 USB 2.0 active extension 5 m (CAB-UY2775M1, $14.95, 6 in stock) **plus** a Mcdodo OT-3800 USB-C→USB-A adapter (ADA-OT3800A1, $5.95, 13 in stock) |
+| [ ] | **Unitek Y-HB03001 USB 3.0 4-port hub with 12V 2A power adapter** | ADA-UNY03001 | $22.95 | 11 | Unitek Y-3184 7-port hub with 12V 3A adapter (ADA-UNY3184R, $29.95, 9 in stock) |
+| [ ] | **Lead-free rosin-core solder, 0.8 mm** | MIS-UFKS2825 | $7.95 | 2 | Soldering wire 1.0 mm (MIS-UFSDW12, $2.95, 6 in stock). The Home Depot Weller kit also includes a little solder. |
+| [ ] | 20 cm jumper wire set, 120 pcs, M-M/M-F/F-F (extra wires for the eyes) | DIY-JF20CMJC | $7.95 | 26 | 30 cm set (DIY-JF30CMJC, $9.95, 7 in stock) |
+| | **Pi mode parts:** | | | | |
+| [ ] | **Raspberry Pi 5 8GB board** | DIYRASC1112R | $174.99 | 2 | Sunnyvale 64, Santa Clara 17. Or the CanaKit at Best Buy (unverified). |
+| [ ] | **Raspberry Pi 27W USB-C power supply** | DIYRASC1153R (white) / DIYRASC1158R (black) | $11.99 | 44 | Generic 27W PD supply (ADA-RPI27WC1, $10.99, 15 in stock) |
+| [ ] | **Raspberry Pi 5 official case** (has a built-in fan) | DIYRASC1159R | $9.99 | 26 | Aluminum Pi 5 case with fan (DIY-ODSB8071, $15.95, 17 in stock), or the Pi 5 Active Cooler (DIYRASC1148R, $9.99, 92 in stock) |
+| [ ] | **SanDisk Ultra 64GB microSD** | MEMSAN0646AR | $27.99 | 2 | SanDisk High Endurance 128GB (MEMSAN128QQR, $39.99, 10 in stock) |
+| [ ] | **Micro-HDMI to HDMI cable, 3 ft** | CAB-ZH4KMHC1 | $7.95 | 92 | Unitek Y-C182 2 m (CAB-UNYC1821, $9.95, 11 in stock) |
 
-## Stop 2: Central Computers (electronics). Call ahead.
-- [ ] **Arduino Uno starter kit that includes an SG90 servo and a 5V relay module** (plus breadboard, jumpers and USB cable).
-  - 1st choice: an Elegoo UNO R3 "Most Complete" or "Super Starter" kit.
-  - Alternate A: **Arduino Uno R4 Minima (ABX00080)** or **Uno Rev3 (A000066)**, plus 1× SG90 micro servo, plus 1× 5V 1-channel relay module, plus a half-size breadboard and male–male and male–female jumper wires. The firmware works on R3 and R4.
-  - Alternate B: any Uno-compatible board with a USB cable.
-- [ ] **3× Adafruit NeoPixel Jewel 7, RGB (Adafruit #2226).** Two are the eyes and one is a spare.
-  - Alternate A: 2× Adafruit NeoPixel Ring 12 (#1643).
-  - Alternate B: 2× generic "WS2812B 7-LED round" or "8-LED ring" boards.
-  - **Avoid RGBW versions** (e.g. #2858); the firmware is set for RGB.
-- [ ] **330 Ω resistor** (usually in the kit; buy a pack if not).
-- [ ] **Active USB extension cable, 16 ft / 5 m.** It must say "active" or "repeater".
-  - 1st choice: Tripp Lite U330-05M (USB 3.0).
-  - Alternate: Tripp Lite U026-016 (USB 2.0 active, 16 ft). USB 2.0 is fine: the camera, speakerphone and Arduino are all USB 2.0 devices.
-- [ ] **Powered USB hub, 4+ ports, with its own wall power adapter** (e.g. Sabrent HB-UM43 or an Anker powered hub).
-  - Alternate: any self-powered hub; avoid bus-powered-only ones.
-- [ ] **Soldering iron kit (25–60 W) and rosin-core solder, 0.031"** (60/40 or lead-free).
-  - Alternate: Weller SP25NUS at Home Depot (stop 3).
-- [ ] **22 AWG stranded hookup wire**, 3 colors (red, black, plus one other), about 10 ft each.
-- [ ] **Raspberry Pi 5 8GB parts.** Skip these if you're buying the CanaKit at Best Buy.
-  - Pi 5 8GB board, official 27W USB-C power supply, Pi 5 Active Cooler and case.
-  - SanDisk Extreme 64GB microSD (A2).
-  - Micro-HDMI to HDMI cable.
-- [ ] If they have them, the Best Buy items (webcam, speakerphone): buy them here and skip stop 4.
+Not available at Central Computers: a **speakerphone** (they only list online drop-ship Jabra accessories), **NeoPixels**, a **soldering iron** (accessories only) and hookup wire.
 
-## Stop 3: Home Depot (light and power)
-- [ ] **Clamp light with a 5.5" reflector** (Commercial Electric or similar), plus a **warm 2700K LED A19 bulb**. An orange or amber party bulb is fine if it's bright.
-  - Alternate: a small plug-in LED flood light, about 1000–1500 lumens, warm white, on a stake or with a clamp.
-- [ ] **25 ft outdoor extension cord**, 16/3 (HDX or similar), plus a 6-outlet surge-protected power strip.
-- [ ] Zip ties (8" and 11"), duct or gaffer tape, and Velcro strips.
-- [ ] Optional: **Weller SP25NUS soldering iron**, if Central Computers didn't have one.
+## 2. Michaels, San Mateo (prices from michaels.com; in-store stock not confirmed)
+| ✔ | Item | Price seen | Alternate |
+|---|---|---|---|
+| [ ] | **Orange Craft Pumpkin by Ashland®** (foam, carvable; item 10814167). Buy the **largest size** they have, at least 12" tall and hollow. | on sale $1.99–$9.99 (reg. up to $29.99, 65% off) | Cream or Black Craft Pumpkin by Ashland®, any size ≥ 12" |
+| [ ] | **Black tulle** (e.g. Wyla Black Shiny Tulle, or Casa Collection Nylon Tulle) | $0.89–$7.99 | Black chiffon or any sheer black fabric |
+| [ ] | **Black beret** (Jacques is French), from the costume aisle | ~$4 | **Adult Deluxe Costume Chef Hat** (~$4) or **Black Felt Top Hat by Celebrate It™** ($1.99, also works for Sir Reginald later) |
+| [ ] | **Adult Satin Costume Bow Tie** | $1.99 | Any costume bow tie |
+| [ ] | **Round costume glasses** for a monocle look | $2–9 | Bend a craft wire ring into a monocle |
+| [ ] | **High Temperature Glue Gun by Ashland®** plus glue sticks | $11.49 | Gorilla® Dual Temp Full Size Hot Glue Gun ($23.99) |
+| [ ] | **FloraCraft® CleanKut™ heated foam cutter** (clean pumpkin cuts) | $22.99 | Fiskars® Softgrip® Detail Knife ($9.49), or a serrated pumpkin-carving kit |
 
-## Stop 4: Best Buy, San Carlos (the senses)
-- [ ] **Logitech C920s Pro HD webcam, model 960-001257** (Best Buy SKU 6321794), about $60–70.
-  - Alternate A: Logitech C922 Pro Stream.
-  - Alternate B: Logitech C920x, or any 1080p Logitech USB webcam with a 78°+ field of view.
-- [ ] **Anker PowerConf speakerphone, model A3301** (Best Buy SKU 6421726), about $110–140. Use it over USB.
-  - Alternate A: Jabra Speak2 55 or Speak2 75 (louder).
-  - Alternate B: Jabra Speak 510 or 710.
-  - Alternate C: Anker PowerConf S3.
-  - The key requirement: a **USB speakerphone with echo cancellation**.
-- [ ] **CanaKit Raspberry Pi 5 8GB Starter MAX, PI5-8GB-MAX256-C4-WHT-RT** (Best Buy SKU 6580288), about $180.
-  - Alternate: CanaKit Pi 5 8GB Starter (Turbine Black), PI5-8GB-STR128-C4-BLK-RT.
-- [ ] **Apple USB-C to USB Adapter (MJ1M2AM/A)**, if your Mac is USB-C only.
-  - Alternate: any USB-C to USB-A adapter or a small USB-C dock.
-- [ ] Powered USB hub and active extension, if Central Computers was out.
+## 3. Home Depot #632, San Mateo (verified stock)
+| ✔ | Item | Model / Store SKU | Price | In stock | If they're out |
+|---|---|---|---|---|---|
+| [ ] | **Weller 30W soldering iron kit with LED halo ring** | WLIRK3012A / 1006029627 | $29.98 | 9 | Weller 60W kit WLIRK6012A / 1006029644 ($43.98, 5 in stock) |
+| [ ] | **HDX 10-1/2 in. heavy-duty clamp light** | HDX105W300-GRD / 596600 | $16.98 | 3 | HDX 8-1/2 in. aluminum clamp light HD-320PDQ12 / 324719 ($12.82, 12 in stock) |
+| [ ] | **EcoSmart PAR38 LED flood bulb, selectable color temperature, 2-pack** (set it to warm). It goes in the clamp light. | 14PR383WS6CCT01 / 1012776664 | $19.98 | 65 | EcoSmart A19 2700K 2-pack, A1960927CAWFIL/ECP/2 / 1008818890 ($7.98, 10 in stock). Or a Hampton Bay 900-lumen plug-in LED flood, G09457 / 1002757124 ($44.97, 5 in stock). |
+| [ ] | **HDX 25 ft. 16/3 outdoor extension cord, triple-tap end** | HWHD16325F / 1008994910 | $20.98 | 94 | HDX 25 ft. 16/3 orange, 277509 ($15.98, 93 in stock) |
+| [ ] | **6-outlet power strip with surge protector, 3 ft** | LTS-06H-2 / 1002628555 | $13.82 | 23 | Commercial Electric 6-outlet wall-mount surge protector LA-9A-8 / 187860 ($14.98, 37 in stock) |
+| [ ] | **HDX zip tie assortment, 8/11/14 in., 500-pack** | FT500PK/BL+NC / 1008253660 | $9.98 | 58 | HDX 11 in. UV black 20-pack (1004137717, $4.37) |
+| [ ] | **Gorilla black duct tape, 10 yd** | 105631 / 1006232259 | $5.98 | 109 | Gorilla 30 yd black (1006232257, $9.94, 145 in stock) |
+| [ ] | **VELCRO industrial strength strips, 4 × 2 in., black, 2-pack** | 90199 / 846910 | $4.27 | 14 | VELCRO sticky-back strips 90075 / 783788 ($3.77, 6 in stock) |
 
-## Stop 5: Micro Center, Santa Clara (only if needed)
-- Elegoo UNO R3 Most Complete starter kit: Micro Center SKU 961201, **in-store pickup only**. [link](https://www.microcenter.com/product/704602/elegoo-uno-r3-project-most-complete-starter-kit-with-tutorial-compatible-with-arduino-ide-(200-components))
-- Adafruit NeoPixel Jewel 7: Micro Center SKU 890368 (Adafruit #2226). [link](https://www.microcenter.com/product/456218/adafruit-industries-neopixel-jewel-7-x-ws2812-5050-rgb-led-with-integrated-drivers)
-- Also: active USB extension, powered hub, webcam, Pi 5 kit, soldering kit.
+## 4. Best Buy, San Carlos (not verifiable; check the Best Buy app → store: San Carlos)
+| ✔ | Item | Model / SKU | Price | Alternate |
+|---|---|---|---|---|
+| [ ] | **Anker PowerConf USB speakerphone** | A3301 / SKU 6421726 | ~$110–140 | Jabra Speak2 55 or 75, Jabra Speak 510 or 710, Anker PowerConf S3. Any **USB speakerphone with echo cancellation** works. |
+| [ ] | (only if Central Computers was out) Logitech C920s webcam | 960-001257 / SKU 6321794 | ~$60–70 | Logitech C922 or C920x |
+| [ ] | (optional instead of the Central Computers Pi parts) CanaKit Raspberry Pi 5 8GB Starter MAX | PI5-8GB-MAX256-C4-WHT-RT / SKU 6580288 | ~$180 | Use the Central Computers Pi parts above (verified) |
 
-## Online backup (next-day delivery)
-- NeoPixel Jewel #2226: [adafruit.com/product/2226](https://www.adafruit.com/product/2226)
-- [Elegoo UNO R3 starter kit](https://www.amazon.com/s?k=elegoo+uno+r3+super+starter+kit) (check that it has an SG90 servo and a 5V relay)
-- [Active USB extension, 16 ft](https://www.amazon.com/s?k=active+usb+extension+cable+16ft)
-- [Powered USB hub](https://www.amazon.com/s?k=powered+usb+3.0+hub+4+port+power+adapter)
-- [Jabra Speak2 55](https://www.amazon.com/s?k=jabra+speak2+55)
+**If no store has a speakerphone today:** you can still bench-test with the Mac's built-in mic and speakers. Chrome's echo cancellation handles that well. Order the speakerphone for next-day delivery.
 
-## Already have? Skip it
-You'll also need a keyboard, mouse and monitor (for first-time Pi setup), and the Mac's charger.
+## Order online now (in stock at adafruit.com when checked)
+- [ ] **3× Adafruit NeoPixel Jewel 7 RGB, #2226**: $5.95 each. [adafruit.com/product/2226](https://www.adafruit.com/product/2226)
+  - Alternate: 2× NeoPixel Ring 12 (#1643, $8.95, in stock).
+  - Not RGBW.
+  - **Until they arrive**, the firmware has a plain-LED mode: set `EYES_NEOPIXEL 0` and wire one LED from the Arduino kit per eye, on pins D3 and D5 through 220 Ω resistors. They glow and pulse with the voice in a single color.
 
-## Rough total: about $575–725 for everything, or about $395–545 without the Pi.
+## Rough totals
+| Group | Cost |
+|---|---|
+| Central Computers, Mac mode items | ~$150 |
+| Central Computers, Pi parts | ~$232 |
+| Michaels | ~$30–60 |
+| Home Depot | ~$110 |
+| Best Buy speakerphone | ~$110–140 |
+| Adafruit LEDs | ~$25 with shipping |
+| **Everything** | **~$660–720** |
+| **Without the Pi** | **~$425–485** |

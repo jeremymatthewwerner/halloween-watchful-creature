@@ -11,6 +11,7 @@
 //
 // Wiring (see docs/PROP_BUILD.md):
 //   NeoPixel eyes: two 7-LED jewels chained, data in -> D6 (through a ~330 ohm resistor), 5V, GND
+//   ...or plain LED eyes (set EYES_NEOPIXEL to 0): one LED per eye on D3 and D5, each through a 220 ohm resistor to GND
 //   Jaw servo (SG90): signal -> D9, 5V, GND
 //   Relay module (animatronic trigger): IN -> D7, 5V, GND
 //
@@ -20,6 +21,10 @@
 #include <Servo.h>
 
 // ---- hardware config ----
+// 1 = NeoPixel eyes (full color per state). 0 = two plain LEDs from the starter kit
+// (single color, brightness still follows the state and the voice).
+#define EYES_NEOPIXEL 1
+const uint8_t PLAIN_EYE_PINS[2] = {3, 5};  // PWM pins
 const uint8_t EYES_PIN = 6;
 const uint8_t EYE_PIXELS = 14;           // 2 x NeoPixel Jewel 7
 const float MAX_BRIGHTNESS = 0.45;       // keeps total current safe on USB power
@@ -73,7 +78,11 @@ void applyModes(const char *list) {
   if (modeJaw && !jaw.attached()) { jaw.attach(SERVO_PIN); lastJawDeg = -1; }
   if (!modeJaw && jaw.attached()) { jaw.write(JAW_CLOSED_DEG); delay(150); jaw.detach(); }
   if (!modeRelay) setRelay(false);
-  if (!modeEyes) { eyes.clear(); eyes.show(); }
+  if (!modeEyes) {
+    eyes.clear();
+    eyes.show();
+    for (uint8_t i = 0; i < 2; i++) analogWrite(PLAIN_EYE_PINS[i], 0);
+  }
 }
 
 void setState(State s) {
@@ -159,6 +168,10 @@ void renderEyes(unsigned long now) {
         b = 0.8;
       }
   }
+#if !EYES_NEOPIXEL
+  for (uint8_t i = 0; i < 2; i++) analogWrite(PLAIN_EYE_PINS[i], (uint8_t)(255 * b));
+  return;
+#endif
   b *= MAX_BRIGHTNESS;
   const uint8_t *c = palette[state];
   uint32_t color = eyes.Color(c[0] * b, c[1] * b, c[2] * b);
@@ -182,6 +195,7 @@ void setup() {
   eyes.begin();
   eyes.clear();
   eyes.show();
+  for (uint8_t i = 0; i < 2; i++) pinMode(PLAIN_EYE_PINS[i], OUTPUT);
   randomSeed(analogRead(A0));
   Serial.println(F("READY creature_body 1"));
 }
