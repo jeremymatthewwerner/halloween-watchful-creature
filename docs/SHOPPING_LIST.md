@@ -27,6 +27,9 @@ Store stock changes during the day. "In stock: 2" means grab it early or call ah
 | [ ] | **Unitek Y-HB03001 USB 3.0 4-port hub with 12V 2A power adapter** | ADA-UNY03001 | $22.95 | 11 | Unitek Y-3184 7-port hub with 12V 3A adapter (ADA-UNY3184R, $29.95, 9 in stock) |
 | [ ] | **Lead-free rosin-core solder, 0.8 mm** | MIS-UFKS2825 | $7.95 | 2 | Soldering wire 1.0 mm (MIS-UFSDW12, $2.95, 6 in stock). The Home Depot Weller kit also includes a little solder. |
 | [ ] | 20 cm jumper wire set, 120 pcs, M-M/M-F/F-F (extra wires for the eyes) | DIY-JF20CMJC | $7.95 | 26 | 30 cm set (DIY-JF30CMJC, $9.95, 7 in stock) |
+| | **Speaker plan B** (only if no store has a USB speakerphone). The C920S's built-in mics become the ears, and Chrome's echo cancellation keeps it from hearing itself. | | | | |
+| [ ] | **Logitech Z150 2.0 speakers, 6 W** (3.5 mm input, plugs into the wall) | CDDLOGZ1501R | $34.99 | 1 | Logitech Z207 10 W, Bluetooth + 3.5 mm (CDDLOGZ2071R, $69.99, 5 in stock). Skip the S-150 USB speakers: too quiet for a porch. |
+| [ ] | **Zoweetek S03 USB sound card** (goes in the hub at the pumpkin and drives the speaker's 3.5 mm plug, so no long audio cable) | MIS-VACSS031 | $12.95 | 4 | Any USB-to-3.5 mm audio adapter |
 | | **Pi mode parts:** | | | | |
 | [ ] | **Raspberry Pi 5 8GB board** | DIYRASC1112R | $174.99 | 2 | Sunnyvale 64, Santa Clara 17. Or the CanaKit at Best Buy (unverified). |
 | [ ] | **Raspberry Pi 27W USB-C power supply** | DIYRASC1153R (white) / DIYRASC1158R (black) | $11.99 | 44 | Generic 27W PD supply (ADA-RPI27WC1, $10.99, 15 in stock) |
@@ -42,13 +45,13 @@ Not available at Central Computers: a **speakerphone** (they only list online dr
 | [ ] | **Orange Craft Pumpkin by Ashland®** (foam, carvable; item 10814167). Buy the **largest size** they have, at least 12" tall and hollow. | on sale $1.99–$9.99 (reg. up to $29.99, 65% off) | Cream or Black Craft Pumpkin by Ashland®, any size ≥ 12" |
 | [ ] | **Black tulle** (e.g. Wyla Black Shiny Tulle, or Casa Collection Nylon Tulle) | $0.89–$7.99 | Black chiffon or any sheer black fabric |
 | [x] | ~~Costume bits: beret or chef's hat, monocle or round glasses, bow tie~~ | **bought at Diddams** | Michaels' costume aisle also has them (beret ~$4, Adult Satin Costume Bow Tie $1.99) |
-| [ ] | **High Temperature Glue Gun by Ashland®** plus glue sticks | $11.49 | Gorilla® Dual Temp Full Size Hot Glue Gun ($23.99) |
+| [x] | ~~Glue gun and glue sticks~~ | already have one | |
 | [ ] | **FloraCraft® CleanKut™ heated foam cutter** (clean pumpkin cuts) | $22.99 | Fiskars® Softgrip® Detail Knife ($9.49), or a serrated pumpkin-carving kit |
 
 ## 3. Home Depot #632, San Mateo (verified stock)
 | ✔ | Item | Model / Store SKU | Price | In stock | If they're out |
 |---|---|---|---|---|---|
-| [ ] | **Weller 30W soldering iron kit with LED halo ring** | WLIRK3012A / 1006029627 | $29.98 | 9 | Weller 60W kit WLIRK6012A / 1006029644 ($43.98, 5 in stock) |
+| [x] | ~~Soldering iron~~ (already have one) | | | | Weller 30W kit WLIRK3012A / 1006029627 ($29.98, 9 in stock) if yours is dead |
 | [ ] | **HDX 10-1/2 in. heavy-duty clamp light** | HDX105W300-GRD / 596600 | $16.98 | 3 | HDX 8-1/2 in. aluminum clamp light HD-320PDQ12 / 324719 ($12.82, 12 in stock) |
 | [ ] | **EcoSmart PAR38 LED flood bulb, selectable color temperature, 2-pack** (set it to warm). It goes in the clamp light. | 14PR383WS6CCT01 / 1012776664 | $19.98 | 65 | EcoSmart A19 2700K 2-pack, A1960927CAWFIL/ECP/2 / 1008818890 ($7.98, 10 in stock). Or a Hampton Bay 900-lumen plug-in LED flood, G09457 / 1002757124 ($44.97, 5 in stock). |
 | [ ] | **HDX 25 ft. 16/3 outdoor extension cord, triple-tap end** | HWHD16325F / 1008994910 | $20.98 | 94 | HDX 25 ft. 16/3 orange, 277509 ($15.98, 93 in stock) |
