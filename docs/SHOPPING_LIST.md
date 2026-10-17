@@ -42,11 +42,11 @@ Not available at Central Computers: a **speakerphone** (they only list online dr
 ## 2. Michaels, San Mateo (prices from michaels.com; in-store stock not confirmed)
 | ✔ | Item | Price seen | Alternate |
 |---|---|---|---|
-| [ ] | **Orange Craft Pumpkin by Ashland®** (foam, carvable; item 10814167). Buy the **largest size** they have, at least 12" tall and hollow. | on sale $1.99–$9.99 (reg. up to $29.99, 65% off) | Cream or Black Craft Pumpkin by Ashland®, any size ≥ 12" |
+| [x] | ~~Craft pumpkin~~: **bought a 13" hollow carvable plastic craft pumpkin** | | |
 | [ ] | **Black tulle** (e.g. Wyla Black Shiny Tulle, or Casa Collection Nylon Tulle) | $0.89–$7.99 | Black chiffon or any sheer black fabric |
 | [x] | ~~Costume bits: beret or chef's hat, monocle or round glasses, bow tie~~ | **bought at Diddams** | Michaels' costume aisle also has them (beret ~$4, Adult Satin Costume Bow Tie $1.99) |
 | [x] | ~~Glue gun and glue sticks~~ | already have one | |
-| [ ] | **FloraCraft® CleanKut™ heated foam cutter** (clean pumpkin cuts) | $22.99 | Fiskars® Softgrip® Detail Knife ($9.49), or a serrated pumpkin-carving kit |
+| [ ] | **Pumpkin Masters® Craft Pumpkin Carving Tools** (made for craft pumpkins; usually shelved by the pumpkins) | $4.19 | Pumpkin Masters® Power Saw ($8.39). Or use your own soldering iron as a hot knife (see PROP_BUILD.md). |
 
 ## 3. Home Depot #632, San Mateo (verified stock)
 | ✔ | Item | Model / Store SKU | Price | In stock | If they're out |

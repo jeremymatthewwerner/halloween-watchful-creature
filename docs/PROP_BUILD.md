@@ -3,7 +3,18 @@
 Expect about 1–2 hours, plus soldering for the eyes.
 
 ## 1. Carve and hide the electronics
-1. Cut a **service hatch** in the back or bottom of the foam pumpkin, big enough for the speakerphone (~5"). Keep the cut-out piece to use as a door.
+**Cutting a plastic craft pumpkin** (ours is 13" tall and hollow):
+- **Hot knife:** your soldering iron works as one. Use an old or spare tip, because melted plastic ruins it.
+- **Ventilate:** cut **outdoors or with a fan**, since melting plastic gives off nasty fumes.
+- **Starter holes:** drill or melt a small hole at each corner of a cut-out, then cut between the holes. Forcing a cold blade into thin plastic cracks it.
+- **Without heat:** Pumpkin Masters craft carving tools work too.
+
+**What fits in a 13" pumpkin:**
+- the webcam behind the mouth;
+- **one** Logitech Z150 speaker (about 4.5" × 6.5"), or a speakerphone, inside;
+- the second Z150 speaker sits hidden behind the pumpkin.
+
+1. Cut a **service hatch** in the back, big enough for the speaker (about 5" × 7"). Keep the cut-out piece to use as a door.
 2. Carve the **eyes** about 1.5" across, and a **wide mouth**.
 3. Glue **black tulle** behind the mouth. The camera sees through it and sound passes through it, but from outside it just looks dark.
 4. Mount the **webcam** behind the mouth, lens against the tulle, aimed slightly down at where visitors stand (1–2 m away). Its clip or a hot-glued foam block holds it.
