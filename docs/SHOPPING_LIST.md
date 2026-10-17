@@ -41,9 +41,7 @@ Not available at Central Computers: a **speakerphone** (they only list online dr
 |---|---|---|---|
 | [ ] | **Orange Craft Pumpkin by Ashland®** (foam, carvable; item 10814167). Buy the **largest size** they have, at least 12" tall and hollow. | on sale $1.99–$9.99 (reg. up to $29.99, 65% off) | Cream or Black Craft Pumpkin by Ashland®, any size ≥ 12" |
 | [ ] | **Black tulle** (e.g. Wyla Black Shiny Tulle, or Casa Collection Nylon Tulle) | $0.89–$7.99 | Black chiffon or any sheer black fabric |
-| [ ] | **Black beret** (Jacques is French), from the costume aisle | ~$4 | **Adult Deluxe Costume Chef Hat** (~$4) or **Black Felt Top Hat by Celebrate It™** ($1.99, also works for Sir Reginald later) |
-| [ ] | **Adult Satin Costume Bow Tie** | $1.99 | Any costume bow tie |
-| [ ] | **Round costume glasses** for a monocle look | $2–9 | Bend a craft wire ring into a monocle |
+| [x] | ~~Costume bits: beret or chef's hat, monocle or round glasses, bow tie~~ | **bought at Diddams** | Michaels' costume aisle also has them (beret ~$4, Adult Satin Costume Bow Tie $1.99) |
 | [ ] | **High Temperature Glue Gun by Ashland®** plus glue sticks | $11.49 | Gorilla® Dual Temp Full Size Hot Glue Gun ($23.99) |
 | [ ] | **FloraCraft® CleanKut™ heated foam cutter** (clean pumpkin cuts) | $22.99 | Fiskars® Softgrip® Detail Knife ($9.49), or a serrated pumpkin-carving kit |
 
