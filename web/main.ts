@@ -2,6 +2,7 @@ import type { BodyState, ClientConfig, ConversationLogRequest } from "../shared/
 import { BodyLink } from "./bodyLink.ts";
 import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from "./devices.ts";
 import { Director } from "./director.ts";
+import { EveningMemory, browserStorage } from "./evening.ts";
 import { followServerLog } from "./serverLog.ts";
 import { LiveEngine } from "./engines/live.ts";
 import { RealtimeEngine } from "./engines/realtime.ts";
@@ -64,6 +65,8 @@ const ui = {
 };
 
 const transcript = new Transcript();
+/** What the creature said and saw earlier tonight, so each new voice session says fresh things. */
+const evening = new EveningMemory(browserStorage());
 const lineElements = new Map<object, HTMLLIElement>();
 
 function show(who: Speaker, text: string): void {
@@ -87,6 +90,7 @@ function saveConversation(all = false): void {
     .takeFinished(now, all)
     .map((line) => ({ who: line.who, text: line.text.trim(), at: Date.now() - (now - line.start) }));
   if (!lines.length) return;
+  for (const line of lines) if (line.who === "creature") evening.recordLine(line.text);
   const body = JSON.stringify({ lines } satisfies ConversationLogRequest);
   void fetch("/api/conversation", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => undefined);
 }
@@ -184,6 +188,7 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
     capture: () => camera.capture(),
     recentTranscript: () => transcript.recent(),
     lastVoiceAt: () => meter.lastLoudTime,
+    evening,
   };
   const engine: Engine = cfg.engine === "live" ? new LiveEngine(deps) : new RealtimeEngine(deps);
   const meter = new VoiceMeter(audioCtx);

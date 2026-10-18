@@ -78,6 +78,13 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
 - **Failed start** (bad key or no network): it backs off 15 s instead of retrying every second.
 - **Kill switch:** closes the session and ignores visitors until you press Wake.
 
+### Variety across the night (`web/engines/variety.ts`, `web/evening.ts`)
+Each voice session starts with no memory, and sessions sleep after 3 minutes of empty porch, so left alone the creature reuses its favourite lines all night.
+- **Style twists:** every greeting asks for a random opening and a random way to finish (never the same twist twice in a row).
+- **"Already said tonight" memory:** the creature's last 20 finished transcript lines (each shortened to about 120 characters, keeping its start and end) are saved in `localStorage` (`creature.evening`), so they survive page reloads. When a GPT-Live session starts, they go in as one `session.thinking.append` (`[MEMORY]`, capped at 1,800 characters so it stays under the 500-token append limit): "don't reuse these lines, jokes or verdicts".
+- **Running gags:** the store also counts the visitor groups greeted tonight (arrivals, returns judged new, groups that grew, newcomers found by a check; not manual greetings, same-group returns or newcomers already greeted) and tallies costume kinds from the vision descriptions with a short, conservative keyword list (witch, dinosaur, superhero…; a grown group's costumes aren't counted twice). Each counted greeting ends with optional `[TONIGHT]` fun facts: the group's number, any costume streak ("the fourth dinosaur tonight"), the night's top costumes, and a milestone every 25 groups. They're offered, not scripted.
+- **The evening** runs noon to noon on local time, so a party past midnight is one evening; the store resets the next day. Only the GPT-Live engine reads the store; lines are recorded under either engine.
+
 ## Characters (`prompts/`)
 
 - `base.md` holds the shared rules, so every character is kid-safe:

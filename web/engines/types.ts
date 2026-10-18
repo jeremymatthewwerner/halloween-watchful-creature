@@ -1,4 +1,5 @@
 /** A voice engine connects the creature to an OpenAI speech-to-speech model. */
+import type { EveningMemory } from "../evening.ts";
 
 export type EngineStatus = "closed" | "connecting" | "open" | "closing";
 
@@ -53,4 +54,6 @@ export interface EngineDeps {
   recentTranscript(): string;
   /** When the creature's voice was last audible (performance.now() ms). */
   lastVoiceAt(): number;
+  /** What it said and saw earlier tonight, kept across sessions (optional). */
+  evening?: EveningMemory;
 }
