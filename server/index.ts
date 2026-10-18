@@ -9,6 +9,7 @@ import type { BodyMessage, ClientConfig, ConversationLogRequest, ServerLogEntry,
 import { BodyController, NullSink, SerialSink } from "./body/driver.ts";
 import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "./characters.ts";
 import { config } from "./config.ts";
+import { buildGallery } from "./gallery.ts";
 import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId } from "./logs.ts";
 import { OpenAIError, createLiveSession, createRealtimeCall, describeFrame, voiceFor } from "./openai.ts";
 
@@ -113,11 +114,23 @@ app.post("/api/conversation", async (c) => {
 /** Past days' logs, newest first. */
 app.get("/api/session-logs", async (c) => {
   const days = sessionLog ? (await readdir(config.logDir).catch(() => [])).filter((d) => LOG_DAY.test(d)).sort().reverse() : [];
-  const items = days.map((d) => `<li><a href="/api/session-logs/${d}/log.html">${d}</a> · <a href="/api/session-logs/${d}/log.txt">text</a></li>`);
+  const items = days.map((d) => `<li><a href="/api/session-logs/${d}/log.html">${d}</a> · <a href="/api/session-logs/${d}/log.txt">text</a> · <a href="/api/session-logs/${d}/gallery.html">🖼️ costume gallery</a></li>`);
   return c.html(
     `<!doctype html><meta charset="utf-8"><title>Creature logs</title><style>body{background:#120a1c;color:#f3eaff;font:15px system-ui;padding:16px}a{color:#ff7a1a}</style>` +
       `<h1>🎃 Creature logs</h1><ul>${items.join("") || "<li>No logs yet.</li>"}</ul>`,
   );
+});
+
+/** A day's costume gallery: each greeting snapshot with its caption and the creature's best line. Built on request. */
+app.get("/api/session-logs/:day/gallery.html", async (c) => {
+  const { day } = c.req.param();
+  if (!sessionLog || !LOG_DAY.test(day)) return c.notFound();
+  const logText = await readFile(join(config.logDir, day, "log.txt"), "utf8").catch(() => null);
+  if (logText === null) return c.notFound();
+  const snapshots = config.logSnapshots
+    ? new Set((await readdir(join(config.logDir, day, "snapshots")).catch(() => [])).map((f) => `snapshots/${f}`))
+    : null;
+  return c.html(buildGallery({ day, logText, snapshots }), 200, { "cache-control": "no-store" });
 });
 
 const LOG_FILES: Record<string, string> = { html: "text/html; charset=utf-8", txt: "text/plain; charset=utf-8", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };

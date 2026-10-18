@@ -93,6 +93,8 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   private nudgePoll: ReturnType<typeof setInterval> | null = null;
   /** If a greeting hasn't started this long after we asked, nudge with an instruction. */
   protected nudgeMs = 5000;
+  /** Operator modes, re-applied to each new session (sessions restart often). */
+  private standing = "";
 
   protected waitUntilReady(): Promise<void> {
     return new Promise((resolve) => (this.onStarted = resolve));
@@ -109,6 +111,10 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         // Apply the director's mic gating to the new session as well as the local track.
         this.send({ type: this.micEnabled ? "session.input_audio.unmute" : "session.input_audio.mute", event_id: this.nextId("mic") });
         this.remindOfTonight();
+        if (this.standing) {
+          this.append("session.instructions.append", null, this.standing);
+          this.emit({ type: "note", text: "operator modes re-applied to the new session" });
+        }
         break;
       case "session.closed": {
         const usage = event.usage as { seconds?: number } | undefined;
@@ -358,6 +364,11 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       null,
       `Immediately say the following to the visitors, in your character's voice and style, then continue normally: "${text}"`,
     );
+  }
+
+  setStanding(standing: string, change?: string): void {
+    this.standing = standing;
+    if (change && this.status === "open") this.append("session.instructions.append", null, change);
   }
 
   setMicEnabled(enabled: boolean): void {
