@@ -205,6 +205,9 @@ export class Director {
   /** Operator button: greet whoever is there now (connecting if needed). */
   async greetNow(): Promise<void> {
     this.deps.engine.setMicEnabled(true);
+    // On an empty porch (the owner checking it works, say), still sleep again if nobody comes:
+    // otherwise nothing schedules the close and the billed session stays open until visitors leave.
+    if (!this.present) this.idleCloseAt = this.deps.now() + this.opts.idleCloseMs;
     await this.greetOrRecord({ reason: "manual" }, true);
   }
 

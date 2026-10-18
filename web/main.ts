@@ -17,7 +17,7 @@ import { Watchdog, loadReloads, loadResume, resumeAudio, saveReloads, saveResume
 import { LiveEngine } from "./engines/live.ts";
 import { RealtimeEngine } from "./engines/realtime.ts";
 import type { Engine, EngineDeps } from "./engines/types.ts";
-import { Transcript, type Speaker } from "./transcript.ts";
+import { LineElements, Transcript, type Speaker } from "./transcript.ts";
 import { Camera, PersonDetector, type DetectedPerson } from "./vision.ts";
 import { VisitorTracker } from "./visitors.ts";
 import { VoicePanel } from "./voicePanel.ts";
@@ -83,7 +83,8 @@ const ui = {
 const transcript = new Transcript();
 /** What the creature said and saw earlier tonight, so each new voice session says fresh things. */
 const evening = new EveningMemory(browserStorage());
-const lineElements = new Map<object, HTMLLIElement>();
+/** The Conversation panel shows the newest 200 lines. */
+const lineElements = new LineElements<HTMLLIElement>(200);
 
 function show(who: Speaker, text: string): void {
   const line = transcript.add(who, text, performance.now());
@@ -91,9 +92,8 @@ function show(who: Speaker, text: string): void {
   if (!li) {
     li = document.createElement("li");
     li.className = who;
-    lineElements.set(line, li);
+    for (const old of lineElements.add(line, li)) old.remove();
     ui.transcript.append(li);
-    while (ui.transcript.children.length > 200) ui.transcript.firstElementChild?.remove();
   }
   li.textContent = line.text;
   ui.transcript.scrollTop = ui.transcript.scrollHeight;

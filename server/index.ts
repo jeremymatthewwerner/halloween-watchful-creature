@@ -114,7 +114,12 @@ app.get("/api/config", (c) => {
   return c.json(body);
 });
 
-app.get("/api/health", (c) => c.json({ ok: true, engine: config.engine, body: body.status, hasApiKey: Boolean(config.apiKey) }));
+/** Open log streams (the dashboard's Server log panel, plus anyone else following /api/logs). */
+let logStreams = 0;
+
+app.get("/api/health", (c) =>
+  c.json({ ok: true, engine: config.engine, body: body.status, hasApiKey: Boolean(config.apiKey), streams: { logs: logStreams, ...remote.streamCounts() } }),
+);
 
 /** Exchanges the browser's WebRTC offer for an answer from GPT-Live or gpt-realtime. */
 app.post("/api/session", async (c) => {
@@ -139,6 +144,7 @@ app.post("/api/session", async (c) => {
 /** Streams server log lines (Server-Sent Events): the backlog first, then new lines as they happen. */
 app.get("/api/logs", (c) =>
   streamSSE(c, async (stream) => {
+    logStreams++;
     let sending = Promise.resolve();
     const send = (entry: ServerLogEntry) => {
       sending = sending.then(() => stream.writeSSE({ id: logEventId(entry), data: JSON.stringify(entry) })).catch(() => undefined);
@@ -150,6 +156,7 @@ app.get("/api/logs", (c) =>
     await new Promise<void>((resolve) => stream.onAbort(resolve));
     clearInterval(ping);
     unsubscribe();
+    logStreams--;
   }),
 );
 

@@ -58,7 +58,12 @@ export class PorchSoundPlayer {
   }
 
   get playing(): Kind | null {
-    if (this.current && this.ctx.currentTime >= this.current.endsAt) this.current = null;
+    if (this.current && this.ctx.currentTime >= this.current.endsAt) {
+      // Finished by itself: unhook it. A chain still connected to the output is never freed, so
+      // every sound of the night (a dozen nodes each) would otherwise stay in memory.
+      this.current.gain.disconnect();
+      this.current = null;
+    }
     return this.current?.kind ?? null;
   }
 

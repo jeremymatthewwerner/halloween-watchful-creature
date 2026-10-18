@@ -312,6 +312,19 @@ describe("Remote routes (Hono middleware)", () => {
     }
   });
 
+  it("counts open phone and dashboard streams, and forgets them when they go away", async () => {
+    const { remote, call } = setup();
+    expect(remote.streamCounts()).toEqual({ phones: 0, dashboards: 0 });
+    const phone = (await call("/api/remote/stream", "127.0.0.1")).body!.getReader();
+    const dashboard = (await call("/api/remote/commands", "127.0.0.1")).body!.getReader();
+    await phone.read(); // the first snapshot
+    expect(remote.streamCounts()).toEqual({ phones: 1, dashboards: 1 });
+    await phone.cancel();
+    await dashboard.cancel();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(remote.streamCounts()).toEqual({ phones: 0, dashboards: 0 });
+  });
+
   it("raises a vision alert once failures pile up", async () => {
     const { remote, call } = setup();
     for (let i = 0; i < 3; i++) await call("/api/vision", "127.0.0.1", { method: "POST" });

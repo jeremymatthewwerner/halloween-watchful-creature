@@ -15,7 +15,8 @@
     "start": "NODE_ENV=production tsx server/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "doctor": "tsx scripts/doctor.ts"
+    "doctor": "tsx scripts/doctor.ts",
+    "soak": "tsx scripts/soak/run.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

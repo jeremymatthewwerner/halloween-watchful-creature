@@ -81,6 +81,7 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
 - **Nudge:** a greeting request that doesn't make the creature start a **new** utterance within 5 s gets one firmer instruction, worded for the case (visitors, newcomers to a group, or someone new). The tail of a reply already under way when the request went out doesn't count. That's how a newcomer's greeting got lost while the creature was mid-sentence.
 - **left:** mute the mic, so street noise doesn't get answers. After `IDLE_CLOSE_SECONDS` (default 180) of empty porch, **close the session** to stop the meter. Visitors reconnect it automatically, in about 1–2 s.
 - **Session drops mid-visit** (expired or network): it reconnects and catches up silently, without greeting again.
+- **Greet now on an empty porch** (the owner checking it works): the session still goes back to sleep after `IDLE_CLOSE_SECONDS` if nobody comes.
 - **Kill switch:** closes the session and ignores visitors until you press Wake (and stops a recorded greeting).
 
 ### Offline mode (`web/offline.ts`, in the Director)
@@ -219,7 +220,8 @@ The voice below is each character's default; the dashboard's **Voice** picker an
   - Also set a monthly limit on the OpenAI project.
 
 ## Known limits and risks
-- **Tested on the Mac** (Oct 17–18) with the C920, the Z150 on a USB sound card and plain-LED eyes. Not yet tested: NeoPixel Jewel eyes on hardware, Pi mode, the phone remote on a real phone, ntfy delivery, lure and ambience on the porch speaker, and a full evening's soak.
+- **Tested on the Mac** (Oct 17–18) with the C920, the Z150 on a USB sound card and plain-LED eyes. Not yet tested: NeoPixel Jewel eyes on hardware, Pi mode, the phone remote on a real phone, ntfy delivery, and lure and ambience on the porch speaker.
+- **Soak test** (`npm run soak`, [SOAK_TEST.md](SOAK_TEST.md)): a 4-hour evening compressed into about 75 minutes, with the real server and dashboard against a mock OpenAI and faked WebRTC. It covers memory, timers, streams, disk and stalls, but not real WebRTC, the real camera and detector, or the Arduino.
 - GPT-Live's docs say appended context "may" be spoken. The quick hello, follow-up compliments and the nudge make greetings reliable in testing; tune the wording in `web/engines/live.ts` if needed.
 - GPT-Live voices don't follow accent instructions reliably (only a native-language voice carries an accent), so the voice picker matters more than the prompt for how it sounds. Recorded clips are text-to-speech: apart from `marin`, GPT-Live's voices only get the closest TTS voice plus an accent, so call-outs and offline greetings sound similar to the live voice, not the same.
 - Offline mode and the clip-driven eyes are unit tested and the audio path was checked in Chrome, but not yet on the porch speaker or real Arduino eyes, nor with a real Wi-Fi outage.
