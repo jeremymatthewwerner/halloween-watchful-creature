@@ -2,6 +2,7 @@
  * The costume gallery: a day's greeting snapshots (from log.txt, as written by SessionLog) with
  * their vision captions and the creature's best line from around that time, as one HTML page.
  */
+import { plural } from "../shared/snapshots.ts";
 
 export interface LogLine {
   /** Seconds since midnight. */
@@ -13,8 +14,8 @@ export interface LogLine {
 
 export interface GalleryItem {
   time: string;
-  /** Path relative to the day's folder, e.g. snapshots/18-05-09-arrived.jpg. */
-  file: string;
+  /** Path relative to the day's folder, e.g. snapshots/18-05-09-arrived.jpg; none for a look logged with snapshots off. */
+  file?: string;
   label: string;
   verdict?: string;
   caption: string;
@@ -27,6 +28,8 @@ const REHEARSAL_MARK = "[REHEARSAL] ";
 
 const LINE = /^(\d\d):(\d\d):(\d\d) (\S+)\s+(.*)$/;
 const SNAPSHOT = /^(snapshots\/[\w-]+\.(?:jpg|png|webp)) {2}(\S+) (?:\[(\w+)\] )?([\s\S]*)$/;
+/** A greeting's look logged without a photo (SNAPSHOTS=off): just the label, verdict and caption. */
+const LOOK = /^(\S+) (?:\[(\w+)\] )?([\s\S]*)$/;
 /** Continuation lines (multi-line text) are indented under their timestamp. */
 const CONTINUATION = "         ";
 
@@ -76,27 +79,37 @@ export function scoreLine(line: string, caption: string): number {
   return overlap * 2 + lengthScore + (/[!]/.test(line) ? 0.5 : 0);
 }
 
-/** Each snapshot in the log, with its caption and the creature's best line from around then. */
+/** A snapshot line's file, label, verdict and caption; a look line (no photo) has no file. */
+function parseSnapshot(line: LogLine): [file: string | undefined, label: string, verdict: string | undefined, caption: string] | null {
+  if (line.tag === "look") {
+    const m = LOOK.exec(line.text);
+    return m ? [undefined, m[1]!, m[2], m[3]!] : null;
+  }
+  const m = SNAPSHOT.exec(line.text);
+  return m ? [m[1]!, m[2]!, m[3], m[4]!] : null;
+}
+
+/** Each snapshot (or photo-less look) in the log, with its caption and the creature's best line from around then. */
 export function galleryItems(logText: string): GalleryItem[] {
   const lines = parseLogText(logText);
-  const snaps = lines.filter((l) => l.tag === "snapshot").sort((a, b) => a.at - b.at);
+  const snaps = lines.filter((l) => l.tag === "snapshot" || l.tag === "look").sort((a, b) => a.at - b.at);
   // Conversation lines reach the log a few seconds late, so match by time, not file order.
   // Lines from rehearsal mode (pretend visitors) aren't about anyone's real costume.
   const creature = lines.filter((l) => l.tag === "creature" && l.text.trim() && !l.text.startsWith(REHEARSAL_MARK));
   const items: GalleryItem[] = [];
   snaps.forEach((snap, i) => {
-    const m = SNAPSHOT.exec(snap.text);
-    if (!m) return;
-    const [, file, label, verdict, caption] = m;
+    const parsed = parseSnapshot(snap);
+    if (!parsed) return;
+    const [file, label, verdict, caption] = parsed;
     const next = snaps[i + 1]?.at ?? Infinity;
     const until = Math.min(snap.at + AFTER_S, next);
     let best: { text: string; score: number } | undefined;
     for (const c of creature) {
       if (c.at < snap.at - BEFORE_S || c.at >= until) continue;
-      const score = scoreLine(c.text, caption!);
+      const score = scoreLine(c.text, caption);
       if (!best || score > best.score) best = { text: c.text.trim(), score };
     }
-    items.push({ time: snap.time, file: file!, label: label!, verdict: verdict || undefined, caption: caption!.trim(), line: best?.text });
+    items.push({ time: snap.time, ...(file ? { file } : {}), label, verdict: verdict || undefined, caption: caption.trim(), line: best?.text });
   });
   return items;
 }
@@ -112,27 +125,43 @@ export interface GalleryOptions {
   logText: string;
   /** Snapshot files that exist (paths like snapshots/x.jpg); null when snapshots are turned off. */
   snapshots: ReadonlySet<string> | null;
+  /** SNAPSHOT_RETENTION_DAYS, for the privacy note (0: kept until deleted). */
+  retentionDays?: number;
+  /** This day is past the retention, so its photos have been removed. */
+  expired?: boolean;
   title?: string;
 }
 
 /** The gallery page for one day. Family-only: no share or upload buttons, and a privacy note. */
-export function buildGallery({ day, logText, snapshots, title = "Costume gallery" }: GalleryOptions): string {
+export function buildGallery({ day, logText, snapshots, retentionDays, expired = false, title = "Costume gallery" }: GalleryOptions): string {
   const items = galleryItems(logText);
+  // Why a card has no picture: photos are off now, its day is past the retention, or it was never saved.
+  const noPhoto = (item: GalleryItem) =>
+    !snapshots ? "photos are off" : item.file && expired && retentionDays ? `photo removed after ${plural(retentionDays, "day")}` : "photo not saved";
   const cards = items.map((item, i) => {
-    const hasImage = snapshots?.has(item.file) ?? false;
+    const hasImage = item.file !== undefined && (snapshots?.has(item.file) ?? false);
     const tag = [LABELS[item.label] ?? item.label, item.verdict ? VERDICTS[item.verdict] ?? item.verdict : ""].filter(Boolean).join(" · ");
     return (
       `<figure class="card" data-index="${i}" tabindex="0">` +
       (hasImage
-        ? `<img src="${escapeHtml(item.file)}" alt="Costume snapshot at ${item.time}" loading="lazy">`
-        : `<div class="noimg">🎃<span>${snapshots ? "photo not saved" : "photos are off"}</span></div>`) +
+        ? `<img src="${escapeHtml(item.file!)}" alt="Costume snapshot at ${item.time}" loading="lazy">`
+        : `<div class="noimg">🎃<span>${noPhoto(item)}</span></div>`) +
       `<figcaption><div class="meta"><time>${item.time}</time> <span class="tag">${escapeHtml(tag)}</span></div>` +
       `<p class="caption">${escapeHtml(item.caption)}</p>` +
       (item.line ? `<blockquote>${escapeHtml(item.line)}</blockquote>` : "") +
       `</figcaption></figure>`
     );
   });
-  const off = snapshots === null ? `<p class="note">Snapshots are turned off (<code>LOG_SNAPSHOTS=false</code>), so this shows words only.</p>` : "";
+  const off =
+    snapshots === null
+      ? `<p class="note off">📷 <strong>Snapshots are turned off</strong> (<code>SNAPSHOTS=off</code>), so no photos are saved. You can still read what the camera saw and what Jacques said.</p>`
+      : "";
+  const kept =
+    retentionDays === undefined
+      ? "you can delete a day by deleting its folder in <code>logs/</code>"
+      : retentionDays > 0
+        ? `they're deleted automatically after ${plural(retentionDays, "day")} (<code>SNAPSHOT_RETENTION_DAYS</code>)`
+        : "they're kept until you delete them (the dashboard's 🗑️ button, or a day's folder in <code>logs/</code>)";
   const empty = `<p class="empty">No costume snapshots on this day yet. They show up here after Jacques greets someone.</p>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -149,6 +178,7 @@ button { background: #2c1c46; color: var(--text); border: 1px solid var(--line);
 button:hover { border-color: var(--orange); }
 .privacy { background: #2a1a12; border: 1px solid #5a3418; border-radius: 10px; padding: 8px 12px; margin: 0 0 14px; font-size: 14px; }
 .note, .empty { color: var(--muted); }
+.note.off { color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
 code { background: #140c22; padding: 0 4px; border-radius: 4px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .card { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
@@ -178,7 +208,7 @@ blockquote::before { content: "🎃 "; }
   <h1>🎃 ${escapeHtml(title)} · ${escapeHtml(day)}</h1>
   <div>${items.length ? `<button id="play" type="button">▶️ Slideshow</button> ` : ""}<a href="log.html">Full log</a> · <a href="/api/session-logs">All days</a></div>
 </header>
-<p class="privacy">🔒 <strong>Family only.</strong> These photos show other people's kids. Please keep them to yourselves: don't share, post or send them. They stay on this computer, and you can delete a day by deleting its folder in <code>logs/</code>.</p>
+<p class="privacy">🔒 <strong>Family only.</strong> These photos show other people's kids. Please keep them to yourselves: don't share, post or send them. They stay on this computer, and ${kept}.</p>
 ${off}
 ${items.length ? `<p class="note">${items.length} greeting${items.length === 1 ? "" : "s"}. Click a costume to see it big.</p><div class="grid">${cards.join("\n")}</div>` : empty}
 <div class="show" id="show" role="dialog" aria-modal="true" aria-label="Slideshow">

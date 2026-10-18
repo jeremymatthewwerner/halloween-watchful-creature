@@ -9,6 +9,8 @@ import type {
   BodyMessage,
   ClientConfig,
   ConversationLogRequest,
+  DeleteSnapshotsRequest,
+  DeleteSnapshotsResult,
   GenerateVisitorsRequest,
   GenerateVisitorsResult,
   GeneratedVisitorList,
@@ -20,6 +22,8 @@ import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "
 import { config } from "./config.ts";
 import { buildGallery } from "./gallery.ts";
 import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId, wantsSnapshot } from "./logs.ts";
+import { deleteAllSnapshots, startRetention } from "./snapshots.ts";
+import { isExpired, plural, snapshotPolicy } from "../shared/snapshots.ts";
 import { OpenAIError, characterVoice, createLiveSession, createRealtimeCall, describeFrame, generateImage, sessionVoice } from "./openai.ts";
 import { listenHost } from "./auth.ts";
 import { Remote } from "./remote.ts";
@@ -31,8 +35,10 @@ const logs = new LogBuffer();
 captureConsole(logs);
 const sessionLog = config.logDir === "none" ? null : new SessionLog(config.logDir, "Watchful Creature log");
 if (sessionLog) {
-  sessionLog.start(`engine ${config.engine}, character ${config.character}`);
+  sessionLog.start(`engine ${config.engine}, character ${config.character}, ${snapshotPolicy(config.snapshots, config.snapshotRetentionDays)}`);
   logs.subscribe((entry) => sessionLog.server(entry));
+  // Photos of visitors (mostly kids) older than SNAPSHOT_RETENTION_DAYS go now, then daily.
+  startRetention(config.logDir, config.snapshotRetentionDays);
 }
 
 const app = new Hono();
@@ -74,6 +80,7 @@ app.get("/api/config", (c) => {
     maxVoiceMinutesPerDay: config.maxVoiceMinutesPerDay,
     hasApiKey: Boolean(config.apiKey),
     sessionLogUrl: sessionLog ? `/api/session-logs/${sessionLog.currentDay}/log.html` : null,
+    snapshots: sessionLog ? { enabled: config.snapshots, retentionDays: config.snapshotRetentionDays } : null,
     voice: { env: config.voiceOverride || null, character: characterVoice(config, character) },
   };
   return c.json(body);
@@ -145,10 +152,26 @@ app.get("/api/session-logs/:day/gallery.html", async (c) => {
   if (!sessionLog || !LOG_DAY.test(day)) return c.notFound();
   const logText = await readFile(join(config.logDir, day, "log.txt"), "utf8").catch(() => null);
   if (logText === null) return c.notFound();
-  const snapshots = config.logSnapshots
+  const snapshots = config.snapshots
     ? new Set((await readdir(join(config.logDir, day, "snapshots")).catch(() => [])).map((f) => `snapshots/${f}`))
     : null;
-  return c.html(buildGallery({ day, logText, snapshots }), 200, { "cache-control": "no-store" });
+  const retentionDays = config.snapshotRetentionDays;
+  const expired = isExpired(day, retentionDays, new Date());
+  return c.html(buildGallery({ day, logText, snapshots, retentionDays, expired }), 200, { "cache-control": "no-store" });
+});
+
+/**
+ * The dashboard's "Delete all snapshots now": every photo in every day's log, today's included.
+ * log.txt stays, and log.html shows a placeholder. Dashboard-only (server/auth.ts), so a phone
+ * signed in with the PIN can't use it, and it needs {"confirm": true} so a stray request can't either.
+ */
+app.post("/api/snapshots/delete-all", async (c) => {
+  if (!sessionLog) return c.json({ error: "Disk logging is off (LOG_DIR=none), so there are no snapshots" }, 404);
+  const req = await c.req.json<Partial<DeleteSnapshotsRequest>>().catch(() => null);
+  if (req?.confirm !== true) return c.json({ error: 'Send {"confirm": true} to delete every snapshot' }, 400);
+  const result: DeleteSnapshotsResult = deleteAllSnapshots(config.logDir);
+  console.log(`[privacy] deleted all snapshots: ${plural(result.files, "photo")} from ${plural(result.days.length, "day")}`);
+  return c.json(result);
 });
 
 const LOG_FILES: Record<string, string> = { html: "text/html; charset=utf-8", txt: "text/plain; charset=utf-8", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
@@ -177,9 +200,11 @@ app.post("/api/vision", async (c) => {
   const verdict = result.verdict ?? (result.sameGroup === false ? "NEW" : undefined);
   const rehearsal = req.rehearsal === true;
   console.log(`[vision]${rehearsal ? " [REHEARSAL]" : ""} ${req.reason}${verdict ? ` (${verdict})` : ""} in ${Date.now() - started} ms: ${result.text}`);
-  if (sessionLog && config.logSnapshots && wantsSnapshot(req.reason, verdict, rehearsal)) {
+  if (sessionLog && wantsSnapshot(req.reason, verdict, rehearsal)) {
     try {
-      sessionLog.snapshot(req.image, req.reason, result.text, verdict);
+      // SNAPSHOTS=off: nothing goes to disk but the caption, so the gallery can still tell the story.
+      if (config.snapshots) sessionLog.snapshot(req.image, req.reason, result.text, verdict);
+      else sessionLog.look(req.reason, result.text, verdict);
     } catch (err) {
       console.warn(`[log] couldn't save snapshot: ${(err as Error).message}`);
     }

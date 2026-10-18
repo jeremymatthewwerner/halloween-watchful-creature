@@ -20,6 +20,8 @@ const DASHBOARD_ONLY = [
   "/api/vision",
   // Rehearsal: image generation is billed, and deleting cached images can't be undone.
   "/api/rehearsal",
+  // "Delete all snapshots now" can't be undone either.
+  "/api/snapshots",
   "/api/conversation",
   "/api/remote/state",
   "/api/remote/commands",

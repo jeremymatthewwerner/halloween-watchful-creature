@@ -87,7 +87,7 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**. F
   - A new voice starts with the next voice session. While a session is running with another voice, **🔄 Restart voice session now** ends it; if visitors are there it reconnects right away with the new voice.
   - The server only accepts voices on its list (`shared/voices.ts`); anything else is ignored and logged.
 - **Conversation:** live transcript plus system notes.
-- **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery** and **all logs**.
+- **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery** and **all logs**. Under them: whether snapshots are on and how long they're kept, and **🗑️ Delete all snapshots now** (see **Privacy** below).
 - **Alerts:** health problems (see below), shown only when there are any.
 - **Between visitors** (both free: local audio only, they never open the voice session), each with a toggle in **Settings** that's remembered:
   - **Spooky sounds:** every 20–60 s on an empty porch, a quiet creaky door, owl, distant thunder, wind, cackle, wolf howl or church bell, synthesized in the browser (no audio files).
@@ -115,7 +115,7 @@ The remote shows whether the creature is awake, asleep (kill switch) or waiting 
 - Every request from another device needs a signed-in session: all `/api` routes (including logs, snapshots and galleries) and the `/ws` socket. Only the PIN page and the PIN check itself are open. The dashboard on the creature's computer (loopback, addressed as `localhost`) needs no PIN.
 - The PIN is sent once, in the body of a POST, and swapped for an `HttpOnly`, `SameSite=Strict` session cookie (24 hours; restarting the server signs phones out). It's compared in constant time and never logged or put in a URL.
 - Wrong PINs: 5 per phone per 15 minutes, and 20 from all devices together, then sign-in locks for the rest of the 15 minutes.
-- Even signed in, the phone can't use the dashboard-only routes: it can't start voice sessions, call the vision model or drive the Arduino. The existing origin check still applies.
+- Even signed in, the phone can't use the dashboard-only routes: it can't start voice sessions, call the vision model, drive the Arduino or delete snapshots. The existing origin check still applies.
 - It's plain HTTP on your home network, so anyone who can watch your Wi-Fi traffic could see the PIN and cookie. Use it on a home network you trust, not on public Wi-Fi.
 
 ### Watchdog
@@ -166,11 +166,20 @@ How it works: `web/rehearsal.ts` sits behind two small seams in `web/main.ts`: t
 Each day gets a folder in `logs/` (for example `logs/2026-10-31/`). Server restarts append to the same day.
 - `log.html`: everything in one readable page: server lines, what visitors and the creature said, system notes, and a **snapshot** of each greeting with the vision verdict (click a snapshot for full size).
 - `log.txt`: the same as plain text, for `grep`.
-- `snapshots/`: the camera frame of each greeting.
+- `snapshots/`: the camera frame of each greeting, deleted after a week (see **Privacy** below).
 
 The **costume gallery** (`/api/session-logs/<day>/gallery.html`, linked from the dashboard and from **All logs**) turns a day into a grid of greetings: each snapshot with what the camera saw and the creature's best line from that moment. Click a costume, or **▶️ Slideshow**, to see them big (arrow keys move, Esc closes). It's built from the day's `log.txt` each time you open it, so there's nothing extra to save. It's for the family only: it shows other people's kids, so it has no share or upload buttons.
 
-This keeps photos and speech of visitors (often children) on your computer. Set `LOG_SNAPSHOTS=false` to skip the photos (the gallery then shows words only), or `LOG_DIR=none` to keep no logs at all (no gallery either). Delete old days by deleting their folders.
+### Privacy: photos of visitors
+The snapshots are photos of other people's kids, so they're kept on your computer only, and not for long:
+- **Kept for a week, then deleted** (`SNAPSHOT_RETENTION_DAYS`, default `7`): when the server starts, and then once a day, it deletes the photos of every day more than 7 days old. Halloween's photos stay through Nov 7, so the family can enjoy the gallery the week after, and are gone on Nov 8. Only the photos go: `log.txt` stays, `log.html` shows a small "📷 photo removed after 7 days" in their place, and the gallery still shows what the camera saw and what the creature said. `0` (or `off`) keeps photos forever.
+- **Turn them off** with `SNAPSHOTS=off`: no camera frames are written to disk at all. The vision captions still go in the log, and the gallery says snapshots are turned off and shows words only. (The older `LOG_SNAPSHOTS=false` still works.)
+- **Delete them all now:** the dashboard shows the current setting under the log links (for example "📷 Snapshots on, kept 7 days"), with a **🗑️ Delete all snapshots now** button. It asks first, then deletes every day's photos, today's included, and keeps the logs. Only the dashboard on the creature's computer can do this, not the phone remote.
+- `LOG_DIR=none` keeps no logs at all (no gallery either). Deleting a day's folder removes that day completely.
+
+Upgrading from a version without retention: the first start deletes photos older than 7 days. Set `SNAPSHOT_RETENTION_DAYS=0` first if you want to keep them.
+
+The clean-up only ever deletes inside `LOG_DIR`: files named like a snapshot (`18-05-09-arrived.jpg`) in the `snapshots/` folder of a folder named like a day (`2026-10-31`). It never follows symlinks.
 
 ## How it saves money
 The voice session only runs while someone is at the porch.
@@ -200,7 +209,8 @@ GPT-Live costs about **$0.05 per minute** of voice, plus small vision-model call
 | `NTFY_TOPIC` | (off) | ntfy.sh topic for push alerts; make it long and random |
 | `NTFY_SERVER` / `NTFY_TOKEN` | `https://ntfy.sh` / (none) | Self-hosted ntfy server, or a token for a protected topic |
 | `LOG_DIR` | `logs` | Folder for the daily logs and snapshots; `none` keeps no logs (and no gallery) |
-| `LOG_SNAPSHOTS` | `true` | `false` keeps the logs but saves no photos |
+| `SNAPSHOTS` | `on` | `off` keeps the logs (with the vision captions) but writes no photos. The older `LOG_SNAPSHOTS=false` also turns them off |
+| `SNAPSHOT_RETENTION_DAYS` | `7` | Delete photos of days older than this (at start, then daily); `log.txt` is kept. `0` or `off` keeps them forever |
 
 Set `BODY_DEBUG=1` to log the commands sent to the Arduino.
 

@@ -268,14 +268,17 @@ export class RehearsalPanel {
     this.logThumbs.replaceChildren();
     if (!day) return;
     const res = await fetch(`/api/session-logs/${day}/log.txt`).catch(() => null);
-    const items = res?.ok ? galleryItems(await res.text()) : [];
+    // Looks logged with snapshots off have no photo.
+    const items = res?.ok ? galleryItems(await res.text()).filter((item) => item.file) : [];
     if (!items.length) {
       this.logThumbs.append(el("span", { className: "hint", textContent: "No snapshots on this day." }));
       return;
     }
     for (const item of items) {
-      const url = `/api/session-logs/${day}/${item.file}`;
+      const url = `/api/session-logs/${day}/${item.file!}`;
       const img = el("img", { src: url, alt: item.caption, title: `${item.time} ${item.label}: ${item.caption} (click to add)`, loading: "lazy" });
+      // Photos removed after SNAPSHOT_RETENTION_DAYS (or deleted from the dashboard) just drop out.
+      img.addEventListener("error", () => img.remove());
       img.addEventListener("click", () => void this.addFromLog(url, `${day} ${item.time} ${item.label}`));
       this.logThumbs.append(img);
     }

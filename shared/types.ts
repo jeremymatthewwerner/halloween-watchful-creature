@@ -43,6 +43,8 @@ export interface ClientConfig {
   hasApiKey: boolean;
   /** Today's on-disk log (log.html), or null when disk logging is off. */
   sessionLogUrl: string | null;
+  /** Whether greeting photos are saved (SNAPSHOTS) and kept how many days (0: until deleted); null when disk logging is off. */
+  snapshots: { enabled: boolean; retentionDays: number } | null;
   /** The voice fallbacks under the dashboard's pick: VOICE in .env (null if unset), then the character's default. */
   voice: { env: string | null; character: string };
 }
@@ -103,6 +105,18 @@ export interface ConversationLogRequest {
     /** Said during rehearsal mode: marked as such in the log and left out of the costume gallery. */
     rehearsal?: boolean;
   }[];
+}
+
+/** POST /api/snapshots/delete-all needs this body, so a stray request can't wipe the photos. */
+export interface DeleteSnapshotsRequest {
+  confirm: true;
+}
+
+/** What "Delete all snapshots now" removed. */
+export interface DeleteSnapshotsResult {
+  /** Day folders that had photos, oldest first. */
+  days: string[];
+  files: number;
 }
 
 /** Rehearsal mode: a made-up group of trick-or-treaters for one generated image. */

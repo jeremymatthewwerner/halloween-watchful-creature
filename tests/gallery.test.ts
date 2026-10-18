@@ -104,8 +104,39 @@ describe("costume gallery", () => {
   it("shows words only when snapshots are turned off, and says when there's nothing yet", () => {
     const off = buildGallery({ day: "2026-10-31", logText: fixtureLog(), snapshots: null });
     expect(off).not.toContain("<img");
-    expect(off).toContain("LOG_SNAPSHOTS=false");
+    expect(off).toContain("Snapshots are turned off");
+    expect(off).toContain("SNAPSHOTS=off");
+    expect(off).toContain("photos are off");
     expect(off).toContain("A witch in a purple hat");
     expect(buildGallery({ day: "2026-10-31", logText: "18:00:00 ===== server started: x\n", snapshots: new Set() })).toContain("No costume snapshots");
+  });
+
+  it("shows looks logged with snapshots off, in words", () => {
+    dir = mkdtempSync(join(tmpdir(), "creature-gallery-"));
+    const now = new Date(2026, 9, 31, 18, 0, 0);
+    const log = new SessionLog(dir, "Test", () => now);
+    log.look("arrived", "One visitor in a bumblebee costume.", "NEW");
+    log.conversation("creature", "A bumblebee costume! Buzzing with style, little bumblebee!", now.getTime() + 3000);
+    const items = galleryItems(readFileSync(join(dir, "2026-10-31", "log.txt"), "utf8"));
+    expect(items).toEqual([
+      { time: "18:00:00", label: "arrived", verdict: "NEW", caption: "One visitor in a bumblebee costume.", line: "A bumblebee costume! Buzzing with style, little bumblebee!" },
+    ]);
+    const html = buildGallery({ day: "2026-10-31", logText: readFileSync(join(dir, "2026-10-31", "log.txt"), "utf8"), snapshots: null });
+    expect(html).toContain("1 greeting.");
+    expect(html).toContain("One visitor in a bumblebee costume.");
+    expect(html).not.toContain("<img");
+  });
+
+  it("says how long photos are kept, and why an old day's photos are gone", () => {
+    const logText = fixtureLog();
+    const old = buildGallery({ day: "2026-10-31", logText, snapshots: new Set(), retentionDays: 7, expired: true });
+    expect(old).toContain("deleted automatically after 7 days");
+    expect(old.match(/photo removed after 7 days/g)).toHaveLength(2);
+    expect(old).not.toContain("<img");
+    const fresh = buildGallery({ day: "2026-10-31", logText, snapshots: new Set(["snapshots/18-00-02-arrived.png"]), retentionDays: 1, expired: false });
+    expect(fresh).toContain("deleted automatically after 1 day ");
+    expect(fresh).toContain('<img src="snapshots/18-00-02-arrived.png"');
+    expect(fresh).toContain("photo not saved");
+    expect(buildGallery({ day: "2026-10-31", logText, snapshots: new Set(), retentionDays: 0 })).toContain("kept until you delete them");
   });
 });
