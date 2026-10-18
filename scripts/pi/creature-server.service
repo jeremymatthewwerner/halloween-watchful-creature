@@ -1,0 +1,15 @@
+[Unit]
+Description=Watchful Creature server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Change User and WorkingDirectory if your username or clone path differ.
+User=pi
+WorkingDirectory=/home/pi/halloween-watchful-creature
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
