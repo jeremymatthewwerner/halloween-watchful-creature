@@ -22,6 +22,9 @@ export interface GalleryItem {
   line?: string;
 }
 
+/** Same as REHEARSAL_MARK in logs.ts (not imported, so this module stays free of node:fs for the browser). */
+const REHEARSAL_MARK = "[REHEARSAL] ";
+
 const LINE = /^(\d\d):(\d\d):(\d\d) (\S+)\s+(.*)$/;
 const SNAPSHOT = /^(snapshots\/[\w-]+\.(?:jpg|png|webp)) {2}(\S+) (?:\[(\w+)\] )?([\s\S]*)$/;
 /** Continuation lines (multi-line text) are indented under their timestamp. */
@@ -78,7 +81,8 @@ export function galleryItems(logText: string): GalleryItem[] {
   const lines = parseLogText(logText);
   const snaps = lines.filter((l) => l.tag === "snapshot").sort((a, b) => a.at - b.at);
   // Conversation lines reach the log a few seconds late, so match by time, not file order.
-  const creature = lines.filter((l) => l.tag === "creature" && l.text.trim());
+  // Lines from rehearsal mode (pretend visitors) aren't about anyone's real costume.
+  const creature = lines.filter((l) => l.tag === "creature" && l.text.trim() && !l.text.startsWith(REHEARSAL_MARK));
   const items: GalleryItem[] = [];
   snaps.forEach((snap, i) => {
     const m = SNAPSHOT.exec(snap.text);

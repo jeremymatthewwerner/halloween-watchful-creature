@@ -79,6 +79,18 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**.
 - **Conversation:** live transcript plus system notes.
 - **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery** and **all logs**.
 
+### Rehearsal mode (testing without walking into frame)
+**Settings → 🎭 Rehearsal (developer)** pretends visitors walk up, using sample images instead of the camera. Wake the creature first, then tick **Rehearsal on**.
+- **Sample images:** upload image files (kept in the page's memory only, never saved), and/or click greeting snapshots from a day's log (read from `/api/session-logs`). Click a chosen image to make it the camera frame.
+- **🚶 Visitor arrives**, **👋 Leaves**, **👯 Second visitor joins** (a "grew"), and **🔁 Swap to next image**: the visitor steps out of view for 3 s and comes back as the next image, which exercises the gap check and the vision model's NEW/CHANGED verdicts.
+- **▶️ Run script:** arrive, wait 20 s, swap, wait 10 s, leave, wait 15 s, come back (a "returned").
+- While it's on, a red **REHEARSAL — not the real camera** banner covers the video, and real detections are ignored (the detector isn't even run). Untick it to go back to the camera.
+- The real tracker and director run, with their real timings: "left" counts after 8 s out of view, and a joiner is greeted only 30 s after the last greeting.
+- **It uses the real voice and vision APIs**, so it costs money like real visitors.
+- **Logs:** vision lines say `[REHEARSAL]`, and conversation lines from the rehearsal start with `[REHEARSAL]` in `log.txt` and are greyed in `log.html`. **No snapshots are saved** for rehearsal looks: the images are uploads (meant to stay in memory) or log snapshots (already saved), and leaving them out keeps the costume gallery clean. The gallery also skips rehearsal lines. Rehearsal greetings don't count toward tonight's visitor tally or the "don't repeat yourself" memory.
+
+How it works: `web/rehearsal.ts` sits behind two small seams in `web/main.ts`: the frame source (`capture`) and the person detections fed to the tracker. Everything downstream is unchanged.
+
 ## Logs on disk
 Each day gets a folder in `logs/` (for example `logs/2026-10-31/`). Server restarts append to the same day.
 - `log.html`: everything in one readable page: server lines, what visitors and the creature said, system notes, and a **snapshot** of each greeting with the vision verdict (click a snapshot for full size).

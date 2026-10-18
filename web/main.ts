@@ -6,6 +6,8 @@ import { EveningMemory, browserStorage } from "./evening.ts";
 import { eyeLook, GREETING_FLOURISH, type ActiveFlourish } from "./eyeFlourish.ts";
 import { followServerLog } from "./serverLog.ts";
 import { ModePanel } from "./modePanel.ts";
+import { Rehearsal } from "./rehearsal.ts";
+import { RehearsalPanel } from "./rehearsalPanel.ts";
 import { LiveEngine } from "./engines/live.ts";
 import { RealtimeEngine } from "./engines/realtime.ts";
 import type { Engine, EngineDeps } from "./engines/types.ts";
@@ -65,6 +67,7 @@ const ui = {
   serverLogStatus: $<HTMLSpanElement>("server-log-status"),
   sessionLogLink: $<HTMLAnchorElement>("session-log-link"),
   galleryLink: $<HTMLAnchorElement>("gallery-link"),
+  rehearsal: $<HTMLDivElement>("rehearsal"),
   voice: $<HTMLAudioElement>("voice"),
 };
 
@@ -92,9 +95,12 @@ function saveConversation(all = false): void {
   const now = performance.now();
   const lines: ConversationLogRequest["lines"] = transcript
     .takeFinished(now, all)
-    .map((line) => ({ who: line.who, text: line.text.trim(), at: Date.now() - (now - line.start) }));
+    .map((line) => {
+      const at = Date.now() - (now - line.start);
+      return { who: line.who, text: line.text.trim(), at, ...(rehearsal.wasActiveAt(at) && { rehearsal: true }) };
+    });
   if (!lines.length) return;
-  for (const line of lines) if (line.who === "creature") evening.recordLine(line.text);
+  for (const line of lines) if (line.who === "creature" && !line.rehearsal) evening.recordLine(line.text);
   const body = JSON.stringify({ lines } satisfies ConversationLogRequest);
   void fetch("/api/conversation", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => undefined);
 }
@@ -105,6 +111,11 @@ const log = (text: string) => {
   console.log(`[creature] ${text}`);
   show("system", text);
 };
+
+/** Rehearsal mode: sample images and pretend visitors instead of the real camera (see rehearsal.ts). */
+const rehearsal = new Rehearsal({ log });
+/** Rehearsal greetings mustn't count toward tonight's real visitors, so they get a throwaway memory. */
+const rehearsalEvening = new EveningMemory(null);
 
 /**
  * The server may still be starting (a kiosk at boot) or restarting (tsx watch): keep trying
@@ -154,6 +165,7 @@ async function main(): Promise<void> {
 
   const modes = new ModePanel($("modes"), log);
   const voices = new VoicePanel($("voice-picker"), cfg, log);
+  void new RehearsalPanel(ui.rehearsal, ui.video.parentElement!, rehearsal, log).loadDays();
   ui.start.addEventListener("click", () => void wake(cfg, body, minArea, modes, voices), { once: true });
   // Kiosk mode (Pi): start without a click; needs Chromium's --autoplay-policy=no-user-gesture-required.
   if (new URLSearchParams(location.search).has("autowake")) ui.start.click();
@@ -190,21 +202,26 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: M
   if (speakerDevice) await setSpeaker(speakerDevice.deviceId);
   await fillDeviceSelects(camera);
 
+  // While rehearsing, frames come from the chosen sample image instead of the camera.
+  const capture = () => rehearsal.capture(() => camera.capture());
   const deps: EngineDeps = {
     mic,
     character: cfg.character.id,
-    capture: () => camera.capture(),
+    capture,
     recentTranscript: () => transcript.recent(),
     lastVoiceAt: () => meter.lastLoudTime,
-    evening,
+    get evening() {
+      return rehearsal.active ? rehearsalEvening : evening;
+    },
     spookiness: () => modes.spookiness,
     voice: voices.requestVoice,
+    rehearsal: () => rehearsal.active,
   };
   const engine: Engine = cfg.engine === "live" ? new LiveEngine(deps) : new RealtimeEngine(deps);
   modes.attach(engine);
   const meter = new VoiceMeter(audioCtx);
   const director = new Director(
-    { engine, capture: () => camera.capture(), isSpeaking: () => meter.speaking(performance.now()), now: () => performance.now(), log },
+    { engine, capture, isSpeaking: () => meter.speaking(performance.now()), now: () => performance.now(), log },
     { idleCloseMs: cfg.idleCloseSeconds * 1000, backgroundMs: cfg.backgroundFrameSeconds * 1000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000 },
   );
   voices.attach(engine, () => director.visitorsPresent);
@@ -269,9 +286,10 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: M
     })
     .catch((err) => log(`Person detector failed to load: ${(err as Error).message}. Use "Greet now".`));
   setInterval(() => {
-    if (!detector || !camera.ready) return;
     const now = performance.now();
-    const people = detector.detect(ui.video, now);
+    // While rehearsing, pretend visitors replace the real detections (the detector isn't run).
+    const people = rehearsal.detections(() => (detector && camera.ready ? detector.detect(ui.video, now) : null));
+    if (!people) return;
     drawOverlay(people, Number(ui.minArea.value));
     for (const event of tracker.update(people, now)) void director.onVisitorEvent(event);
     const best = people.reduce((m, p) => Math.max(m, p.score), 0);

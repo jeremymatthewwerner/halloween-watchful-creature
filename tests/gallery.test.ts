@@ -70,6 +70,15 @@ describe("costume gallery", () => {
     expect(scoreLine("Hello there, welcome to my porch tonight!", caption)).toBeLessThan(scoreLine("Sir knight, that shield gleams!", caption));
   });
 
+  it("ignores the creature's rehearsal lines", () => {
+    const items = galleryItems(
+      "19:00:00 snapshot snapshots/19-00-00-manual.jpg  manual One ghost in a white sheet.\n" +
+        "19:00:05 creature [REHEARSAL] What a spooky ghost in a white sheet, wow!\n" +
+        "19:00:09 creature Boo to you too!\n",
+    );
+    expect(items[0]!.line).toBe("Boo to you too!");
+  });
+
   it("leaves the line out when the creature said nothing near a snapshot", () => {
     const items = galleryItems("19:00:00 snapshot snapshots/19-00-00-manual.jpg  manual One ghost.\n19:05:00 creature Much later.\n");
     expect(items).toHaveLength(1);

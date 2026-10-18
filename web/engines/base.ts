@@ -151,6 +151,7 @@ export abstract class WebRtcEngine {
           transcript: opts.withTranscript ? this.deps.recentTranscript() : undefined,
           previous: opts.previous,
           previousImage: opts.previousImage,
+          rehearsal: this.deps.rehearsal?.() || undefined,
         }),
       });
       const body = (await res.json()) as {

@@ -10,7 +10,7 @@ import { BodyController, NullSink, SerialSink } from "./body/driver.ts";
 import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "./characters.ts";
 import { config } from "./config.ts";
 import { buildGallery } from "./gallery.ts";
-import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId } from "./logs.ts";
+import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId, wantsSnapshot } from "./logs.ts";
 import { OpenAIError, characterVoice, createLiveSession, createRealtimeCall, describeFrame, sessionVoice } from "./openai.ts";
 
 // Everything this process prints also goes to the dashboard's server log, and (unless
@@ -110,7 +110,7 @@ app.post("/api/conversation", async (c) => {
   if (!Array.isArray(lines)) return c.json({ error: "lines must be an array" }, 400);
   for (const line of lines.slice(0, 100)) {
     if (!["visitor", "creature", "system"].includes(line?.who) || typeof line.text !== "string" || !Number.isFinite(line.at)) continue;
-    sessionLog?.conversation(line.who, line.text.slice(0, 4000), line.at);
+    sessionLog?.conversation(line.who, line.text.slice(0, 4000), line.at, line.rehearsal === true);
   }
   return c.body(null, 204);
 });
@@ -148,9 +148,6 @@ app.get("/api/session-logs/:day/:file{(?:log\\.(?:html|txt)|snapshots/[\\w-]+\\.
   return c.body(data, 200, { "content-type": LOG_FILES[file.split(".").pop()!]!, "cache-control": "no-store" });
 });
 
-/** Looks that start a greeting: their camera frame is worth keeping in the log. */
-const GREETING_LOOKS = new Set(["arrived", "grew", "returned", "manual"]);
-
 /** Describes a camera frame for GPT-Live (which can't take images directly). */
 app.post("/api/vision", async (c) => {
   const req = await c.req.json<VisionRequest>();
@@ -164,9 +161,9 @@ app.post("/api/vision", async (c) => {
   const started = Date.now();
   const result = await describeFrame(config, req);
   const verdict = result.verdict ?? (result.sameGroup === false ? "NEW" : undefined);
-  console.log(`[vision] ${req.reason}${verdict ? ` (${verdict})` : ""} in ${Date.now() - started} ms: ${result.text}`);
-  // Greetings, and checks that found someone new or a costume change, are worth a snapshot.
-  if (sessionLog && config.logSnapshots && (GREETING_LOOKS.has(req.reason) || verdict === "NEW" || verdict === "CHANGED")) {
+  const rehearsal = req.rehearsal === true;
+  console.log(`[vision]${rehearsal ? " [REHEARSAL]" : ""} ${req.reason}${verdict ? ` (${verdict})` : ""} in ${Date.now() - started} ms: ${result.text}`);
+  if (sessionLog && config.logSnapshots && wantsSnapshot(req.reason, verdict, rehearsal)) {
     try {
       sessionLog.snapshot(req.image, req.reason, result.text, verdict);
     } catch (err) {

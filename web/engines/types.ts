@@ -74,4 +74,6 @@ export interface EngineDeps {
   spookiness?(): SpookyLevel;
   /** The voice picked on the dashboard, read as each session starts (null: the server's default). */
   voice?: () => string | null;
+  /** True while rehearsal mode feeds sample images instead of the camera (optional). */
+  rehearsal?(): boolean;
 }
