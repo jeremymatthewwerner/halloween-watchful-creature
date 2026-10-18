@@ -37,12 +37,15 @@ chromium-browser --kiosk --use-fake-ui-for-media-stream \
 - `?autowake` starts the creature without clicking **Wake the creature**.
 
 ## Start on boot
-`scripts/pi/` holds two files: `creature-server.service` (a systemd unit for the server) and `creature-kiosk.desktop` (autostarts Chromium after login). To install them:
+`scripts/pi/` holds `creature-server.service` (a systemd unit for the server), `creature-kiosk.desktop` (runs `kiosk.sh` after login) and `kiosk.sh`. The kiosk script starts Chromium with the flags above and keeps it running: it restarts Chromium if it exits, or if the dashboard stops checking in with the server for 90 s (a frozen page can't reload itself). To install them:
 ```bash
 sudo cp scripts/pi/creature-server.service /etc/systemd/system/
 sudo systemctl enable --now creature-server
-mkdir -p ~/.config/autostart && cp scripts/pi/creature-kiosk.desktop ~/.config/autostart/
+chmod +x scripts/pi/kiosk.sh
+mkdir -p ~/.config/autostart
+sed "s|REPO_DIR|$PWD|" scripts/pi/creature-kiosk.desktop > ~/.config/autostart/creature-kiosk.desktop
 ```
+For the phone remote and push alerts, see **Phone remote and alerts** in the README.
 
 ## Notes
 - **Person detection:** MediaPipe runs on the Pi's GPU in Chromium. If it struggles, lower the camera resolution in `web/vision.ts`.

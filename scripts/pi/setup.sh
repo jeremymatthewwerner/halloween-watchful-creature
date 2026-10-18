@@ -34,8 +34,8 @@ sudo systemctl enable --now creature-server
 
 echo "==> Installing the kiosk autostart"
 mkdir -p ~/.config/autostart
-BROWSER="$(command -v chromium-browser || command -v chromium)"
-sed -e "s|chromium-browser|$BROWSER|" scripts/pi/creature-kiosk.desktop > ~/.config/autostart/creature-kiosk.desktop
+chmod +x scripts/pi/kiosk.sh
+sed -e "s|REPO_DIR|$REPO_DIR|" scripts/pi/creature-kiosk.desktop > ~/.config/autostart/creature-kiosk.desktop
 
 echo
 echo "Done. Next:"

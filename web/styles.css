@@ -112,3 +112,10 @@ code { background: #140c22; padding: 0 4px; border-radius: 4px; }
 .server-log li.warn { color: var(--orange); }
 .server-log li.error { color: var(--red); }
 .server-log li.restart { color: var(--purple); border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+
+/* Health alerts (also on the phone remote at /remote). */
+.alerts ol { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+.alerts li { padding: 6px 10px; border-radius: 8px; border-left: 4px solid var(--orange); background: rgba(255, 122, 26, .08); font-size: 14px; }
+.alerts li.error { border-left-color: var(--red); background: rgba(255, 77, 106, .1); }
+.alerts li.resolved { border-left-color: var(--green); background: none; color: var(--muted); }
+.alerts time { color: var(--muted); font-size: 12px; }

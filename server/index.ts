@@ -12,6 +12,8 @@ import { config } from "./config.ts";
 import { buildGallery } from "./gallery.ts";
 import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId } from "./logs.ts";
 import { OpenAIError, createLiveSession, createRealtimeCall, describeFrame, voiceFor } from "./openai.ts";
+import { listenHost } from "./auth.ts";
+import { Remote } from "./remote.ts";
 
 // Everything this process prints also goes to the dashboard's server log, and (unless
 // LOG_DIR=none) to today's log on disk along with the conversation and greeting snapshots.
@@ -25,14 +27,16 @@ if (sessionLog) {
 
 const app = new Hono();
 
-// Only the dashboard itself may call the API, so other web pages open in the
-// same browser can't start (billed) sessions against this local server.
-const allowedOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-app.use("/api/*", async (c, next) => {
-  const origin = c.req.header("origin");
-  if (origin && !allowedOrigin.test(origin)) return c.json({ error: "forbidden origin" }, 403);
-  await next();
+// Only the dashboard itself may call the API (origin check), so other web pages open in the same
+// browser can't start (billed) sessions against this local server. Other devices (the phone remote)
+// need REMOTE_PIN and a signed-in session. Also health alerts. See server/auth.ts and server/remote.ts.
+const remote = new Remote({
+  ...config,
+  arduinoEnabled: config.bodySerialPort !== "none",
+  bodyStatus: () => body.status,
+  todayLogUrl: () => (sessionLog ? `/api/session-logs/${sessionLog.currentDay}/log.html` : null),
 });
+remote.install(app);
 
 function characterFrom(id: unknown) {
   const wanted = typeof id === "string" && id ? id : config.character;
@@ -185,15 +189,19 @@ if (config.bodySerialPort !== "none") {
 }
 body.startHeartbeat();
 
-const server = serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST ?? "127.0.0.1" }, (info) => {
+const listen = listenHost({ HOST: process.env.HOST, pinSet: Boolean(config.remotePin) });
+if (listen.warning) console.warn(listen.warning);
+const server = serve({ fetch: app.fetch, port: config.port, hostname: listen.host }, (info) => {
   console.log(`Creature server on http://localhost:${info.port} (engine: ${config.engine}, character: ${config.character})`);
+  if (config.remotePin) console.log(`Phone remote on: open http://<this computer's address>:${info.port}/remote on your phone`);
+  remote.start();
   if (!config.apiKey) console.warn("OPENAI_API_KEY is not set: copy .env.example to .env and add your key.");
   if (!config.production) console.log("Open the dashboard at http://localhost:5173");
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 server.on("upgrade", (req, socket, head) => {
-  if (req.url !== "/ws/body") {
+  if (req.url !== "/ws/body" || !remote.checkUpgrade(req).allow) {
     socket.destroy();
     return;
   }

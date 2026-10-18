@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#120a1c" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Jacques remote</title>
+    <style>
+      :root {
+        --bg: #120a1c; --panel: #1e1330; --line: #3a2858; --text: #f3eaff; --muted: #a99bc0;
+        --orange: #ff7a1a; --green: #7dff8a; --red: #ff4d6a; --yellow: #ffd34d;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, sans-serif; padding: 12px 16px calc(24px + env(safe-area-inset-bottom)); }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+      h1 { font-size: 20px; margin: 0; }
+      h2 { font-size: 14px; color: var(--muted); margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+      .dot { font-size: 13px; color: var(--muted); }
+      .dot.on { color: var(--green); }
+      .dot.bad { color: var(--red); }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; min-width: 0; }
+      .stat b { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
+      .stat span { font-size: 16px; overflow-wrap: anywhere; }
+      .good { color: var(--green); } .warn { color: var(--yellow); } .bad { color: var(--red); }
+      button, input { font: inherit; color: inherit; }
+      button { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 12px; min-height: 52px; cursor: pointer; }
+      button:active { transform: scale(.98); }
+      button:disabled { opacity: .45; }
+      .big { width: 100%; font-size: 19px; font-weight: 600; }
+      #kill.sleep { border-color: var(--red); color: var(--red); }
+      #kill.wake { border-color: var(--green); color: var(--green); }
+      .row { display: flex; gap: 8px; margin-top: 8px; }
+      .row > * { flex: 1; }
+      input { width: 100%; background: #0d0716; border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-height: 52px; }
+      form.say { display: flex; gap: 8px; margin-top: 8px; }
+      form.say button { flex: 0 0 auto; }
+      .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .modes button.on { border-color: var(--orange); background: #3a1f0c; color: var(--orange); }
+      .modes button.on::after { content: " ON"; font-size: 12px; font-weight: 700; }
+      ol.alerts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+      ol.alerts li { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--yellow); border-radius: 10px; padding: 8px 10px; }
+      ol.alerts li.error { border-left-color: var(--red); }
+      ol.alerts li.resolved { opacity: .55; border-left-color: var(--green); }
+      ol.alerts small { display: block; color: var(--muted); }
+      .links { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+      a { color: var(--orange); }
+      .notice { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--red); color: var(--red); }
+      #toast { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); background: #2b1a45; border: 1px solid var(--line); border-radius: 12px; padding: 12px; box-shadow: 0 6px 24px #000a; }
+      #toast.bad { border-color: var(--red); }
+      .muted { color: var(--muted); font-size: 14px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>🎃 Jacques remote</h1>
+      <span id="conn" class="dot">…</span>
+    </header>
+
+    <section id="signin" class="card" hidden>
+      <form id="pin-form" method="post" action="/api/remote/login">
+        <label for="pin">PIN (from <code>REMOTE_PIN</code> in .env)</label>
+        <div class="row">
+          <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required maxlength="200" />
+        </div>
+        <div class="row"><button type="submit" class="big">Sign in</button></div>
+        <p id="pin-error" class="bad" hidden></p>
+      </form>
+    </section>
+
+    <section id="app" hidden>
+      <p id="offline" class="notice" hidden></p>
+      <p id="needs-tap" class="notice" hidden></p>
+      <div class="grid">
+        <div class="stat"><b>Creature</b><span id="s-creature">…</span></div>
+        <div class="stat"><b>Visitors</b><span id="s-visitors">…</span></div>
+        <div class="stat"><b>Voice session</b><span id="s-voice">…</span></div>
+        <div class="stat"><b>Doing</b><span id="s-body">…</span></div>
+        <div class="stat"><b>Arduino</b><span id="s-arduino">…</span></div>
+        <div class="stat"><b>Today</b><span id="s-cost">…</span></div>
+      </div>
+
+      <h2>Controls</h2>
+      <button id="kill" class="big" type="button" disabled>…</button>
+      <div class="row"><button id="greet" type="button" disabled>👋 Greet now</button></div>
+      <form id="say-form" class="say">
+        <input id="say-input" placeholder="Make it say…" autocomplete="off" maxlength="300" enterkeyhint="send" />
+        <button type="submit" id="say-button" disabled>Say</button>
+      </form>
+
+      <h2>Quick modes</h2>
+      <div id="modes" class="modes"><span class="muted">Waiting for the dashboard…</span></div>
+
+      <h2>Alerts</h2>
+      <ol id="alerts" class="alerts"></ol>
+      <p id="no-alerts" class="muted">No alerts. All quiet.</p>
+
+      <h2>Logs</h2>
+      <div class="links">
+        <a id="today-log" target="_blank" rel="noreferrer" hidden>📜 Today's log</a>
+        <a id="gallery" target="_blank" rel="noreferrer" hidden>🖼️ Costume gallery</a>
+        <a href="/api/session-logs" target="_blank" rel="noreferrer">All logs</a>
+      </div>
+      <div class="row"><button id="signout" type="button">Sign out</button></div>
+    </section>
+
+    <div id="toast" hidden></div>
+    <script src="/remote.js"></script>
+  </body>
+</html>
