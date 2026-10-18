@@ -19,7 +19,9 @@ class FakeEngine implements Engine {
     this.calls.push("close");
     this.status = "closed";
   });
-  greet = vi.fn(async (image: string | null, reason: string, opts?: { awayMs?: number }) => {
+  greet = vi.fn(async (image: string | null, reason: string, opts?: { awayMs?: number; ready?: Promise<boolean> }) => {
+    // Like the real engines: only greet once the session is open.
+    if (opts?.ready && !(await opts.ready)) return;
     this.calls.push(`greet:${reason}:${image}${opts?.awayMs ? `:${opts.awayMs}` : ""}`);
   });
   observe = vi.fn(async (image: string) => {
@@ -50,7 +52,7 @@ function setup() {
   const logs: string[] = [];
   const director = new Director(
     { engine, capture: () => "frame", isSpeaking: () => speaking, now: () => now, log: (m) => logs.push(m) },
-    { idleCloseMs: 60_000, backgroundMs: 10_000, recheckCooldownMs: 10_000 },
+    { idleCloseMs: 60_000, backgroundMs: 10_000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000 },
   );
   return {
     engine,
@@ -132,6 +134,52 @@ describe("Director", () => {
     expect(engine.calls).toEqual(["greet:returned:frame:10000"]);
     expect(engine.mic).toBe(true);
     expect(director.visitorsPresent).toBe(true);
+  });
+
+  it("wakes the session on a sighting, and sleeps it again soon if nobody arrives", async () => {
+    const { engine, director, advance } = setup();
+    await director.onVisitorEvent({ type: "sighted" });
+    expect(engine.calls).toEqual(["connect"]);
+    expect(engine.mic).toBe(false);
+    advance(14_000);
+    await director.tick();
+    expect(engine.status).toBe("open");
+    advance(2_000);
+    await director.tick();
+    expect(engine.calls).toEqual(["connect", "close"]);
+  });
+
+  it("an arrival after a sighting uses the session it woke, and isn't closed by the sighting timer", async () => {
+    const { engine, director, advance } = setup();
+    await director.onVisitorEvent({ type: "sighted" });
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    advance(20_000);
+    await director.tick();
+    expect(engine.calls.filter((c) => c === "connect" || c === "close")).toEqual(["connect"]);
+    // Sightings while the session is open (or someone's present) do nothing.
+    await director.onVisitorEvent({ type: "sighted" });
+    expect(engine.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the greeting (and its look) while the session is still connecting", async () => {
+    const { engine, director } = setup();
+    let finishConnect = () => {};
+    engine.connect.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishConnect = () => {
+            engine.status = "open";
+            resolve();
+          };
+        }),
+    );
+    const arriving = director.onVisitorEvent({ type: "arrived", count: 1 });
+    await Promise.resolve();
+    expect(engine.greet).toHaveBeenCalledTimes(1);
+    expect(engine.calls).toEqual([]); // waiting for the session before speaking
+    finishConnect();
+    await arriving;
+    expect(engine.calls).toEqual(["greet:arrived:frame"]);
   });
 
   it("rechecks for someone new after a presence gap, at most once per cooldown, logging every gap", async () => {

@@ -42,6 +42,8 @@ export const DEFAULT_VISITOR_OPTIONS: VisitorOptions = {
 export type PresenceState = "empty" | "arriving" | "present" | "leaving";
 
 export type VisitorEvent =
+  /** Someone just came into view on an empty porch; not yet confirmed as a visitor. */
+  | { type: "sighted" }
   | { type: "arrived"; count: number }
   | { type: "grew"; count: number; from: number }
   /** The same group came back soon after leaving (e.g. detection flicker): don't greet again. */
@@ -86,6 +88,7 @@ export class VisitorTracker {
         if (close > 0) {
           this.state = "arriving";
           this.since = now;
+          events.push({ type: "sighted" });
         }
         break;
 

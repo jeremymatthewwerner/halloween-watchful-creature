@@ -165,7 +165,7 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
   const meter = new VoiceMeter(audioCtx);
   const director = new Director(
     { engine, capture: () => camera.capture(), isSpeaking: () => meter.speaking(performance.now()), now: () => performance.now(), log },
-    { idleCloseMs: cfg.idleCloseSeconds * 1000, backgroundMs: cfg.backgroundFrameSeconds * 1000, recheckCooldownMs: 10_000 },
+    { idleCloseMs: cfg.idleCloseSeconds * 1000, backgroundMs: cfg.backgroundFrameSeconds * 1000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000 },
   );
 
   // --- usage / cost ---

@@ -1,5 +1,5 @@
 import { UNSURE_RETURN, WebRtcEngine } from "./base.ts";
-import type { Engine, GreetReason } from "./types.ts";
+import type { Engine, GreetOptions, GreetReason } from "./types.ts";
 
 type ServerEvent = { type: string; [key: string]: unknown };
 
@@ -77,7 +77,8 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
     }
   }
 
-  async greet(image: string | null, reason: GreetReason): Promise<void> {
+  async greet(image: string | null, reason: GreetReason, opts: GreetOptions = {}): Promise<void> {
+    if (opts.ready && !(await opts.ready)) return;
     this.whenIdle(() => {
       const content: Record<string, string>[] = [];
       if (image) content.push({ type: "input_image", image_url: image });

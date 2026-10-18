@@ -21,6 +21,8 @@ class TestLive extends LiveEngine {
   vision = "One visitor in a green dinosaur costume with a sparkly tail.";
   sameGroup: boolean | undefined = undefined;
   visionError: Error | null = null;
+  /** When set, looks wait for this before answering (a slow vision call). */
+  lookGate: Promise<void> | null = null;
   constructor(d = deps()) {
     super(d);
     this.status = "open";
@@ -33,6 +35,7 @@ class TestLive extends LiveEngine {
   }
   protected async look(_image: string, reason: string, opts?: unknown): Promise<{ text: string; sameGroup?: boolean }> {
     this.looks.push({ reason, opts });
+    if (this.lookGate) await this.lookGate;
     if (this.visionError) throw this.visionError;
     return { text: this.vision, sameGroup: this.sameGroup };
   }
@@ -103,6 +106,43 @@ describe("LiveEngine", () => {
     e.sameGroup = true; // ignored without a previous description
     await e.greet("img", "returned", { awayMs: 60_000 });
     expect(e.looks[0]).toEqual({ reason: "returned", opts: { previous: undefined } });
+    expect(String(e.sent[0]!.content)).toContain("New visitors just walked up");
+  });
+
+  it("says a quick hello while vision is slow, then compliments the costumes", async () => {
+    const e = new TestLive();
+    let finishLook = () => {};
+    e.lookGate = new Promise<void>((resolve) => (finishLook = resolve));
+    const greeting = e.greet("img", "arrived");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(e.sent.map((s) => String(s.content))).toEqual([expect.stringContaining("give them a quick, warm hello")]);
+    finishLook();
+    await greeting;
+    expect(e.sent).toHaveLength(2);
+    expect(String(e.sent[1]!.content)).toContain("Your eyes have focused. What you see: One visitor in a green dinosaur costume");
+    expect(String(e.sent[1]!.content)).toContain("Now compliment their costumes.");
+  });
+
+  it("looks while the session connects, and stays silent if it can't connect", async () => {
+    const e = new TestLive();
+    e.status = "connecting";
+    let connected = (_ok: boolean) => {};
+    const ready = new Promise<boolean>((resolve) => (connected = resolve));
+    const greeting = e.greet("img", "arrived", { ready });
+    await Promise.resolve();
+    expect(e.looks).toHaveLength(1); // already looking
+    connected(false);
+    await greeting;
+    expect(e.sent).toEqual([]);
+  });
+
+  it("doesn't compare a return with a group from before the session (re)connected", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    e.status = "connecting";
+    e.sent = [];
+    await e.greet("img", "returned", { awayMs: 20_000, ready: Promise.resolve(true) });
+    expect(e.looks.at(-1)).toEqual({ reason: "returned", opts: { previous: undefined, previousImage: undefined } });
     expect(String(e.sent[0]!.content)).toContain("New visitors just walked up");
   });
 

@@ -8,6 +8,8 @@ export interface DirectorOptions {
   backgroundMs: number;
   /** Check presence gaps for someone new at most this often. */
   recheckCooldownMs: number;
+  /** A session woken early for a sighting closes after this long if nobody actually arrives. */
+  sightingGraceMs: number;
 }
 
 export interface DirectorDeps {
@@ -27,7 +29,8 @@ export class Director {
   /** When false (kill switch), the director never connects or greets on its own. */
   autopilot = true;
   private present = false;
-  private emptySince: number | null = null;
+  /** While nobody's present: when to sleep the voice session (null: not scheduled). */
+  private idleCloseAt: number | null = null;
   private lastObserveAt = 0;
   private lastRecheckAt = -Infinity;
   private connecting: Promise<void> | null = null;
@@ -47,14 +50,22 @@ export class Director {
   async onVisitorEvent(event: VisitorEvent): Promise<void> {
     const { engine, log } = this.deps;
     switch (event.type) {
+      case "sighted":
+        // Someone just came into view: start waking the voice session now, so it's (nearly)
+        // ready by the time they count as arrived. If they don't, it goes back to sleep soon.
+        if (!this.autopilot || this.present || engine.status !== "closed") return;
+        log("Someone's coming into view: waking the voice session");
+        this.idleCloseAt = this.deps.now() + this.opts.sightingGraceMs;
+        void this.ensureOpen();
+        break;
       case "arrived":
         this.present = true;
-        this.emptySince = null;
+        this.idleCloseAt = null;
         if (!this.autopilot) return;
         log(`Visitors arrived (${event.count})`);
         engine.setMicEnabled(true);
-        if (!(await this.ensureOpen())) return;
-        await this.greet("arrived");
+        // The engine starts looking right away, while the session finishes connecting.
+        await this.greet("arrived", {}, this.ensureOpen());
         break;
       case "grew":
         if (!this.autopilot || engine.status !== "open") return;
@@ -63,14 +74,13 @@ export class Director {
         break;
       case "returned": {
         this.present = true;
-        this.emptySince = null;
+        this.idleCloseAt = null;
         if (!this.autopilot) return;
         engine.setMicEnabled(true);
-        if (!(await this.ensureOpen())) return;
         // Same people or the next group? The engine compares a fresh look with the last group:
         // new visitors get a full greeting, the same ones get silence or a quick welcome back.
         log(`Someone's here after ${Math.round(event.awayMs / 1000)}s; checking whether they're new`);
-        await this.greet("returned", { awayMs: event.awayMs });
+        await this.greet("returned", { awayMs: event.awayMs }, this.ensureOpen());
         break;
       }
       case "gap": {
@@ -88,7 +98,7 @@ export class Director {
       }
       case "left":
         this.present = false;
-        this.emptySince = this.deps.now();
+        this.idleCloseAt = this.deps.now() + this.opts.idleCloseMs;
         log("Visitors left");
         if (this.autopilot) engine.setMicEnabled(false);
         break;
@@ -111,14 +121,9 @@ export class Director {
       if (engine.status === "open" && t - this.lastObserveAt >= this.opts.backgroundMs && !this.busy()) {
         await this.observe();
       }
-    } else if (
-      engine.status === "open" &&
-      this.emptySince !== null &&
-      t - this.emptySince >= this.opts.idleCloseMs &&
-      !this.busy()
-    ) {
+    } else if (engine.status === "open" && this.idleCloseAt !== null && t >= this.idleCloseAt && !this.busy()) {
       this.deps.log("Porch is empty: sleeping the voice session");
-      this.emptySince = null;
+      this.idleCloseAt = null;
       await engine.close();
     }
   }
@@ -126,7 +131,7 @@ export class Director {
   /** Operator button: greet whoever is there now (connecting if needed). */
   async greetNow(): Promise<void> {
     this.deps.engine.setMicEnabled(true);
-    if (await this.ensureOpen(true)) await this.greet("manual");
+    await this.greet("manual", {}, this.ensureOpen(true));
   }
 
   /** Kill switch: stop talking, close the session and stay asleep until re-enabled. */
@@ -145,9 +150,10 @@ export class Director {
     return this.deps.isSpeaking() || this.deps.engine.isThinking();
   }
 
-  private async greet(reason: GreetReason, opts?: { awayMs?: number }): Promise<void> {
+  /** `ready`: the session connecting; the engine looks meanwhile and greets once it's open. */
+  private async greet(reason: GreetReason, opts: { awayMs?: number } = {}, ready?: Promise<boolean>): Promise<void> {
     this.lastObserveAt = this.deps.now();
-    await this.deps.engine.greet(this.deps.capture(), reason, opts);
+    await this.deps.engine.greet(this.deps.capture(), reason, { ...opts, ready });
   }
 
   private async observe(): Promise<void> {

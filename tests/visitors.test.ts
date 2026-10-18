@@ -3,12 +3,14 @@ import { VisitorTracker, type VisitorEvent } from "../web/visitors.ts";
 
 const person = (area = 0.1) => ({ area });
 
-/** Feeds frames every 200 ms; returns all events with their timestamps. */
-function run(tracker: VisitorTracker, frames: number[], start = 0): { t: number; e: VisitorEvent }[] {
+/** Feeds frames every 200 ms; returns the events (without "sighted", unless asked) with their timestamps. */
+function run(tracker: VisitorTracker, frames: number[], start = 0, withSightings = false): { t: number; e: VisitorEvent }[] {
   const out: { t: number; e: VisitorEvent }[] = [];
   frames.forEach((count, i) => {
     const t = start + i * 200;
-    for (const e of tracker.update(Array.from({ length: count }, () => person()), t)) out.push({ t, e });
+    for (const e of tracker.update(Array.from({ length: count }, () => person()), t)) {
+      if (withSightings || e.type !== "sighted") out.push({ t, e });
+    }
   });
   return out;
 }
@@ -19,6 +21,13 @@ describe("VisitorTracker", () => {
     const events = run(tracker, [1, 1, 1, 1, 1, 1, 1, 1]);
     expect(events).toEqual([{ t: 800, e: { type: "arrived", count: 1 } }]);
     expect(tracker.state).toBe("present");
+  });
+
+  it("reports a sighting the moment someone appears on an empty porch, before they count as arrived", () => {
+    const tracker = new VisitorTracker();
+    const events = run(tracker, [0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1], 0, true);
+    // A short-lived sighting, then a second one that becomes an arrival.
+    expect(events.map((x) => `${x.t}:${x.e.type}`)).toEqual(["200:sighted", "1400:sighted", "2200:arrived"]);
   });
 
   it("ignores people who are too far away", () => {

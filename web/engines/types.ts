@@ -11,6 +11,16 @@ export type EngineEvent =
   | { type: "usage"; voiceSeconds?: number; tokens?: number }
   | { type: "error"; message: string };
 
+export interface GreetOptions {
+  /** For "returned": how long they were away. */
+  awayMs?: number;
+  /**
+   * The session connecting (resolves true once open). The engine can start looking meanwhile,
+   * but only speaks once it resolves true; false means it couldn't connect, so skip the greeting.
+   */
+  ready?: Promise<boolean>;
+}
+
 export interface Engine {
   readonly kind: "live" | "realtime";
   readonly status: EngineStatus;
@@ -19,7 +29,7 @@ export interface Engine {
   connect(): Promise<void>;
   close(): Promise<void>;
   /** Make the creature greet whoever is in this frame. */
-  greet(image: string | null, reason: GreetReason, opts?: { awayMs?: number }): Promise<void>;
+  greet(image: string | null, reason: GreetReason, opts?: GreetOptions): Promise<void>;
   /** Silently update what the creature can see. */
   observe(image: string): Promise<void>;
   /** Someone reappeared after a short gap: check whether they're someone new, and greet them if so. */

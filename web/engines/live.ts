@@ -1,5 +1,5 @@
 import { UNSURE_RETURN, WebRtcEngine, withTimeout } from "./base.ts";
-import type { Engine, GreetReason } from "./types.ts";
+import type { Engine, GreetOptions, GreetReason } from "./types.ts";
 
 type ServerEvent = { type: string; [key: string]: unknown };
 
@@ -11,11 +11,38 @@ const GREETING: Record<GreetReason, (seen: string) => string> = {
   returned: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.`,
 };
 
+/**
+ * Said while the vision model is still looking (it takes a couple of seconds), so visitors hear
+ * something right away. Not for "returned": the same people back soon should get silence.
+ */
+const QUICK_HELLO: Partial<Record<GreetReason, string>> = {
+  arrived:
+    "[CAMERA] Visitors just walked up to you. Your eyes are still focusing on their costumes: right now, give them a quick, " +
+    "warm hello in character (one short line, like leaning in for a closer look). Don't describe or guess their costumes yet.",
+  manual:
+    "[CAMERA] Someone is in front of you. Your eyes are still focusing: right now, give them a quick, warm hello in character " +
+    "(one short line). Don't describe or guess their costumes yet.",
+  grew:
+    "[CAMERA] More visitors just joined the group. Your eyes are still focusing on them: give the newcomers a quick hello in " +
+    "character (one short line). Don't describe or guess their costumes yet.",
+};
+
+/** After a quick hello: the costume details, once the vision model has them. */
+const FOLLOW_UP: Partial<Record<GreetReason, (seen: string) => string>> = {
+  arrived: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.`,
+  manual: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.`,
+  grew: (seen) => `[CAMERA] Your eyes have focused on the group. What you see now: ${seen} Now compliment the newcomers' costumes.`,
+};
+
+/** Wait this long for the vision model before saying a quick hello. */
+const HELLO_AFTER_MS = 250;
+
 /** Firmer follow-ups when a greeting request didn't make the creature start talking. */
 const NUDGE = {
   greet: "Visitors are standing in front of you right now. Greet them immediately and compliment their costumes.",
   grew: "New visitors just joined the group and you haven't welcomed them yet. Welcome the newcomers now and compliment their costumes.",
   newcomer: "Someone new is standing in front of you and you haven't greeted them yet. Greet them now and compliment their costumes.",
+  compliment: "You haven't complimented the visitors' costumes yet. Do it now.",
 };
 
 /** Speech after at least this much quiet counts as a new utterance. */
@@ -105,25 +132,45 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     }
   }
 
-  async greet(image: string | null, reason: GreetReason, opts: { awayMs?: number } = {}): Promise<void> {
+  async greet(image: string | null, reason: GreetReason, opts: GreetOptions = {}): Promise<void> {
+    // Compare a return with the last group only if this session greeted them: a new session doesn't remember.
+    const previous = reason === "returned" && this.status === "open" && this.lastGroup ? this.lastGroup : undefined;
+    const alreadyGreeted = reason === "grew" && Date.now() - this.lastNewcomerAt < NEWCOMER_GREETED_MS;
+    // Start looking right away: the vision call runs while the session finishes connecting.
+    const looking = image
+      ? this.look(image, reason, { previous, previousImage: previous ? this.lastGroupImage : undefined }).then(
+          (result) => ({ result }),
+          (error: Error) => ({ error }),
+        )
+      : null;
+    if (opts.ready && !(await opts.ready)) return;
+
+    // Vision takes a couple of seconds: say hello first instead of standing there silent.
+    const hello = QUICK_HELLO[reason];
+    let saidHello = false;
+    if (looking && hello && !alreadyGreeted && !(await settlesWithin(looking, HELLO_AFTER_MS))) {
+      this.append("session.commentary.append", null, hello);
+      this.scheduleNudge(reason === "grew" ? NUDGE.grew : NUDGE.greet);
+      saidHello = true;
+    }
+
     let seen = "Your eyes aren't working right now, so you can't see their costumes; ask what they're dressed as.";
     let sameGroup = false;
     let looked = false;
-    if (image) {
-      try {
-        const previous = reason === "returned" && this.lastGroup ? this.lastGroup : undefined;
-        const result = await this.look(image, reason, { previous, previousImage: previous ? this.lastGroupImage : undefined });
-        seen = result.text;
-        sameGroup = Boolean(previous) && result.sameGroup === true;
+    if (looking) {
+      const outcome = await looking;
+      if ("result" in outcome) {
+        seen = outcome.result.text;
+        sameGroup = Boolean(previous) && outcome.result.sameGroup === true;
         looked = true;
-      } catch (err) {
-        this.emit({ type: "error", message: `vision: ${(err as Error).message}` });
+      } else {
+        this.emit({ type: "error", message: `vision: ${outcome.error.message}` });
         seen = "It's too hard to see their costumes right now; ask what they're dressed as.";
       }
     }
     this.lastObservation = seen;
     if (reason === "returned") {
-      if (!looked && this.lastGroup) {
+      if (!looked && previous) {
         // Keep lastGroup: the next return that gets a clear look still compares with them.
         this.emit({ type: "note", text: "couldn't check whether these are the same visitors (no clear look): asking them" });
         this.append("session.commentary.append", null, UNSURE_RETURN);
@@ -141,7 +188,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       }
       this.emit({ type: "note", text: `new visitors (vision saw: ${seen})` });
     }
-    if (reason === "grew" && Date.now() - this.lastNewcomerAt < NEWCOMER_GREETED_MS) {
+    if (alreadyGreeted) {
       // A same/new check already greeted them: just keep the group's description current.
       this.emit({ type: "note", text: "the newcomers were already greeted" });
       this.lastGroup = seen;
@@ -152,8 +199,9 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     if (reason !== "grew") this.lastGroup = seen;
     else this.lastGroup = `${this.lastGroup} ${seen}`.trim();
     if (image) this.lastGroupImage = image;
-    this.append("session.commentary.append", null, GREETING[reason](seen));
-    this.scheduleNudge(reason === "grew" ? NUDGE.grew : NUDGE.greet);
+    const followUp = FOLLOW_UP[reason];
+    this.append("session.commentary.append", null, saidHello && followUp ? followUp(seen) : GREETING[reason](seen));
+    this.scheduleNudge(reason === "grew" ? NUDGE.grew : saidHello ? NUDGE.compliment : NUDGE.greet);
   }
 
   /**
@@ -294,4 +342,15 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     if (!this.send({ type: "session.close" })) return;
     await withTimeout(closed, 10000, "no session.closed").catch(() => undefined);
   }
+}
+
+/** Whether `promise` settles within `ms`; never waits longer than that. */
+function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms);
+    void promise.then(() => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
 }
