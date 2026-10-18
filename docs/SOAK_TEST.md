@@ -65,7 +65,7 @@ A 4-hour evening in 73 minutes: 134 groups (129 new, 5 swap-ins, 16 returns), 27
 
 | | Start → end (after warm-up) | Growth |
 |---|---|---|
-| Server heap (after GC) | 13.8 → 16.8 MB (mostly the 500-line log buffer filling) | 0.8 MB/h |
+| Server heap (after GC) | 13.8 → 16.8 MB (most of it in the first 5 minutes) | 0.8 MB/h |
 | Server RSS | peak 54 MB | 8 MB/h |
 | Browser JS heap (after GC) | peak 4 MB | 0.3 MB/h |
 | Detached DOM nodes | about 490, flat | −7/h |
