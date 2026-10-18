@@ -13,6 +13,11 @@ export const ALERT_KINDS: Record<AlertKind, KindInfo> = {
   "arduino-disconnected": { level: "warn", title: "Arduino disconnected", push: "The Arduino (eyes) is disconnected. Check its USB cable." },
   "vision-errors": { level: "warn", title: "Vision errors piling up", push: "Several costume looks failed in a row. Check the internet connection and the OpenAI account." },
   "voice-errors": { level: "error", title: "Voice session failing", push: "Jacques's voice session keeps failing to start. Check the internet connection and the OpenAI account." },
+  "voice-offline": {
+    level: "warn",
+    title: "Voice offline: playing recorded greetings",
+    push: "Jacques can't reach his live voice (internet or OpenAI trouble), so he's playing recorded greetings. He keeps retrying and switches back by himself.",
+  },
   "cost-cap": { level: "warn", title: "Daily cost cap reached", push: "The daily awake-time cap was reached, so Jacques went to sleep. Tap Wake on the remote to keep going tonight." },
   "watchdog-reload": { level: "warn", title: "Dashboard reloaded itself", push: "The dashboard hit trouble and reloaded itself to recover." },
   "needs-wake": { level: "error", title: "Dashboard needs a tap", push: "The dashboard reloaded but the browser blocks sound until someone clicks or taps the dashboard screen once." },
@@ -88,12 +93,13 @@ export class AlertCenter {
     return pushed;
   }
 
-  /** The problem went away by itself (the Arduino came back, frames are flowing again). */
-  resolve(kind: AlertKind): void {
+  /** The problem went away by itself (the Arduino came back, frames are flowing again). `detail` is for the log. */
+  resolve(kind: AlertKind, detail = ""): void {
     const open = this.list.find((a) => a.kind === kind && a.resolvedAt === null);
     if (!open) return;
     open.resolvedAt = this.now();
-    console.log(`[alert] cleared: ${open.title}`);
+    const text = detail.replace(/\s+/g, " ").trim().slice(0, 200);
+    console.log(`[alert] cleared: ${open.title}${text ? ` (${text})` : ""}`);
     this.changed();
   }
 

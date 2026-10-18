@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   LIVE_VOICES,
   REALTIME_VOICES,
+  TTS_VOICES,
+  describeRendition,
   docsBlurb,
   findVoice,
   groupVoices,
   isKnownVoice,
+  isTtsVoice,
+  renditionKey,
   resolveVoice,
+  ttsVoiceFor,
 } from "../shared/voices.ts";
 import type { StorageLike } from "../web/evening.ts";
 import { loadPickedVoice, savePickedVoice, shortName, voiceKey, voiceStatus, voiceTags } from "../web/voiceChoice.ts";
@@ -135,5 +140,41 @@ describe("dashboard voice pick", () => {
     expect(voiceTags(c, status, "ripple")).toEqual(["this session", "VOICE in .env"]);
     expect(voiceTags(c, status, "meridian")).toEqual(["Jacques O'Lantern's default"]);
     expect(shortName("Edgar the Raven, Rhyming Critic")).toBe("Edgar the Raven");
+  });
+});
+
+describe("text-to-speech voices for the recorded clips", () => {
+  it("lists gpt-4o-mini-tts's 13 voices; of GPT-Live's only marin is one, and all of gpt-realtime's are", () => {
+    expect(TTS_VOICES).toHaveLength(13);
+    expect(LIVE_VOICES.voices.filter((v) => isTtsVoice(v.id)).map((v) => v.id)).toEqual(["marin"]);
+    for (const v of REALTIME_VOICES.voices) expect(ttsVoiceFor("realtime", v.id)).toEqual({ voice: v.id, accent: null, exact: true });
+  });
+
+  it("maps GPT-Live-only voices to cedar or marin by presentation, with the accent asked for", () => {
+    expect(ttsVoiceFor("live", "marin")).toEqual({ voice: "marin", accent: null, exact: true });
+    expect(ttsVoiceFor("live", "ripple")).toEqual({ voice: "cedar", accent: "Australian", exact: false });
+    expect(ttsVoiceFor("live", "quartz")).toEqual({ voice: "marin", accent: "Australian", exact: false });
+    expect(ttsVoiceFor("live", "vesper")).toEqual({ voice: "cedar", accent: "British", exact: false });
+    expect(ttsVoiceFor("live", "willow")).toEqual({ voice: "marin", accent: "Irish", exact: false });
+    expect(ttsVoiceFor("live", "cinder")).toEqual({ voice: "cedar", accent: "Southern U.S.", exact: false });
+    // North American is the TTS voices' own way of speaking: no accent to ask for.
+    expect(ttsVoiceFor("live", "meridian")).toEqual({ voice: "cedar", accent: null, exact: false });
+    expect(ttsVoiceFor("live", "gleam")).toEqual({ voice: "marin", accent: null, exact: false });
+    // The other languages' voices carry their accent in English, so the clips do too.
+    expect(ttsVoiceFor("live", "sillage")).toEqual({ voice: "cedar", accent: "French", exact: false });
+    expect(ttsVoiceFor("live", "nuri")).toEqual({ voice: "marin", accent: "German", exact: false });
+    // Every GPT-Live voice has a rendition.
+    for (const v of LIVE_VOICES.voices) expect(ttsVoiceFor("live", v.id)).not.toBeNull();
+  });
+
+  it("has no rendition for a voice it knows nothing about, and makes folder-safe keys", () => {
+    expect(ttsVoiceFor("live", "custom-voice")).toBeNull();
+    expect(ttsVoiceFor("realtime", "ripple")).toBeNull();
+    // A TTS voice set as VOICE on GPT-Live is still read by itself.
+    expect(ttsVoiceFor("live", "cedar")).toEqual({ voice: "cedar", accent: null, exact: true });
+    expect(renditionKey({ voice: "cedar", accent: null })).toBe("cedar");
+    expect(renditionKey({ voice: "cedar", accent: "Australian" })).toBe("cedar-australian");
+    expect(renditionKey({ voice: "marin", accent: "Southern U.S." })).toBe("marin-southern-u-s");
+    expect(describeRendition({ voice: "cedar", accent: "British" })).toBe("cedar with a light British accent");
   });
 });

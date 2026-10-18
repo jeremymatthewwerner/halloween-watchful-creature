@@ -17,9 +17,12 @@ import type {
   GeneratedVisitorList,
   ServerLogEntry,
   VisionRequest,
+  VoiceClipsRequest,
+  VoiceClipsResult,
 } from "../shared/types.ts";
 import { BodyController, NullSink, SerialSink } from "./body/driver.ts";
 import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "./characters.ts";
+import { VoiceClips, openaiSpeaker } from "./clips.ts";
 import { config } from "./config.ts";
 import { buildGallery } from "./gallery.ts";
 import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId, wantsSnapshot } from "./logs.ts";
@@ -200,7 +203,7 @@ app.post("/api/snapshots/delete-all", async (c) => {
 });
 
 /** The morning-after recap: GET /recap/<day> and /recap (the latest evening). Behind the same guard. */
-if (sessionLog) installRecap(app, { logDir: config.logDir, logSnapshots: config.logSnapshots, name: recapName });
+if (sessionLog) installRecap(app, { logDir: config.logDir, logSnapshots: config.snapshots, name: recapName });
 
 const LOG_FILES: Record<string, string> = { html: "text/html; charset=utf-8", txt: "text/plain; charset=utf-8", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
@@ -292,6 +295,37 @@ app.post("/api/rehearsal/generate", async (c) => {
   } finally {
     generating = false;
   }
+});
+
+// --- recorded clips in the session voice (billed text-to-speech, cached on disk) ---
+const voiceClips =
+  config.clipCacheDir === "none"
+    ? null
+    : new VoiceClips({ dir: config.clipCacheDir, engine: config.engine, speak: config.apiKey ? openaiSpeaker(config) : null, log: console.log });
+
+/**
+ * The lure and offline-greeting clips in the voice the next session will use (made and cached the
+ * first time). On an error the dashboard keeps the bundled clips (web/public/<kind>/<character>/).
+ */
+app.post("/api/clips", async (c) => {
+  if (!voiceClips) return c.json({ error: "Per-voice clips are off (CLIP_CACHE_DIR=none)" }, 503);
+  const req = await c.req.json<VoiceClipsRequest>().catch(() => ({}) as VoiceClipsRequest);
+  const character = characterFrom(req.character);
+  const { voice } = sessionVoice(config, character, req.voice ?? undefined);
+  try {
+    const result: VoiceClipsResult = await voiceClips.ensure(character.id, voice);
+    return c.json(result, 200, { "cache-control": "no-store" });
+  } catch (err) {
+    console.warn(`[clips] ${character.name} in ${voice}: ${(err as Error).message}; the dashboard keeps the bundled clips`);
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
+
+app.get("/api/clips/:character/:rendition/:kind/:file", async (c) => {
+  const { character, rendition, kind, file } = c.req.param();
+  const data = await voiceClips?.file(character, rendition, kind, file);
+  if (!data) return c.notFound();
+  return c.body(data, 200, { "content-type": "audio/mpeg", "cache-control": "no-cache" });
 });
 
 if (config.production) {

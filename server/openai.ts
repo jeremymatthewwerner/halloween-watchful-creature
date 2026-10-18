@@ -13,12 +13,16 @@ export class OpenAIError extends Error {
   }
 }
 
-async function post(config: Config, path: string, body: BodyInit, headers: Record<string, string> = {}): Promise<Response> {
+/** Starting a voice session should take a second or two: give up well before a visitor gives up. */
+const SESSION_TIMEOUT_MS = 12_000;
+
+async function post(config: Config, path: string, body: BodyInit, headers: Record<string, string> = {}, timeoutMs?: number): Promise<Response> {
   if (!config.apiKey) throw new OpenAIError("OPENAI_API_KEY is not set on the server", 503, "");
   const res = await fetch(`${config.apiBase}${path}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${config.apiKey}`, ...headers },
     body,
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
   });
   if (!res.ok) {
     const text = await res.text();
@@ -49,6 +53,7 @@ export async function createLiveSession(
       transport: { type: "webrtc", sdp: opts.sdp },
     }),
     { "Content-Type": "application/json" },
+    SESSION_TIMEOUT_MS,
   );
   const data = (await res.json()) as { session?: { id?: string }; transport?: { sdp?: string } };
   if (!data.transport?.sdp) throw new OpenAIError("Live session response had no SDP answer", 502, JSON.stringify(data));
@@ -86,7 +91,7 @@ export async function createRealtimeCall(
   const form = new FormData();
   form.set("sdp", opts.sdp);
   form.set("session", JSON.stringify(session));
-  const res = await post(config, "/realtime/calls", form);
+  const res = await post(config, "/realtime/calls", form, {}, SESSION_TIMEOUT_MS);
   return { sdp: await res.text() };
 }
 

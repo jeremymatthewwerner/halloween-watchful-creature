@@ -183,7 +183,7 @@ export function topCostumes(items: GalleryItem[], snapshots: ReadonlySet<string>
   const clusters: RecapCostume[][] = [];
   for (const item of items) {
     if (item.caption.includes(REHEARSAL_MARK.trim())) continue;
-    const costume: RecapCostume = { ...item, standouts: standoutDetails(item.caption), hasImage: snapshots?.has(item.file) ?? false };
+    const costume: RecapCostume = { ...item, standouts: standoutDetails(item.caption), hasImage: item.file ? (snapshots?.has(item.file) ?? false) : false };
     const startsGroup = item.label === "arrived" || item.label === "grew" || item.verdict === "NEW";
     if (startsGroup || !clusters.length) clusters.push([costume]);
     else clusters[clusters.length - 1]!.push(costume);
@@ -372,7 +372,7 @@ export function buildRecap(opts: RecapOptions & { name?: string }): string {
       const tag = [LABELS[c.label] ?? c.label, c.verdict === "CHANGED" ? "new look" : ""].filter(Boolean).join(" · ");
       return (
         `<figure class="card">` +
-        (c.hasImage
+        (c.hasImage && c.file
           ? `<a href="${base}/${escapeHtml(c.file)}" target="_blank"><img src="${base}/${escapeHtml(c.file)}" alt="Costume snapshot at ${c.time}" loading="lazy"></a>`
           : `<div class="noimg">🎃<span>${opts.snapshots ? "photo no longer saved" : "photos are off"}</span></div>`) +
         `<figcaption><div class="meta"><time>${clockTime(Number(c.time.slice(0, 2)) * 3600 + Number(c.time.slice(3, 5)) * 60)}</time> <span class="tag">${escapeHtml(tag)}</span></div>` +

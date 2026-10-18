@@ -81,8 +81,16 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
 - **Nudge:** a greeting request that doesn't make the creature start a **new** utterance within 5 s gets one firmer instruction, worded for the case (visitors, newcomers to a group, or someone new). The tail of a reply already under way when the request went out doesn't count. That's how a newcomer's greeting got lost while the creature was mid-sentence.
 - **left:** mute the mic, so street noise doesn't get answers. After `IDLE_CLOSE_SECONDS` (default 180) of empty porch, **close the session** to stop the meter. Visitors reconnect it automatically, in about 1–2 s.
 - **Session drops mid-visit** (expired or network): it reconnects and catches up silently, without greeting again.
-- **Failed start** (bad key or no network): it backs off 15 s instead of retrying every second.
-- **Kill switch:** closes the session and ignores visitors until you press Wake.
+- **Kill switch:** closes the session and ignores visitors until you press Wake (and stops a recorded greeting).
+
+### Offline mode (`web/offline.ts`, in the Director)
+The voice session can fail to start (`/api/session` error, no network) or be too slow. Instead of silence:
+- **A greeting waits 5 s** (`connectTimeoutMs`, counted from the arrival; the session started waking at the sighting) for the session to open. If it hasn't, a **recorded greeting** plays (`web/public/greeting/<character>/`, 16 costume-agnostic lines for Jacques) and the live greeting is **owed**. The connection carries on: if it opens, the live greeting follows once the clip has finished. A drop mid-visit that doesn't reconnect within 5 s also gets one recorded line (not one per retry); once back, it catches up silently.
+- **The first failed start puts it offline.** Arrivals, returns and "grew" then get a recorded greeting at once, without asking the engine (so no vision call that would fail too).
+- **Clips:** never the same one twice in a row (`pickDifferent`, shared with lure mode), at most one per 20 s (`clipCooldownMs`), except the operator's Greet now. A recorded greeting counts as the creature talking, so ambience and call-outs wait.
+- **Retries** with backoff: 5 s, doubling to 60 s (`retryMinMs`, `retryMaxMs`), on ticks, sightings and arrivals; failures in flight are shared, so each is counted once. With visitors there, the first success gives the owed greeting live. With the porch empty, a background check opens a session and closes it at once when it works, so the next visitor gets the live voice.
+- **Telling the owner:** going offline and recovering are logged (Conversation panel, and the server log via the alert: `[alert] Voice offline: playing recorded greetings: <error>`, then `[alert] cleared: … (live voice back after 95 s offline)`). The `voice-offline` alert is pushed through ntfy with fixed text, at most once per 15 minutes by `AlertCenter`'s per-kind limit, however often it flaps. The watchdog's `voice-errors` alert is held back while offline (its page reload for repeated failures still applies, at most 3 an hour).
+- **Timeouts:** the server gives up on OpenAI's session endpoints after 12 s and the browser on `/api/session` after 20 s, so a hung request can't block retries.
 
 ### Variety across the night (`web/engines/variety.ts`, `web/evening.ts`)
 Each voice session starts with no memory, and sessions sleep after 3 minutes of empty porch, so left alone the creature reuses its favourite lines all night.
@@ -96,6 +104,20 @@ Local audio only: neither ever opens the (billed) voice session. `AmbienceSchedu
 - **Silence first:** anyone close (tracker not `empty`), the creature talking, or the kill switch stops whatever is playing at once (50 ms fade) and plays nothing.
 - **Ambience:** synthesized with Web Audio (creak, owl, thunder, wind, cackle, howl, bell), at low volume with per-sound levels evened out. It plays every 20–60 s at random, never the same sound twice in a row, and waits a fresh delay after each visit.
 - **Lure:** someone in view but below `minArea` for 1 s (detection gaps under 1 s tolerated) gets a recorded call-out from `web/public/lure/<character>/`. It never repeats a clip twice in a row, has a 45 s cooldown plus up to 15 s of jitter (configurable in Settings), and waits 30 s after visitors were close or the creature talked. A call-out interrupts ambience. Clips come from `scripts/make-lure-clips.ts` (OpenAI TTS, generated once and committed).
+- **Eyes:** recorded clips (call-outs and offline greetings) also feed `PorchSoundPlayer.voiceTap`, before their volume. A second `VoiceMeter` follows it, and while a clip is audible the body state is `speaking` with the clip's loudness, so the eyes and jaw move as they do for the live voice (an offline greeting also starts with the greeting sparkle). Ambience isn't the creature talking: it only triggers a `slowblink` flourish.
+
+### Recorded clips in the session voice (`server/clips.ts`, `shared/voices.ts`)
+`gpt-4o-mini-tts` has 13 voices (alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar; the docs recommend marin or cedar and describe none of them). Every gpt-realtime voice is one of them; of GPT-Live's, only `marin`. `ttsVoiceFor()` picks the closest reading:
+
+| Session voice | Read by |
+|---|---|
+| a TTS voice (`marin`, every gpt-realtime voice, or `VOICE=cedar`) | itself |
+| GPT-Live, masculine | `cedar`, plus the accent |
+| GPT-Live, feminine | `marin`, plus the accent |
+| accent | English voices: their region (`ripple` → cedar, Australian; `willow` → marin, Irish; `cinder` → cedar, Southern U.S.), none for North American (`meridian`, `gleam`). Other languages: the language (`sillage` → cedar, French; `nuri` → marin, German) |
+| a voice with no known presentation | no match: the bundled clips |
+
+The cedar/marin pairing by presentation is by ear, since OpenAI doesn't describe the TTS voices; the accent goes in the TTS instructions ("Speak English with a light, friendly Australian accent."), which gpt-4o-mini-tts follows. On wake and on every pick, the dashboard sends `POST /api/clips` with its pick; the server resolves the session voice exactly as `/api/session` does, makes any missing clips (3 requests at a time, one job per set), caches them in `<CLIP_CACHE_DIR>/<character>/<voice>[-<accent>]/<kind>/` and returns their URLs (`GET /api/clips/…`). Voices with the same reading share a set. Unchanged clips are never remade, so a cached set works with no key or network. Both routes are in `DASHBOARD_ONLY`: a phone signed in with the PIN can't trigger billed TTS. On any failure the dashboard keeps (or goes back to) the bundled `cedar` clips.
 
 ### Operator controls: standing instructions (`web/modes.ts`, `web/spookiness.ts`, `web/standing.ts`, `web/voiceChoice.ts`)
 - **Quick modes** (Candy's low, Candy's out, Toddler mode, Back in 5, Last call) and the **spookiness dial** (Gentle, Playful, Spooky, Scary for teens, or Auto by the clock; Auto never picks Scary) combine into one **standing instruction**. It's sent with `session.instructions.append` as soon as it changes, re-sent at the start of every new voice session (sessions restart often), and remembered for the evening in `localStorage`. Toddler mode holds the creature at gentle whatever the dial says. Playful adds no instruction.
@@ -153,7 +175,7 @@ The voice below is each character's default; the dashboard's **Voice** picker an
 
 - The browser derives one **body state** about 60×/s:
   - `sleeping`: no session;
-  - `speaking`: the voice is audible;
+  - `speaking`: the voice, or a recorded clip, is audible;
   - `thinking`: waiting on vision or the model;
   - `listening`: a visitor spoke within the last 1.5 s;
   - `idle`: none of the above.
@@ -199,6 +221,7 @@ The voice below is each character's default; the dashboard's **Voice** picker an
 ## Known limits and risks
 - **Tested on the Mac** (Oct 17–18) with the C920, the Z150 on a USB sound card and plain-LED eyes. Not yet tested: NeoPixel Jewel eyes on hardware, Pi mode, the phone remote on a real phone, ntfy delivery, lure and ambience on the porch speaker, and a full evening's soak.
 - GPT-Live's docs say appended context "may" be spoken. The quick hello, follow-up compliments and the nudge make greetings reliable in testing; tune the wording in `web/engines/live.ts` if needed.
-- GPT-Live voices don't follow accent instructions reliably (only a native-language voice carries an accent), so the voice picker matters more than the prompt for how it sounds. Lure clips are text-to-speech in a different voice (`cedar`), so they won't exactly match the live voice.
+- GPT-Live voices don't follow accent instructions reliably (only a native-language voice carries an accent), so the voice picker matters more than the prompt for how it sounds. Recorded clips are text-to-speech: apart from `marin`, GPT-Live's voices only get the closest TTS voice plus an accent, so call-outs and offline greetings sound similar to the live voice, not the same.
+- Offline mode and the clip-driven eyes are unit tested and the audio path was checked in Chrome, but not yet on the porch speaker or real Arduino eyes, nor with a real Wi-Fi outage.
 - At night, the camera needs light on visitors. Detection and costume descriptions both degrade in the dark; tall hats get cut off if the camera sits too low or the visitor stands too close.
 - After an automatic reload, a browser without the autoplay flag waits for a click before it can speak.

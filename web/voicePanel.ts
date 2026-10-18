@@ -37,11 +37,23 @@ export class VoicePanel {
     this.render();
   }
 
+  private readonly pickListeners = new Set<(picked: string | null) => void>();
+
   /** For EngineDeps.voice: read as each session starts. Sends only the dashboard pick (or nothing). */
   readonly requestVoice = (): string | null => {
     this.startingVoice = this.status().effective.voice;
     return this.picked;
   };
+
+  /** The dashboard's pick (null: the server's default), as /api/session and /api/clips take it. */
+  get pickedVoice(): string | null {
+    return this.picked;
+  }
+
+  /** Called with the new pick whenever the operator picks a voice (or goes back to the default). */
+  onPick(listener: (picked: string | null) => void): void {
+    this.pickListeners.add(listener);
+  }
 
   /** Follows the engine to show which voice the running session has, and to offer a restart. */
   attach(engine: Engine, visitorsPresent: () => boolean): void {
@@ -65,6 +77,7 @@ export class VoicePanel {
     const status = this.status();
     this.log(`Voice: ${status.summary}. ${status.restartNeeded ? "Applies from the next voice session (or restart it now)." : "Applies from the next voice session."}`);
     this.render();
+    for (const listener of this.pickListeners) listener(id);
   }
 
   /** Ends the session; the director reconnects (with the new voice) right away if visitors are there. */
