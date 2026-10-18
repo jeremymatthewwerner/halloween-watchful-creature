@@ -3,20 +3,25 @@
 ## System overview
 
 ```
-                 ┌──────────────────────── Porch (the prop) ────────────────────────┐
-                 │  Foam pumpkin:  webcam (behind mouth)   NeoPixel eyes            │
-                 │                 speakerphone (inside)   [jaw servo]  [relay]     │
-                 │        └───────────── powered USB hub ──── Arduino ─┘            │
-                 └──────────────────────────────┬───────────────────────────────────┘
-                                                │ one 16 ft active USB cable
-┌─────────────────────────────── Mac (or Pi 5) ─┴──────────────────────────────────┐
-│  Chrome dashboard (web/)                         Node server (server/)            │
-│  ├─ Camera + MediaPipe person detector  ──────▶  POST /api/vision ──▶ OpenAI      │
-│  ├─ VisitorTracker → Director                    POST /api/session ─▶ OpenAI      │
-│  ├─ Voice engine (WebRTC) ◀════ audio + events ════════════════════▶ GPT-Live     │
-│  ├─ VoiceMeter → body state ── WS /ws/body ───▶  BodyController ── USB serial ──▶ Arduino
-│  └─ Operator UI: transcript, cost, kill switch, "make it say…"                    │
-└───────────────────────────────────────────────────────────────────────────────────┘
+          ┌──────────────────────── Porch (the prop) ──────────────────────────┐
+          │ 13" plastic pumpkin: C920 webcam + its mics (behind the mouth)     │
+          │   one Z150 speaker inside (the other behind it, via a USB sound    │
+          │   card), eyes = NeoPixel Jewels or plain LEDs ── Arduino Uno       │
+          │        └────── powered USB hub (behind the pumpkin) ──────┘        │
+          └──────────────────────────────┬─────────────────────────────────────┘
+                                         │ 16 ft active USB cable (or the Pi sits at the porch)
+┌──────────────────────── Mac (or Pi 5) ─┴─────────────────────────────────────────┐
+│  Chrome dashboard (web/) = the brain           Node server (server/)             │
+│  ├─ Camera + MediaPipe person detector ─────▶  POST /api/vision ──▶ OpenAI vision │
+│  ├─ VisitorTracker → Director                  POST /api/session ─▶ OpenAI        │
+│  ├─ Voice engine (WebRTC) ◀═══ audio + events ═══════════════════▶ GPT-Live      │
+│  ├─ VoiceMeter → body state ── WS /ws/body ──▶ BodyController ── USB ──▶ Arduino  │
+│  ├─ Operator UI: modes, spookiness, voice,     Logs: logs/<day>/ (+ gallery)     │
+│  │  kill switch, "make it say…", rehearsal     Remote relay + alerts ──▶ ntfy.sh │
+│  ├─ Ambience + lure (local audio only)                 ▲                          │
+│  └─ Watchdog, heartbeat ───────────────────────────────┤ PIN + cookie            │
+└────────────────────────────────────────────────────────┼──────────────────────────┘
+                                                Phone: /remote over home Wi-Fi
 ```
 
 **Why a browser page?** Chrome gives us WebRTC (low-latency audio to OpenAI), **echo cancellation** (so the creature doesn't hear itself through the speaker), camera access and a GPU person detector, all for free. The same page runs in Chromium on a Raspberry Pi, so Pi mode needs no new code.
@@ -66,7 +71,7 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
     - **Over 90 s away:** a normal `arrived` greeting with no comparison.
   - The return comparison sends **the photo the group was greeted from** along with its description, so the vision model compares two photos rather than a photo against text.
 - **sighted:** if the voice session is asleep, start connecting right away (mic still muted), so it's nearly ready when the arrival is confirmed. If nobody arrives within 15 s, it goes back to sleep.
-- **arrived:** unmute the mic and **greet with a snapshot**. To cut the delay before the first sound, the vision look **starts while the session is still connecting**. If vision hasn't answered 250 ms after the session is open, the creature gives a **quick in-character hello** first ("leaning in for a closer look"), then compliments the costumes once vision describes them. Returns skip the quick hello, because the same people back soon should get silence.
+- **arrived:** unmute the mic and **greet with a snapshot**. To cut the delay before the first sound, the vision look **starts while the session is still connecting**. If vision hasn't answered 250 ms after the session is open, the creature gives a **quick in-character hello** first, then compliments the costumes once vision describes them. Returns skip the quick hello, because the same people back soon should get silence.
 - **grew:** greet the newcomers, unless a recheck greeted them in the last 20 s.
 - **While present:** a background frame every `BACKGROUND_FRAME_SECONDS` (default 30), skipped while it's talking. Background frames and gap rechecks are also **compared with the greeting photo**, leaning SAME: only someone clearly different counts as new, not the same person who took off a hat or turned around. That catches **swaps** the tracker can't see, such as one person leaving and another arriving within 8 s, or crossing in frame. The check answers one of three verdicts:
   - **NEW** (someone clearly different): a greeting and a snapshot in the log.
@@ -91,18 +96,42 @@ Local audio only: neither ever opens the (billed) voice session. `AmbienceSchedu
 - **Ambience:** synthesized with Web Audio (creak, owl, thunder, wind, cackle, howl, bell), at low volume with per-sound levels evened out. It plays every 20–60 s at random, never the same sound twice in a row, and waits a fresh delay after each visit.
 - **Lure:** someone in view but below `minArea` for 1 s (detection gaps under 1 s tolerated) gets a recorded call-out from `web/public/lure/<character>/`. It never repeats a clip twice in a row, has a 45 s cooldown plus up to 15 s of jitter (configurable in Settings), and waits 30 s after visitors were close or the creature talked. A call-out interrupts ambience. Clips come from `scripts/make-lure-clips.ts` (OpenAI TTS, generated once and committed).
 
+### Operator controls: standing instructions (`web/modes.ts`, `web/spookiness.ts`, `web/standing.ts`, `web/voiceChoice.ts`)
+- **Quick modes** (Candy's low, Candy's out, Toddler mode, Back in 5, Last call) and the **spookiness dial** (Gentle, Playful, Spooky, Scary for teens, or Auto by the clock; Auto never picks Scary) combine into one **standing instruction**. It's sent with `session.instructions.append` as soon as it changes, re-sent at the start of every new voice session (sessions restart often), and remembered for the evening in `localStorage`. Toddler mode holds the creature at gentle whatever the dial says. Playful adds no instruction.
+- **Voice:** the dashboard's pick (per engine, in `localStorage`) > `VOICE` in `.env` > the character's default. The browser sends its pick with `POST /api/session`; the server only accepts voices on its allowlist (`shared/voices.ts`, with OpenAI's own descriptions). A new voice applies from the next session.
+- **Every toggle is logged** to the Conversation panel and the day's log.
+
+## Logs and the costume gallery (`server/logs.ts`, `server/gallery.ts`)
+- The server mirrors its console into an in-memory buffer (streamed to the dashboard's **Server log** panel over SSE, `/api/logs`) and into **`logs/<YYYY-MM-DD>/`**: `log.txt`, `log.html` and `snapshots/`. Restarts append to the same day.
+- The dashboard sends each finished Conversation line (visitor and creature speech, system notes) to `/api/conversation`, so the day's log has the whole story.
+- The camera frame of each greeting, and of each check that found someone new or a costume change, is saved as a snapshot next to the vision verdict.
+- The **gallery** (`/api/session-logs/<day>/gallery.html`) is built from `log.txt` on request: each greeting's snapshot, caption and the creature's best line from that moment. Family only; no sharing.
+- `LOG_SNAPSHOTS=false` keeps logs without photos; `LOG_DIR=none` keeps nothing.
+
+## Phone remote, alerts and watchdog (`server/auth.ts`, `server/remote.ts`, `server/alerts.ts`, `web/remoteLink.ts`, `web/watchdog.ts`)
+- **The dashboard stays the brain.** It posts its status to the server every 2 s (which doubles as a heartbeat) and receives the phone's commands from the server. The phone page (`/remote`) only talks to the server.
+- **Auth:** off the LAN by default. With `REMOTE_PIN` set, the server listens on all interfaces; every non-loopback request to `/api` and `/ws` needs a session cookie from the PIN check (constant-time compare, rate-limited, `HttpOnly`, `SameSite=Strict`). Even signed in, the phone can't start voice sessions, call vision or drive the Arduino. The Vite dev server never listens on the LAN; the phone always uses port 8787.
+- **Alerts** are collected on the server (camera lost, detector failed, Arduino disconnected, vision or voice errors piling up, cost cap reached, watchdog reload, needs a tap, dashboard silent), deduplicated, shown on the dashboard and the phone, and optionally pushed via ntfy (`NTFY_TOPIC`): fixed short texts only, rate-limited.
+- **Watchdog:** restarts a stalled camera, reloads the page on repeated detector or voice failures (at most 3 reloads an hour), and resumes awake after a reload. Browsers block sound until a click after a reload, so unattended machines need Chrome's `--autoplay-policy=no-user-gesture-required` (the Pi kiosk has it; `scripts/pi/kiosk.sh` also restarts a frozen Chromium).
+
+## Rehearsal mode (`web/rehearsal.ts`, `web/rehearsalPanel.ts`)
+Two seams in `web/main.ts` replace the camera frame (what vision sees) and the person detections (what the tracker sees) with sample images and pretend visitors. Everything downstream (tracker, Director, engines, vision) is the real thing, so it costs money like real visitors. Rehearsal greetings use a throwaway evening memory, are marked `[REHEARSAL]` in the logs, and save no snapshots, so tonight's tally and the gallery stay clean.
+
 ## Characters (`prompts/`)
 
 - `base.md` holds the shared rules, so every character is kid-safe:
-  - never scary;
+  - never *truly* scary: no gore, death, threats, cruelty or jump-scares; within that, the operator's **spookiness dial** sets how spooky it gets;
   - compliment **costumes only**, never bodies or appearance;
   - be brief;
   - no personal questions;
   - reply in the visitor's language.
-- `characters/<id>.md` holds the persona and gimmick, with frontmatter for the voice, the realtime voice, and the eye colors and style.
+- `characters/<id>.md` holds the persona and gimmick, with frontmatter for the voice, the realtime voice, the eye colors and style, and `games: on|off`.
+- **Jacques** talks kid-first: name the costume and its standout detail in plain words, a big silly verdict, at most one short food joke. His full food-critic routine is only for grown-ups who play along. He has no French accent or French words, never says "chef's kiss", and is told how to sound ("big, bouncy energy, like a children's TV host").
 - `games.md` holds optional trick-or-treat mini-games (a "trick" riddle, a roar or spooky-laugh contest, "guess what I am") and a small bank of riddles and jokes for 4–8-year-olds. A character opts in with `games: on` in its frontmatter (Jacques does). The rules: at most one game per visit, short, everyone wins, and candy never depends on a game.
 - The server builds the instructions from `base.md`, then the persona, then `games.md` if the character opted in, then engine-specific notes on how sight works.
 - To add a character, add a file. It then shows up in the dashboard's character picker.
+
+The voice below is each character's default; the dashboard's **Voice** picker and `VOICE` in `.env` override it (see Operator controls). The owner currently runs Jacques with `ripple`.
 
 | id | Character | GPT-Live voice | Eyes |
 |---|---|---|---|
@@ -136,7 +165,7 @@ Local audio only: neither ever opens the (billed) voice session. `AmbienceSchedu
 
 - **Fail-safe:** if no line arrives for 2 s, the firmware dims the eyes to "sleeping", opens the relay and closes the jaw.
 - **Modes:**
-  - **eyes:** two NeoPixel jewels whose color follows the state and whose brightness follows the voice.
+  - **eyes:** two NeoPixel Jewels (`EYES_NEOPIXEL 1`, the default) whose color follows the state and whose brightness follows the voice; or two plain LEDs on D3/D5 (`EYES_NEOPIXEL 0`), brightness only, gamma-corrected so the states look distinct. Flourishes (`F …`) degrade to brightness-only twinkles on plain LEDs.
   - **jaw:** an SG90 servo whose angle follows the loudness.
   - **relay:** a 400 ms "button press" on a store animatronic's trigger when speech starts, with an 8 s cooldown.
 
@@ -144,17 +173,22 @@ Local audio only: neither ever opens the (billed) voice session. `AmbienceSchedu
 - **Kid safety:**
   - the prompt rules above;
   - OpenAI's built-in moderation;
-  - the operator kill switch;
+  - the operator kill switch, quick modes (Toddler mode) and the spookiness dial, also from the phone remote;
+  - Scary (teens) never auto-engages, and drops to gentle if a young child walks up or anyone seems scared;
   - the vision model is told to describe costumes only, never bodies. For each costume it also names one **standout detail** ("standout: glow-in-the-dark bones"), and greeting requests ask the creature to praise that detail, so every compliment is specific.
-- **Privacy:** frames are sent to OpenAI only when someone is close. The day's log in `logs/` keeps the conversation and one snapshot per greeting on the local disk (`LOG_SNAPSHOTS=false` skips the photos, `LOG_DIR=none` keeps nothing). Consider a small sign saying the decoration is AI-powered and records.
+- **Privacy:** frames are sent to OpenAI only when someone is close. The vision model never judges age, bodies or faces. The day's log in `logs/` keeps the conversation and one snapshot per greeting on the local disk (`LOG_SNAPSHOTS=false` skips the photos, `LOG_DIR=none` keeps nothing); the gallery is family-only. The phone remote needs a PIN and is off by default; ntfy pushes carry no visitor data. On a Pi left outside, see the security notes in `PI_MODE.md`. Consider a small sign saying the decoration is AI-powered and records.
 - **Cost controls:**
   - the voice session only runs while visitors are around (plus the idle timeout);
   - background frames are rate-limited;
   - vision uses `detail: "low"` on 768 px JPEGs;
-  - the dashboard shows a live cost meter.
+  - the voice session starts waking on the first sighting but goes back to sleep after 15 s if nobody arrives;
+  - lure call-outs and ambience are local audio and never open the voice session;
+  - the dashboard and phone show a live cost meter, and `MAX_VOICE_MINUTES_PER_DAY` puts it to sleep (with an alert) at a daily cap.
   - Also set a monthly limit on the OpenAI project.
 
 ## Known limits and risks
-- I couldn't test GPT-Live against the real API in the build sandbox (no key), so the first run on the Mac is the real integration test. The Realtime engine is the fallback (`ENGINE=realtime`).
-- GPT-Live's docs say startup and appended context "may" be paraphrased, and greetings aren't guaranteed. Check on the porch that it greets reliably, and tune the wording in `web/engines/live.ts` if needed.
-- At night, the camera needs light on visitors. Detection and costume descriptions both degrade in the dark.
+- **Tested on the Mac** (Oct 17–18) with the C920, the Z150 on a USB sound card and plain-LED eyes. Not yet tested: NeoPixel Jewel eyes on hardware, Pi mode, the phone remote on a real phone, ntfy delivery, lure and ambience on the porch speaker, and a full evening's soak.
+- GPT-Live's docs say appended context "may" be spoken. The quick hello, follow-up compliments and the nudge make greetings reliable in testing; tune the wording in `web/engines/live.ts` if needed.
+- GPT-Live voices don't follow accent instructions reliably (only a native-language voice carries an accent), so the voice picker matters more than the prompt for how it sounds. Lure clips are text-to-speech in a different voice (`cedar`), so they won't exactly match the live voice.
+- At night, the camera needs light on visitors. Detection and costume descriptions both degrade in the dark; tall hats get cut off if the camera sits too low or the visitor stands too close.
+- After an automatic reload, a browser without the autoplay flag waits for a click before it can speak.
