@@ -9,15 +9,43 @@
  * The tracker and Director then do exactly what they'd do for real people (arrived, gap, grew,
  * left, returned), and the real voice and vision APIs answer (and bill) as usual.
  *
+ * Images with a known group size (generated visitors) set the pretend person count themselves:
+ * a group of 3 arrives as 3 boxes, and swapping or switching to an image of a different group
+ * changes the count, so the tracker sees the group grow or shrink.
+ *
  * Pure logic (no DOM) so it can be unit tested with fake timers.
  */
+import type { GeneratedVisitor, GeneratedVisitorList } from "../shared/types.ts";
 import type { DetectedPerson } from "./vision.ts";
 
 export interface RehearsalImage {
   name: string;
   /** A data:image/... URL, kept in memory only. */
   dataUrl: string;
-  source: "upload" | "log";
+  source: "upload" | "log" | "generated";
+  /** How many people are in the picture, when known (generated visitors): the simulated detection count. */
+  people?: number;
+}
+
+/** The pretend person count for an image: its group size when known, else `fallback`. */
+export function peopleFor(image: RehearsalImage | null | undefined, fallback: number): number {
+  const n = image?.people;
+  return n !== undefined && Number.isInteger(n) && n > 0 ? Math.min(n, 8) : fallback;
+}
+
+/** "3 visitors: dinosaur, witch with a purple hat, astronaut · dim light" */
+export const describeGenerated = (item: GeneratedVisitor): string =>
+  `${item.groupSize} visitor${item.groupSize > 1 ? "s" : ""}: ${item.costumeLabels.join(", ")} · ${item.lighting} light`;
+
+/** A cached generated visitor as a rehearsal image, carrying its group size. */
+export function generatedImage(item: GeneratedVisitor, dataUrl: string): RehearsalImage {
+  return { name: `👥${item.groupSize} ${item.costumeLabels.join(" + ")} (${item.id})`, dataUrl, source: "generated", people: item.groupSize };
+}
+
+/** The estimate shown next to the Generate button: "≈ $0.03 for 3 (gpt-image-2.5-flare, low, 1536x1024)". */
+export function generationCostText(count: number, estimate: GeneratedVisitorList["estimate"]): string {
+  const total = count * estimate.perImageUsd;
+  return `≈ $${total < 0.1 ? total.toFixed(3) : total.toFixed(2)} for ${count} (${estimate.model}, ${estimate.quality}, ${estimate.size})`;
 }
 
 export type RehearsalAction = "arrive" | "leave" | "swap" | "join";
@@ -153,10 +181,14 @@ export class Rehearsal {
     this.changed();
   }
 
-  /** Makes image `i` the camera frame right away (no gap): the next background look sees it. */
+  /**
+   * Makes image `i` the camera frame right away (no gap): the next background look sees it.
+   * If visitors are in view and the image has a group size, the count follows it.
+   */
   select(i: number): void {
     if (i < 0 || i >= this.images.length) return;
     this.index = i;
+    if (this._active && this.people > 0) this.people = peopleFor(this.images[i], this.people);
     this.changed();
   }
 
@@ -199,8 +231,8 @@ export class Rehearsal {
       case "arrive":
         if (this.people > 0 && !this.steppedOut) return "A pretend visitor is already here";
         this.clearSwap();
-        this.people = Math.max(1, this.people);
-        this.deps.log(`Rehearsal: a visitor arrives (${this.imageName()})`);
+        this.people = peopleFor(this.images[this.index], Math.max(1, this.people));
+        this.deps.log(`Rehearsal: ${this.people > 1 ? `a group of ${this.people} arrives` : "a visitor arrives"} (${this.imageName()})`);
         break;
       case "leave":
         if (this.people === 0) return "Nobody's here";
@@ -208,13 +240,26 @@ export class Rehearsal {
         this.people = 0;
         this.deps.log("Rehearsal: the visitors leave");
         break;
-      case "join":
-        this.people = Math.max(2, this.people + 1);
-        this.deps.log(`Rehearsal: another visitor joins (${this.people} now, ${this.imageName()})`);
+      case "join": {
+        // Prefer switching to the next image of a bigger group, so the picture matches the count.
+        const bigger = this.nextImage((image) => peopleFor(image, 0) > this.people);
+        if (bigger !== -1) {
+          this.index = bigger;
+          this.people = peopleFor(this.images[bigger], 0);
+          this.deps.log(`Rehearsal: more visitors join (${this.people} now, ${this.imageName()})`);
+        } else {
+          this.people = Math.max(2, this.people + 1);
+          const shown = this.images[this.index]?.people;
+          const note = shown !== undefined && shown < this.people ? `; the picture shows ${shown}` : "";
+          this.deps.log(`Rehearsal: another visitor joins (${this.people} now, ${this.imageName()}${note})`);
+        }
         break;
+      }
       case "swap": {
         if (this.images.length < 2) return "Add a second image to swap to";
         this.index = (this.index + 1) % this.images.length;
+        const before = this.people;
+        if (this.people > 0) this.people = peopleFor(this.images[this.index], this.people);
         if (this.people === 0) {
           this.deps.log(`Rehearsal: next image ready (${this.imageName()})`);
           break;
@@ -222,7 +267,8 @@ export class Rehearsal {
         // Out of view for a few seconds, then back in the new costume: the tracker reports a gap.
         this.clearSwap();
         this.steppedOut = true;
-        this.deps.log(`Rehearsal: visitor steps out for ${Math.round(this.opts.swapGapMs / 1000)} s and comes back as ${this.imageName()}`);
+        const size = this.people === before ? "" : ` (${this.people} people now)`;
+        this.deps.log(`Rehearsal: visitor steps out for ${Math.round(this.opts.swapGapMs / 1000)} s and comes back as ${this.imageName()}${size}`);
         this.swapTimer = setTimeout(() => {
           this.swapTimer = null;
           this.steppedOut = false;
@@ -296,6 +342,15 @@ export class Rehearsal {
 
   private visible(): number {
     return this.steppedOut ? 0 : this.people;
+  }
+
+  /** The first image after the current one (wrapping around) that matches, or -1. */
+  private nextImage(match: (image: RehearsalImage) => boolean): number {
+    for (let step = 1; step < this.images.length; step++) {
+      const i = (this.index + step) % this.images.length;
+      if (match(this.images[i]!)) return i;
+    }
+    return -1;
   }
 
   private imageName(): string {

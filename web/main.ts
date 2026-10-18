@@ -163,7 +163,9 @@ async function main(): Promise<void> {
   renderEyes(cfg, "sleeping", 0, 0);
 
   const modes = new ModePanel($("modes"), log);
-  void new RehearsalPanel(ui.rehearsal, ui.video.parentElement!, rehearsal, log).loadDays();
+  const rehearsalPanel = new RehearsalPanel(ui.rehearsal, ui.video.parentElement!, rehearsal, log);
+  void rehearsalPanel.loadDays();
+  void rehearsalPanel.loadGenerated();
   ui.start.addEventListener("click", () => void wake(cfg, body, minArea, modes), { once: true });
   // Kiosk mode (Pi): start without a click; needs Chromium's --autoplay-policy=no-user-gesture-required.
   if (new URLSearchParams(location.search).has("autowake")) ui.start.click();

@@ -210,6 +210,45 @@ export function extractOutputText(data: ResponsesResult): string {
   return parts.join("\n").trim();
 }
 
+export interface ImageUsage {
+  inputTokens: number;
+  /** Of inputTokens, how many were text (the rest were image input). */
+  textInputTokens: number;
+  outputTokens: number;
+}
+
+/** Generates one JPEG with the Images API (b64_json response); used by rehearsal mode. */
+export async function generateImage(
+  config: Config,
+  opts: { prompt: string; model: string; size: string; quality: string },
+): Promise<{ image: Buffer; usage?: ImageUsage }> {
+  const res = await post(
+    config,
+    "/images/generations",
+    JSON.stringify({
+      model: opts.model,
+      prompt: opts.prompt,
+      n: 1,
+      size: opts.size,
+      quality: opts.quality,
+      output_format: "jpeg",
+      output_compression: 80,
+    }),
+    { "Content-Type": "application/json" },
+  );
+  const data = (await res.json()) as {
+    data?: { b64_json?: string }[];
+    usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { text_tokens?: number } };
+  };
+  const b64 = data.data?.[0]?.b64_json;
+  if (!b64) throw new OpenAIError("Image response had no image", 502, JSON.stringify({ ...data, data: undefined }));
+  const u = data.usage;
+  const usage = u
+    ? { inputTokens: u.input_tokens ?? 0, textInputTokens: u.input_tokens_details?.text_tokens ?? u.input_tokens ?? 0, outputTokens: u.output_tokens ?? 0 }
+    : undefined;
+  return { image: Buffer.from(b64, "base64"), usage };
+}
+
 export function voiceFor(config: Config, character: Character): string {
   if (config.voiceOverride) return config.voiceOverride;
   return config.engine === "live" ? character.voice : character.realtimeVoice;

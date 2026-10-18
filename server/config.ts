@@ -47,6 +47,14 @@ export const config = {
   logDir: str("LOG_DIR", "logs"),
   /** Save the camera frame of each greeting in the day's log. */
   logSnapshots: str("LOG_SNAPSHOTS", "true") !== "false",
+  /** Rehearsal mode's "Generate visitors": image model, quality and size (landscape, like the webcam). */
+  rehearsalImageModel: str("REHEARSAL_IMAGE_MODEL", "gpt-image-2.5-flare"),
+  rehearsalImageQuality: str("REHEARSAL_IMAGE_QUALITY", "low"),
+  rehearsalImageSize: str("REHEARSAL_IMAGE_SIZE", "1536x1024"),
+  /** Estimated US dollars per generated image, shown before generating (the real cost is logged after). */
+  rehearsalImageCostUsd: num("REHEARSAL_IMAGE_COST_USD", 0.01),
+  /** Where generated rehearsal visitors are cached (gitignored); "none" turns generating off. */
+  rehearsalCacheDir: str("REHEARSAL_CACHE_DIR", "rehearsal-cache"),
   port: num("PORT", 8787),
   production: process.env.NODE_ENV === "production",
 };

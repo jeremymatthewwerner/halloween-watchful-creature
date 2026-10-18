@@ -5,13 +5,23 @@ import { streamSSE } from "hono/streaming";
 import { WebSocketServer } from "ws";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { BodyMessage, ClientConfig, ConversationLogRequest, ServerLogEntry, VisionRequest } from "../shared/types.ts";
+import type {
+  BodyMessage,
+  ClientConfig,
+  ConversationLogRequest,
+  GenerateVisitorsRequest,
+  GenerateVisitorsResult,
+  GeneratedVisitorList,
+  ServerLogEntry,
+  VisionRequest,
+} from "../shared/types.ts";
 import { BodyController, NullSink, SerialSink } from "./body/driver.ts";
 import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "./characters.ts";
 import { config } from "./config.ts";
 import { buildGallery } from "./gallery.ts";
 import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId, wantsSnapshot } from "./logs.ts";
-import { OpenAIError, createLiveSession, createRealtimeCall, describeFrame, voiceFor } from "./openai.ts";
+import { OpenAIError, createLiveSession, createRealtimeCall, describeFrame, generateImage, voiceFor } from "./openai.ts";
+import { MAX_PER_REQUEST, VisitorCache, checkRequest, generateVisitors } from "./rehearsalGen.ts";
 
 // Everything this process prints also goes to the dashboard's server log, and (unless
 // LOG_DIR=none) to today's log on disk along with the conversation and greeting snapshots.
@@ -167,6 +177,60 @@ app.post("/api/vision", async (c) => {
     }
   }
   return c.json(result);
+});
+
+// --- rehearsal mode: generated visitors (billed image generation, cached on disk) ---
+const visitorCache = config.rehearsalCacheDir === "none" ? null : new VisitorCache(config.rehearsalCacheDir);
+let generating = false;
+
+app.get("/api/rehearsal/generated", async (c) => {
+  const body: GeneratedVisitorList = {
+    items: visitorCache ? await visitorCache.list() : [],
+    estimate: { perImageUsd: config.rehearsalImageCostUsd, model: config.rehearsalImageModel, quality: config.rehearsalImageQuality, size: config.rehearsalImageSize },
+    hasApiKey: Boolean(config.apiKey) && Boolean(visitorCache),
+    maxPerRequest: MAX_PER_REQUEST,
+  };
+  return c.json(body, 200, { "cache-control": "no-store" });
+});
+
+app.get("/api/rehearsal/generated/:file{[a-z0-9]+-[a-f0-9]+\\.jpg}", async (c) => {
+  const data = await visitorCache?.image(c.req.param("file").slice(0, -".jpg".length));
+  if (!data) return c.notFound();
+  return c.body(data, 200, { "content-type": "image/jpeg", "cache-control": "private, max-age=86400" });
+});
+
+app.delete("/api/rehearsal/generated/:id{[a-z0-9]+-[a-f0-9]+}", async (c) => {
+  if (!(await visitorCache?.remove(c.req.param("id")))) return c.notFound();
+  console.log(`[rehearsal] deleted generated visitor ${c.req.param("id")}`);
+  return c.body(null, 204);
+});
+
+/** Generates pretend visitors with the image API (billed); one request at a time. */
+app.post("/api/rehearsal/generate", async (c) => {
+  if (!visitorCache) return c.json({ error: "Generating is off (REHEARSAL_CACHE_DIR=none)" }, 503);
+  if (!config.apiKey) return c.json({ error: "OPENAI_API_KEY is not set on the server" }, 503);
+  const req = await c.req.json<GenerateVisitorsRequest>().catch(() => null);
+  const problem = req && typeof req === "object" ? checkRequest(req) : "Expected a JSON object";
+  if (problem) return c.json({ error: problem }, 400);
+  if (generating) return c.json({ error: "Already generating: wait for it to finish" }, 409);
+  generating = true;
+  try {
+    const result: GenerateVisitorsResult = await generateVisitors(
+      {
+        cache: visitorCache,
+        generate: (prompt) => generateImage(config, { prompt, model: config.rehearsalImageModel, size: config.rehearsalImageSize, quality: config.rehearsalImageQuality }),
+        model: config.rehearsalImageModel,
+        quality: config.rehearsalImageQuality,
+        size: config.rehearsalImageSize,
+        estimateUsd: config.rehearsalImageCostUsd,
+        log: (text) => (text.includes("couldn't") ? console.warn(text) : console.log(text)),
+      },
+      { ...req!, count: req!.count ?? 1 },
+    );
+    return c.json(result, result.items.length ? 201 : 502);
+  } finally {
+    generating = false;
+  }
 });
 
 if (config.production) {

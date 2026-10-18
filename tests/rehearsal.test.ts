@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Director } from "../web/director.ts";
 import type { Engine, EngineStatus } from "../web/engines/types.ts";
-import { DEFAULT_SCRIPT, Rehearsal, logDays, type RehearsalImage } from "../web/rehearsal.ts";
+import type { GeneratedVisitor } from "../shared/types.ts";
+import {
+  DEFAULT_SCRIPT,
+  Rehearsal,
+  describeGenerated,
+  generatedImage,
+  generationCostText,
+  logDays,
+  peopleFor,
+  type RehearsalImage,
+} from "../web/rehearsal.ts";
 import { VisitorTracker, type VisitorEvent } from "../web/visitors.ts";
 
 const A: RehearsalImage = { name: "witch.jpg", dataUrl: "data:image/jpeg;base64,AAAA", source: "upload" };
@@ -310,6 +320,106 @@ describe("Rehearsal through the real tracker and director", () => {
     expect(p.types()).toEqual(["sighted", "arrived", "left"]);
     expect(p.realDetect).toHaveBeenCalled();
     expect(p.capture()).toBe("data:image/jpeg;base64,REAL");
+  });
+});
+
+const generated = (id: string, groupSize: number, costumeLabels: string[]): GeneratedVisitor => ({
+  id,
+  groupSize,
+  costumes: costumeLabels,
+  costumeLabels,
+  lighting: "dim",
+  style: "animated",
+  createdAt: "2026-10-18T10:00:00.000Z",
+  model: "gpt-image-2.5-flare",
+  quality: "low",
+  size: "1536x1024",
+  costUsd: 0.008,
+  costEstimated: false,
+});
+const SOLO = generatedImage(generated("a-111111", 1, ["dinosaur"]), "data:image/jpeg;base64,SOLO");
+const TRIO = generatedImage(generated("b-222222", 3, ["witch", "pirate", "ghost"]), "data:image/jpeg;base64,TRIO");
+const PAIR = generatedImage(generated("c-333333", 2, ["ninja", "unicorn"]), "data:image/jpeg;base64,PAIR");
+
+describe("Generated visitors' group size drives the pretend detections", () => {
+  it("turns a cached generated visitor into an image carrying its group size", () => {
+    expect(TRIO).toMatchObject({ source: "generated", people: 3, dataUrl: "data:image/jpeg;base64,TRIO" });
+    expect(TRIO.name).toContain("witch + pirate + ghost");
+    expect(describeGenerated(generated("x-000000", 2, ["ninja", "unicorn"]))).toBe("2 visitors: ninja, unicorn · dim light");
+    expect(peopleFor(TRIO, 1)).toBe(3);
+    expect(peopleFor(A, 1)).toBe(1); // an upload: no known group size
+    expect(peopleFor(null, 2)).toBe(2);
+  });
+
+  it("shows the estimated cost before generating", () => {
+    const estimate = { perImageUsd: 0.01, model: "gpt-image-2.5-flare", quality: "low", size: "1536x1024" };
+    expect(generationCostText(3, estimate)).toBe("≈ $0.030 for 3 (gpt-image-2.5-flare, low, 1536x1024)");
+    expect(generationCostText(6, { ...estimate, perImageUsd: 0.05 })).toBe("≈ $0.30 for 6 (gpt-image-2.5-flare, low, 1536x1024)");
+  });
+
+  it("a group of 3 arrives as 3 people; swapping or picking another image changes the count", () => {
+    const r = new Rehearsal({ log: () => {} });
+    r.addImages([TRIO, SOLO, A]);
+    r.start();
+    r.act("arrive");
+    expect(r.detections(() => null)).toHaveLength(3);
+    expect(r.snapshot().people).toBe(3);
+
+    r.act("swap"); // to the solo dinosaur
+    expect(r.detections(() => null)).toEqual([]);
+    vi.advanceTimersByTime(3000);
+    expect(r.detections(() => null)).toHaveLength(1);
+    expect(r.capture(() => null)).toBe(SOLO.dataUrl);
+
+    r.act("swap"); // to an upload: keeps the current count
+    vi.advanceTimersByTime(3000);
+    expect(r.detections(() => null)).toHaveLength(1);
+
+    r.select(0); // straight to the trio, no gap
+    expect(r.detections(() => null)).toHaveLength(3);
+    r.act("leave");
+    r.select(1); // nobody's in view: picking an image doesn't conjure anyone
+    expect(r.detections(() => null)).toEqual([]);
+  });
+
+  it("“more visitors join” switches to the next bigger group, else adds one", () => {
+    const logs: string[] = [];
+    const r = new Rehearsal({ log: (m) => logs.push(m) });
+    r.addImages([SOLO, TRIO, PAIR]);
+    r.start();
+    r.act("arrive");
+    r.act("join");
+    expect(r.snapshot()).toMatchObject({ people: 3, image: TRIO });
+    expect(logs.at(-1)).toMatch(/more visitors join \(3 now/);
+    r.act("join"); // nothing bigger than 3
+    expect(r.snapshot()).toMatchObject({ people: 4, image: TRIO });
+    expect(logs.at(-1)).toMatch(/the picture shows 3/);
+  });
+
+  it("through the real tracker: a solo visitor swapped for a group of 3 is a gap, then the group grows", async () => {
+    const p = pipeline([SOLO, TRIO]);
+    p.rehearsal.start();
+    p.rehearsal.act("arrive");
+    await vi.advanceTimersByTimeAsync(30_000); // past the tracker's 30 s greeting cooldown
+    p.rehearsal.act("swap");
+    await vi.advanceTimersByTimeAsync(10_000);
+    p.dispose();
+    expect(p.types()).toEqual(["sighted", "arrived", "gap", "grew"]);
+    expect(p.events.find((e) => e.type === "arrived")).toMatchObject({ count: 1 });
+    expect(p.events.find((e) => e.type === "gap")).toMatchObject({ count: 3 });
+    expect(p.events.find((e) => e.type === "grew")).toMatchObject({ count: 3, from: 1 });
+    expect(p.engine.calls[1]).toBe(`greet:arrived:${SOLO.dataUrl}`);
+    expect(p.engine.calls).toContain(`greet:grew:${TRIO.dataUrl}`);
+  });
+
+  it("through the real tracker: a generated group of 3 arrives with count 3", async () => {
+    const p = pipeline([TRIO]);
+    p.rehearsal.start();
+    p.rehearsal.act("arrive");
+    await vi.advanceTimersByTimeAsync(2000);
+    p.dispose();
+    expect(p.events.find((e) => e.type === "arrived")).toMatchObject({ count: 3 });
+    expect(p.tracker.count).toBe(3);
   });
 });
 
