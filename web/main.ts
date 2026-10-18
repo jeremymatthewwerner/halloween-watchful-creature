@@ -5,6 +5,7 @@ import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from 
 import { Director } from "./director.ts";
 import { EveningMemory, browserStorage } from "./evening.ts";
 import { eyeLook, GREETING_FLOURISH, type ActiveFlourish } from "./eyeFlourish.ts";
+import { startPorchSounds } from "./porchSounds.ts";
 import { followServerLog } from "./serverLog.ts";
 import { ModePanel } from "./modePanel.ts";
 import { Rehearsal } from "./rehearsal.ts";
@@ -434,6 +435,19 @@ async function wake(
     ui.minAreaValue.textContent = `${Math.round(value * 100)}% of frame`;
     tracker.setMinArea(value);
   });
+  // Spooky ambience and lure call-outs between visitors: local audio only, never the voice session.
+  const porchSounds = startPorchSounds({
+    audioCtx,
+    character: cfg.character.id,
+    sinkId: speakerDevice?.deviceId,
+    status: () => ({
+      porchEmpty: tracker.state === "empty",
+      talking: meter.speaking(performance.now()) || engine.isThinking(),
+      autopilot: director.autopilot,
+    }),
+    prefs,
+    log,
+  });
   let detector: PersonDetector | null = null;
   detectorState = "loading";
   PersonDetector.create()
@@ -464,6 +478,7 @@ async function wake(
     });
     if (!people) return;
     drawOverlay(people, Number(ui.minArea.value));
+    porchSounds.see(people, Number(ui.minArea.value));
     for (const event of tracker.update(people, now)) void director.onVisitorEvent(event);
     const best = people.reduce((m, p) => Math.max(m, p.score), 0);
     ui.presence.textContent = `${tracker.state}${tracker.count ? ` · ${tracker.count} visitor${tracker.count > 1 ? "s" : ""}` : ""} · ${people.length} detected${people.length ? ` (best ${Math.round(best * 100)}%)` : ""}`;
@@ -565,6 +580,7 @@ async function wake(
   ui.speakerSelect.addEventListener("change", () => {
     rememberChoice("speaker", ui.speakerSelect);
     void setSpeaker(ui.speakerSelect.value);
+    porchSounds.setSink(ui.speakerSelect.value);
   });
 
   log(cfg.hasApiKey ? "Awake and watching. Walk up to the camera to test!" : "Watching, but the server has no OPENAI_API_KEY");

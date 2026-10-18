@@ -89,6 +89,10 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**. F
 - **Conversation:** live transcript plus system notes.
 - **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery** and **all logs**.
 - **Alerts:** health problems (see below), shown only when there are any.
+- **Between visitors** (both free: local audio only, they never open the voice session), each with a toggle in **Settings** that's remembered:
+  - **Spooky sounds:** every 20–60 s on an empty porch, a quiet creaky door, owl, distant thunder, wind, cackle, wolf howl or church bell, synthesized in the browser (no audio files).
+  - **Call out to people walking by (lure mode):** when someone is in view but too far to count as a visitor (a grey box), the pumpkin plays one of 14 recorded call-outs ("Psst! Over here! Come get your costume reviewed!"), never the same one twice in a row, at most once per **Seconds between call-outs** (default 45, plus up to 15 s at random). It waits 30 s after visitors leave or the creature talks, so it doesn't call back kids who just left.
+  - Both stop the instant someone comes close or the creature speaks, stay silent while the kill switch is on, and play through the selected **Speaker**.
 
 ## Phone remote and alerts
 Watch and steer the creature from the couch, and get a push on your phone when something breaks. The dashboard on the creature's computer stays the brain: the phone's buttons go through the server to the dashboard, and its status comes back the same way.
@@ -212,6 +216,7 @@ npm run build
 - `prompts/`: the shared rules plus one file per character.
 - `firmware/`: the Arduino sketch.
 - `tests/`: unit tests.
+- `scripts/make-lure-clips.ts`: one-time generator for the lure call-outs (`npx tsx scripts/make-lure-clips.ts pumpkin`). It uses OpenAI text-to-speech (`gpt-4o-mini-tts`, voice `cedar`) and writes MP3s plus `manifest.json` to `web/public/lure/<character>/`. The clips are committed, so the app doesn't need the script. Re-running only regenerates new or edited lines (`--force` redoes all). All 14 pumpkin clips (about a minute of audio) cost under 2 cents. Characters without clips just skip lure mode.
 
 ### Add a character
 Copy `prompts/characters/pumpkin.md` to `prompts/characters/<id>.md` and edit:
