@@ -1,5 +1,6 @@
 import { UNSURE_RETURN, WebRtcEngine, withTimeout } from "./base.ts";
 import type { Engine, GreetOptions, GreetReason } from "./types.ts";
+import { Variety } from "./variety.ts";
 
 type ServerEvent = { type: string; [key: string]: unknown };
 
@@ -18,7 +19,7 @@ const GREETING: Record<GreetReason, (seen: string) => string> = {
 const QUICK_HELLO: Partial<Record<GreetReason, string>> = {
   arrived:
     "[CAMERA] Visitors just walked up to you. Your eyes are still focusing on their costumes: right now, give them a quick, " +
-    "warm hello in character (one short line, like leaning in for a closer look). Don't describe or guess their costumes yet.",
+    "warm hello in character (one short line). Don't describe or guess their costumes yet.",
   manual:
     "[CAMERA] Someone is in front of you. Your eyes are still focusing: right now, give them a quick, warm hello in character " +
     "(one short line). Don't describe or guess their costumes yet.",
@@ -84,6 +85,8 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   /** When the creature's current (or latest) transcribed utterance began. */
   private utteranceStartedAt = 0;
   private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Picks a different style twist for each greeting, so the creature doesn't repeat itself. */
+  protected variety = new Variety();
   private nudgePoll: ReturnType<typeof setInterval> | null = null;
   /** If a greeting hasn't started this long after we asked, nudge with an instruction. */
   protected nudgeMs = 5000;
@@ -157,7 +160,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     const hello = QUICK_HELLO[reason];
     let saidHello = false;
     if (looking && hello && !alreadyGreeted && !(await settlesWithin(looking, HELLO_AFTER_MS))) {
-      this.append("session.commentary.append", null, hello);
+      this.append("session.commentary.append", null, hello + this.variety.opening());
       this.scheduleNudge(reason === "grew" ? NUDGE.grew : NUDGE.greet);
       saidHello = true;
     }
@@ -208,7 +211,11 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     else this.lastGroup = `${this.lastGroup} ${seen}`.trim();
     if (image) this.lastGroupImage = image;
     const followUp = FOLLOW_UP[reason];
-    this.append("session.commentary.append", null, saidHello && followUp ? followUp(seen) : GREETING[reason](seen));
+    this.append(
+      "session.commentary.append",
+      null,
+      saidHello && followUp ? followUp(seen) + this.variety.verdict() : GREETING[reason](seen) + this.variety.greeting(),
+    );
     this.scheduleNudge(reason === "grew" ? NUDGE.grew : saidHello ? NUDGE.compliment : NUDGE.greet);
   }
 
@@ -279,7 +286,8 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         this.append(
           "session.commentary.append",
           null,
-          `[CAMERA] Someone new is in front of you who you haven't greeted yet. What you see now: ${seen} Greet them now and compliment their costumes.`,
+          `[CAMERA] Someone new is in front of you who you haven't greeted yet. What you see now: ${seen} Greet them now and compliment their costumes.` +
+            this.variety.greeting(),
         );
         this.scheduleNudge(NUDGE.newcomer);
         return;

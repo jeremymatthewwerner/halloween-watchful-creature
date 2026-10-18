@@ -110,6 +110,16 @@ describe("LiveEngine", () => {
     expect(String(e.sent[0]!.content)).toContain("New visitors just walked up");
   });
 
+  it("adds a style twist to every greeting so the creature doesn't repeat itself", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    await e.greet("img", "manual");
+    const [first, second] = e.sent.map((s) => String(s.content));
+    expect(first).toContain("For variety this time:");
+    expect(second).toContain("For variety this time:");
+    expect(first!.slice(first!.indexOf("For variety"))).not.toBe(second!.slice(second!.indexOf("For variety")));
+  });
+
   it("says a quick hello while vision is slow, then compliments the costumes", async () => {
     const e = new TestLive();
     let finishLook = () => {};
