@@ -71,6 +71,7 @@ describe("LiveEngine", () => {
     expect(e.sent[0]).toMatchObject({ type: "session.commentary.append", delegation_id: null });
     expect(String(e.sent[0]!.content)).toContain("green dinosaur");
     expect(String(e.sent[0]!.content)).toMatch(/^\[CAMERA\]/);
+    expect(String(e.sent[0]!.content)).toContain("praise each costume's standout detail");
   });
 
   it("compares a returning group with the last one and greets them as new when different", async () => {
@@ -132,6 +133,7 @@ describe("LiveEngine", () => {
     expect(e.sent).toHaveLength(2);
     expect(String(e.sent[1]!.content)).toContain("Your eyes have focused. What you see: One visitor in a green dinosaur costume");
     expect(String(e.sent[1]!.content)).toContain("Now compliment their costumes.");
+    expect(String(e.sent[1]!.content)).toContain("praise each costume's standout detail");
   });
 
   it("looks while the session connects, and stays silent if it can't connect", async () => {

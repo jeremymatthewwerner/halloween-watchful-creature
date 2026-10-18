@@ -4,12 +4,15 @@ import { Variety } from "./variety.ts";
 
 type ServerEvent = { type: string; [key: string]: unknown };
 
+/** The vision model names each costume's standout detail ("standout: ..."); make the compliment about it. */
+const PRAISE_DETAIL = " Make the compliment specific: praise each costume's standout detail in your own words (for a big group, just a few).";
+
 const GREETING: Record<GreetReason, (seen: string) => string> = {
-  arrived: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.`,
-  grew: (seen) => `[CAMERA] More visitors just joined the group. What you see now: ${seen} Welcome the newcomers and compliment their costumes.`,
-  manual: (seen) => `[CAMERA] What you see right now: ${seen} Greet whoever is there and compliment their costumes.`,
+  arrived: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.${PRAISE_DETAIL}`,
+  grew: (seen) => `[CAMERA] More visitors just joined the group. What you see now: ${seen} Welcome the newcomers and compliment their costumes.${PRAISE_DETAIL}`,
+  manual: (seen) => `[CAMERA] What you see right now: ${seen} Greet whoever is there and compliment their costumes.${PRAISE_DETAIL}`,
   // "returned" is resolved to "arrived" (new visitors) or a welcome-back before speaking.
-  returned: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.`,
+  returned: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.${PRAISE_DETAIL}`,
 };
 
 /**
@@ -30,9 +33,9 @@ const QUICK_HELLO: Partial<Record<GreetReason, string>> = {
 
 /** After a quick hello: the costume details, once the vision model has them. */
 const FOLLOW_UP: Partial<Record<GreetReason, (seen: string) => string>> = {
-  arrived: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.`,
-  manual: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.`,
-  grew: (seen) => `[CAMERA] Your eyes have focused on the group. What you see now: ${seen} Now compliment the newcomers' costumes.`,
+  arrived: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.${PRAISE_DETAIL}`,
+  manual: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.${PRAISE_DETAIL}`,
+  grew: (seen) => `[CAMERA] Your eyes have focused on the group. What you see now: ${seen} Now compliment the newcomers' costumes.${PRAISE_DETAIL}`,
 };
 
 /** Wait this long for the vision model before saying a quick hello. */
