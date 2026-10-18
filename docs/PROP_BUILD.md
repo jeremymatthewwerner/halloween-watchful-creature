@@ -22,7 +22,7 @@ Expect about 1–2 hours, plus soldering for the eyes.
 4. Mount the **webcam** behind the mouth, lens against the tulle at the centre of the grin. Its clip or a hot-glued foam block holds it. With the mouth about 26–30" off the porch floor (a crate helps), aim it level to about 10° upward, so that a child at the candy bowl is in frame from the waist up and an adult's head fits too. Check on the dashboard.
 5. Put the **speakerphone** inside, facing the mouth, sitting flat. Its mics need open air, so keep foam scraps away from it.
 6. Run the cables out of the hatch to the **powered USB hub** behind the pumpkin. Run the **16 ft active USB cable** from the hub to the Mac.
-7. Dress him up with a beret or chef's toque, a monocle and a bow tie.
+7. Dress him in his **tall black top hat, round spectacles and bow tie**: the look his persona talks about. (He's a costume *critic*, not a chef, so no toque.)
 8. Set the **candy bowl** right in front, so visitors stop at the sweet spot for the camera and mic.
 
 ## 2. Lighting
