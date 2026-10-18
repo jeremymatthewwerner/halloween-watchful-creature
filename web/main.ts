@@ -195,6 +195,7 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: M
     recentTranscript: () => transcript.recent(),
     lastVoiceAt: () => meter.lastLoudTime,
     evening,
+    spookiness: () => modes.spookiness,
   };
   const engine: Engine = cfg.engine === "live" ? new LiveEngine(deps) : new RealtimeEngine(deps);
   modes.attach(engine);

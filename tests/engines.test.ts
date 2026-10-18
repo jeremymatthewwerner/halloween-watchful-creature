@@ -4,6 +4,7 @@ import { RealtimeEngine } from "../web/engines/realtime.ts";
 import type { EngineDeps, EngineEvent } from "../web/engines/types.ts";
 import { EveningMemory } from "../web/evening.ts";
 import { MODES_CLEARED, modeInstructions, modeUpdate } from "../web/modes.ts";
+import { standingInstructions, standingUpdate } from "../web/standing.ts";
 
 type Sent = Record<string, unknown>;
 
@@ -397,6 +398,33 @@ describe("LiveEngine", () => {
     e.sent = [];
     e.server({ type: "session.started" });
     expect(e.sent.filter((s) => s.type === "session.instructions.append")).toEqual([]);
+  });
+
+  it("re-applies the spookiness dial, with the modes, to each new session", () => {
+    const e = new TestLive();
+    e.setStanding(standingInstructions(["candyLow"], 3), standingUpdate(["candyLow"], 3));
+    expect(String(e.sent[0]!.content)).toContain("scary, for teens");
+    e.sent = [];
+    e.server({ type: "session.started" });
+    const appended = e.sent.filter((s) => s.type === "session.instructions.append").map((s) => String(s.content));
+    expect(appended).toEqual([standingInstructions(["candyLow"], 3)]);
+    expect(appended[0]).toContain("candy is almost gone");
+  });
+
+  it("mixes spooky twists into greetings when the dial is up", async () => {
+    const twists: string[] = [];
+    for (const level of [1, 3] as const) {
+      const e = new TestLive({ ...deps(), spookiness: () => level });
+      for (let i = 0; i < 60; i++) {
+        e.sent = [];
+        await e.greet("data:image/jpeg;base64,AAA", "manual");
+        const content = String(e.sent.find((s) => s.type === "session.commentary.append")?.content ?? "");
+        twists.push(`${level}:${content.slice(content.indexOf("For variety"))}`);
+      }
+    }
+    const spooky = (t: string) => /eerie|ghost-story|creepy whisper/.test(t);
+    expect(twists.filter((t) => t.startsWith("1:")).some(spooky)).toBe(false);
+    expect(twists.filter((t) => t.startsWith("3:")).some(spooky)).toBe(true);
   });
 
   it("only stores operator modes while asleep, for the next session", () => {

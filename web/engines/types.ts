@@ -1,5 +1,6 @@
 /** A voice engine connects the creature to an OpenAI speech-to-speech model. */
 import type { EveningMemory } from "../evening.ts";
+import type { SpookyLevel } from "../spookiness.ts";
 
 export type EngineStatus = "closed" | "connecting" | "open" | "closing";
 
@@ -69,4 +70,6 @@ export interface EngineDeps {
   lastVoiceAt(): number;
   /** What it said and saw earlier tonight, kept across sessions (optional). */
   evening?: EveningMemory;
+  /** The operator's spookiness dial right now, 0 (gentle) to 3 (scary, for teens). Flavors greetings. */
+  spookiness?(): SpookyLevel;
 }
