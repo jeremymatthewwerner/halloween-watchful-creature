@@ -1,8 +1,18 @@
 # 🎃 Halloween Watchful Creature
 
-A friendly talking porch decoration. It **sees** trick-or-treaters, **compliments their costumes** with silly jokes that are never scary, and **chats** with them, powered by OpenAI **GPT-Live**. Its LED eyes glow and pulse while it talks.
+A friendly talking porch decoration. It **sees** trick-or-treaters, **compliments their costumes** with kid-friendly jokes, and **chats** with them, powered by OpenAI **GPT-Live**. Its LED eyes glow, pulse and sparkle while it talks. How spooky it gets is up to you (the **Spookiness** dial).
 
-The first character is **Jacques O'Lantern, Pumpkin Critic**, who reviews costumes like a fancy food critic ("notes of cobweb, a bold glitter finish, five pumpkins out of five!"). Sir Reginald Bonesworth (skeleton butler) and Edgar the Raven (rhyming critic) are included, and you can switch characters from the dashboard.
+The first character is **Jacques O'Lantern, Pumpkin Critic**: a dapper pumpkin in a top hat, round spectacles and a bow tie who gives every costume a big, silly verdict ("a gold medal!", "three thumbs up, and I don't even have thumbs!"). He talks kid-first, in simple words, and only does his full fancy-food-critic routine for grown-ups who play along. Sir Reginald Bonesworth (skeleton butler) and Edgar the Raven (rhyming critic) are included, and you can switch characters from the dashboard.
+
+**What it does**
+- **Greets fast:** starts waking the moment someone appears, says a quick hello while the camera's look is still being described, then praises each costume's **standout detail**.
+- **Notices change:** new visitors, a second person joining, someone swapping in, and the same person back in a different hat (a playful remark), or back soon (silence) or after a while (a "welcome back").
+- **Doesn't repeat itself:** remembers what it said tonight across voice sessions, varies its openings and verdicts, and keeps running gags ("visitor number 50!", "the fourth dinosaur tonight!").
+- **Plays:** an occasional riddle for "trick", a roar contest, or "guess what I am".
+- **Lets you steer:** quick modes (Candy's low/out, Toddler mode, Back in 5, Last call), a spookiness dial, a voice picker, a kill switch and "make it say…", from the dashboard or **your phone**.
+- **Looks after itself:** a watchdog recovers a stuck camera or page, and alerts can **push to your phone**.
+- **Keeps a record:** a daily log with a snapshot of each greeting, and a **costume gallery** for the family.
+- **Rehearsal mode:** test greetings with sample photos, without walking in and out of frame.
 
 | Doc | What's in it |
 |---|---|
@@ -11,6 +21,7 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**, who reviews costum
 | [docs/BOM.md](docs/BOM.md) | Bill of materials |
 | [docs/SHOPPING_LIST.md](docs/SHOPPING_LIST.md) | Where to buy everything (Burlingame, CA route) |
 | [docs/PROP_BUILD.md](docs/PROP_BUILD.md) | Building the pumpkin, wiring the eyes, porch checklist |
+| [docs/templates/pumpkin-carving-template.pdf](docs/templates/pumpkin-carving-template.pdf) | Printable, actual-size carving template |
 | [docs/PI_MODE.md](docs/PI_MODE.md) | Running on a Raspberry Pi 5 |
 
 ## Quick start (Mac)
@@ -20,7 +31,6 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**, who reviews costum
    ```bash
    git clone https://github.com/jeremymatthewwerner/halloween-watchful-creature.git
    cd halloween-watchful-creature
-   git checkout claude/laughing-ramanujan-tc0edf   # until this branch is merged into main
    npm install
    cp .env.example .env
    ```
@@ -36,14 +46,14 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**, who reviews costum
 6. **Open Chrome at http://localhost:5173**, click **🎃 Wake the creature**, and allow camera and microphone access.
 7. **Walk up to the camera.** It greets you and compliments your outfit. Try asking "what am I dressed as?" or "tell me a joke".
 
-The Mac's built-in camera and mic are fine for testing. Once the USB webcam and speakerphone are plugged in, choose them under **Settings** on the dashboard (your choice is remembered).
+The Mac's built-in camera and mic are fine for testing. Once the porch gear is plugged in (the C920 webcam, whose built-in mics are the ears, and the speakers on a USB sound card; a USB speakerphone works too), choose them under **Settings** on the dashboard. Your choices are remembered by name, so re-plugging into another port or hub is fine.
 
 ### Halloween night
 ```bash
 npm run build
 caffeinate -dis npm start     # keeps the Mac awake; serves the dashboard at http://localhost:8787
 ```
-Then open **http://localhost:8787** in Chrome and click **Wake the creature**.
+Then open **http://localhost:8787** in Chrome and click **Wake the creature**. For an unattended night, start Chrome with the autoplay flag shown under **Watchdog** below, so it can wake itself after a reload, and set up the **phone remote and alerts**.
 
 ## Dashboard
 - **Live video** with person boxes: green means close enough to greet, grey means too far. Tune the distance with **Settings → How close counts as a visitor**.
@@ -180,12 +190,14 @@ GPT-Live costs about **$0.05 per minute** of voice, plus small vision-model call
 | `HOST` | `127.0.0.1`, or `0.0.0.0` with a PIN | Address to listen on; anything other than loopback needs `REMOTE_PIN` |
 | `NTFY_TOPIC` | (off) | ntfy.sh topic for push alerts; make it long and random |
 | `NTFY_SERVER` / `NTFY_TOKEN` | `https://ntfy.sh` / (none) | Self-hosted ntfy server, or a token for a protected topic |
+| `LOG_DIR` | `logs` | Folder for the daily logs and snapshots; `none` keeps no logs (and no gallery) |
+| `LOG_SNAPSHOTS` | `true` | `false` keeps the logs but saves no photos |
 
 Set `BODY_DEBUG=1` to log the commands sent to the Arduino.
 
 ## Development
 ```bash
-npm test          # unit tests (visitor tracking, director, body protocol, characters)
+npm test          # unit tests (tracker, director, engines, vision prompts, logs, gallery, remote, watchdog, body protocol, …)
 npm run typecheck
 npm run build
 ```
@@ -203,16 +215,21 @@ npm run build
 
 ### Add a character
 Copy `prompts/characters/pumpkin.md` to `prompts/characters/<id>.md` and edit:
-- the frontmatter: name, voice, eye colors and eye style;
+- the frontmatter: name, voice, eye colors and eye style, and `games: on` if it should play the trick-or-treat mini-games (`prompts/games.md`);
 - the persona below it.
 
 It appears in the dashboard's character picker.
 
 ## Troubleshooting
-- **It hears itself or echoes:**
-  - use the USB speakerphone (it has hardware echo cancellation);
+- **It hears itself or echoes** (🧒 lines in the Conversation panel repeating its own words):
   - keep the volume reasonable;
-  - point the speaker away from any other mic.
+  - point the speaker away from the webcam's mics, or move them apart inside the pumpkin;
+  - a USB speakerphone with hardware echo cancellation fixes it for good.
+- **Speakers are faint or hum:**
+  - push the 3.5 mm plug **all the way** into the USB sound card's headphone jack (a half-seated plug is faint and hums);
+  - set the Mac's output volume for the sound card to 100% and use the speaker's own knob for loudness;
+  - plug the speakers and the USB hub into the same power strip.
+- **The voice sounds flat or wrong:** try another voice in the dashboard's **Voice** picker (see the notes there). The persona's delivery rules ask for big, bouncy energy, but some voices carry it better than others.
 - **It greets people on the sidewalk:** raise "How close counts as a visitor".
 - **It doesn't notice people at night:** add light on the visitors.
 - **"Could not start voice session":**
