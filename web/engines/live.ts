@@ -108,6 +108,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         this.onStarted = null;
         // Apply the director's mic gating to the new session as well as the local track.
         this.send({ type: this.micEnabled ? "session.input_audio.unmute" : "session.input_audio.mute", event_id: this.nextId("mic") });
+        this.remindOfTonight();
         break;
       case "session.closed": {
         const usage = event.usage as { seconds?: number } | undefined;
@@ -210,6 +211,8 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       this.append("session.thinking.append", null, `[CAMERA] Background update, for reference only (don't greet again): ${seen}`);
       return;
     }
+    // A manual greeting may be the same people again: it isn't counted as a new group.
+    const tonight = reason === "manual" ? "" : this.countGroup(looked ? seen : null, reason === "grew" ? this.lastGroup : "");
     if (reason !== "grew") this.lastGroup = seen;
     else this.lastGroup = `${this.lastGroup} ${seen}`.trim();
     if (image) this.lastGroupImage = image;
@@ -217,9 +220,30 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     this.append(
       "session.commentary.append",
       null,
-      saidHello && followUp ? followUp(seen) + this.variety.verdict() : GREETING[reason](seen) + this.variety.greeting(),
+      (saidHello && followUp ? followUp(seen) + this.variety.verdict() : GREETING[reason](seen) + this.variety.greeting()) + tonight,
     );
     this.scheduleNudge(reason === "grew" ? NUDGE.grew : saidHello ? NUDGE.compliment : NUDGE.greet);
+  }
+
+  /**
+   * Counts a newly greeted group for tonight's running gags; returns the optional fun facts for its
+   * greeting. `previous`: the group's description before it grew, so costumes aren't counted twice.
+   */
+  private countGroup(seen: string | null, previous = ""): string {
+    const evening = this.deps.evening;
+    if (!evening) return "";
+    evening.recordGroup(seen, previous);
+    return evening.tonightContext(seen) ?? "";
+  }
+
+  /** A new session remembers nothing: tell it, in the background, what it already said tonight. */
+  private remindOfTonight(): void {
+    const evening = this.deps.evening;
+    const memory = evening?.memoryContext();
+    if (!evening || !memory) return;
+    this.append("session.thinking.append", null, memory);
+    const { said, groups } = evening.current;
+    this.emit({ type: "note", text: `reminded the new session of tonight (${said.length} lines said, ${groups} groups greeted)` });
   }
 
   /**
@@ -283,6 +307,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       const seen = result.text;
       if (previous && result.sameGroup === false) {
         this.emit({ type: "note", text: `someone new is here (vision saw: ${seen})` });
+        const tonight = this.countGroup(seen, previous);
         this.lastObservation = this.lastGroup = seen;
         this.lastGroupImage = image;
         this.lastNewcomerAt = Date.now();
@@ -290,7 +315,8 @@ export class LiveEngine extends WebRtcEngine implements Engine {
           "session.commentary.append",
           null,
           `[CAMERA] Someone new is in front of you who you haven't greeted yet. What you see now: ${seen} Greet them now and compliment their costumes.` +
-            this.variety.greeting(),
+            this.variety.greeting() +
+            tonight,
         );
         this.scheduleNudge(NUDGE.newcomer);
         return;
