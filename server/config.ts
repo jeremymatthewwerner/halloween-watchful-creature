@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { parseRetentionDays, parseSnapshotsSwitch } from "../shared/snapshots.ts";
 import type { BodyMode, EngineKind } from "../shared/types.ts";
 
 function str(name: string, fallback: string): string {
@@ -50,8 +51,10 @@ export const config = {
   maxVoiceMinutesPerDay: num("MAX_VOICE_MINUTES_PER_DAY", 240),
   /** Where the per-day logs go (log.txt, log.html, snapshots/); "none" turns disk logging off. */
   logDir: str("LOG_DIR", "logs"),
-  /** Save the camera frame of each greeting in the day's log. */
-  logSnapshots: str("LOG_SNAPSHOTS", "true") !== "false",
+  /** Save the camera frame of each greeting in the day's log (SNAPSHOTS=off, or the older LOG_SNAPSHOTS=false, saves none). */
+  snapshots: parseSnapshotsSwitch(process.env.SNAPSHOTS, process.env.LOG_SNAPSHOTS),
+  /** Delete snapshots older than this many days (checked at start and daily); 0 keeps them forever. */
+  snapshotRetentionDays: parseRetentionDays(process.env.SNAPSHOT_RETENTION_DAYS),
   /** Rehearsal mode's "Generate visitors": image model, quality and size (landscape, like the webcam). */
   rehearsalImageModel: str("REHEARSAL_IMAGE_MODEL", "gpt-image-2.5-flare"),
   rehearsalImageQuality: str("REHEARSAL_IMAGE_QUALITY", "low"),

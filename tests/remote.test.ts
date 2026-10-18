@@ -1,8 +1,12 @@
 import { Hono } from "hono";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { AlertCenter, NtfyNotifier, type Notifier } from "../server/alerts.ts";
 import { RemoteAuth, SESSION_COOKIE, checkAccess, clientAddress, isLoopback, listenHost, parseCookies, type RequestFacts } from "../server/auth.ts";
 import { Remote, parseCommand } from "../server/remote.ts";
+import { deleteAllSnapshots } from "../server/snapshots.ts";
 import type { DashboardStatus } from "../shared/remote.ts";
 
 const PIN = "271828";
@@ -153,7 +157,7 @@ describe("checkAccess", () => {
   it("keeps the phone out of the dashboard-only routes, even signed in", () => {
     const auth = new RemoteAuth({ pin: PIN });
     const cookie = `${SESSION_COOKIE}=${signIn(auth)}`;
-    for (const path of ["/api/session", "/api/vision", "/api/rehearsal/generate", "/api/rehearsal/generated", "/api/conversation", "/api/remote/state", "/api/remote/commands", "/api/remote/alert", "/ws/body"]) {
+    for (const path of ["/api/session", "/api/vision", "/api/rehearsal/generate", "/api/rehearsal/generated", "/api/snapshots/delete-all", "/api/conversation", "/api/remote/state", "/api/remote/commands", "/api/remote/alert", "/ws/body"]) {
       expect(checkAccess(req({ ...PHONE, path, method: "POST", cookie }), auth)).toMatchObject({ allow: false, status: 403 });
     }
     // The full dashboard (the brain) isn't for the phone either.
@@ -281,6 +285,30 @@ describe("Remote routes (Hono middleware)", () => {
     const { remote, call } = setup();
     for (let i = 0; i < 3; i++) await call("/api/vision", "127.0.0.1", { method: "POST" });
     expect(remote.alerts.alerts[0]).toMatchObject({ kind: "vision-errors" });
+  });
+
+  it("lets only the dashboard delete all snapshots, even with the phone signed in", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "creature-remote-"));
+    try {
+      const photo = join(dir, "2026-10-31", "snapshots", "18-00-00-arrived.jpg");
+      mkdirSync(dirname(photo), { recursive: true });
+      writeFileSync(photo, "jpeg");
+      const { remote, app, call } = setup();
+      // The same handler shape as server/index.ts.
+      app.post("/api/snapshots/delete-all", async (ctx) => ctx.json(deleteAllSnapshots(dir)));
+      const cookie = `${SESSION_COOKIE}=${signIn(remote.auth)}`;
+      const phone = await call("/api/snapshots/delete-all", "192.168.1.23", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: '{"confirm":true}' });
+      expect(phone.status).toBe(403);
+      expect(existsSync(photo)).toBe(true);
+      expect((await call("/api/snapshots/delete-all", "192.168.1.23", { method: "POST", body: '{"confirm":true}' })).status).toBe(401);
+      expect(existsSync(photo)).toBe(true);
+      const local = await call("/api/snapshots/delete-all", "127.0.0.1", { method: "POST", headers: { "content-type": "application/json" }, body: '{"confirm":true}' });
+      expect(local.status).toBe(200);
+      expect(await local.json()).toEqual({ days: ["2026-10-31"], files: 1 });
+      expect(existsSync(photo)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("validates commands", () => {

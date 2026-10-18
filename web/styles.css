@@ -103,6 +103,9 @@ code { background: #140c22; padding: 0 4px; border-radius: 4px; }
 .log-links { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; }
 .log-links a { color: var(--orange); }
 .log-links a[hidden] { display: none; }
+.snapshot-privacy { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: flex-end; margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.snapshot-privacy[hidden] { display: none; }
+.snapshot-privacy button { padding: 4px 10px; font-size: 13px; }
 .log-status { font-weight: normal; font-size: 12px; margin-left: 6px; }
 .log-status.on { color: var(--green); }
 .log-status.bad { color: var(--red); }

@@ -12,6 +12,7 @@ import { Rehearsal } from "./rehearsal.ts";
 import { RehearsalPanel } from "./rehearsalPanel.ts";
 import { isModeId, modeLabel } from "./modes.ts";
 import { RemoteLink, renderAlerts } from "./remoteLink.ts";
+import { setupSnapshotPanel } from "./snapshotPanel.ts";
 import { Watchdog, loadReloads, loadResume, resumeAudio, saveReloads, saveResume } from "./watchdog.ts";
 import { LiveEngine } from "./engines/live.ts";
 import { RealtimeEngine } from "./engines/realtime.ts";
@@ -272,6 +273,7 @@ async function main(): Promise<void> {
   if (cfg.sessionLogUrl) ui.sessionLogLink.href = cfg.sessionLogUrl;
   ui.galleryLink.hidden = !cfg.sessionLogUrl;
   if (cfg.sessionLogUrl) ui.galleryLink.href = cfg.sessionLogUrl.replace(/log\.html$/, "gallery.html");
+  setupSnapshotPanel($("snapshot-privacy"), cfg.snapshots, log);
   for (const c of cfg.characters) ui.characterSelect.add(new Option(c.name, c.id, false, c.id === cfg.character.id));
   ui.characterSelect.addEventListener("change", () => {
     prefs.set("character", ui.characterSelect.value);
