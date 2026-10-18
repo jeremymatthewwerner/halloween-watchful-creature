@@ -40,15 +40,15 @@ A seeded Halloween from 5:30 pm: about 20 groups an hour at first, 55 at the pea
 
 Every sample (after forcing garbage collection in both processes):
 - **Server:** RSS, heap, live timers and sockets (through the Node inspector), `/api/health` latency, open streams (`/api/health` → `streams`: log, phone and dashboard streams), the dashboard's heartbeat age.
-- **Browser:** JS heap, DOM nodes (including detached ones), event listeners, Web Audio nodes (`Performance.getMetrics`), live timers and intervals, open EventSources and WebSockets, open voice sessions, in-flight and stuck fetches, the longest main-thread stall, oversized context appends (over 2,000 characters, about GPT-Live's 500-token limit).
+- **Browser:** JS heap, DOM nodes (in the page, and detached: still in memory but no longer on the page), event listeners, Web Audio nodes (`Performance.getMetrics`), live timers and intervals, open EventSources and WebSockets, open voice sessions, in-flight and stuck fetches, the longest main-thread stall, oversized context appends (over 2,000 characters, about GPT-Live's 500-token limit).
 - **Disk:** the log folder's size and snapshot count.
 - **Voice:** sessions started and their billed minutes in this run, and a **projection for the real night**: the same visits with the real 3-minute idle close.
 
 Results go to the output folder: `samples.csv` (one row per sample), `summary.json` (everything below), `timeline.json` (the evening, what the page sent the session, session spans, remote presses), `server.log`, `page-console.log`, and the day's `logs/`.
 
 ### Checks (pass/fail)
-- **Leaks:** growth per hour after warm-up (the first 15%, at least 3 minutes), by least squares: server heap ≤ 3 MB/h, server RSS ≤ 40 MB/h, browser heap ≤ 5 MB/h, DOM nodes ≤ 1,000/h, listeners ≤ 200/h, Web Audio nodes ≤ 60/h. Skipped (⏭️) when less than 15 minutes is left after warm-up.
-- **Timers and connections:** intervals flat after warm-up (in both processes), at most 2 EventSources, 1 WebSocket and 1 voice session open, and after the extra clients leave, exactly 1 log stream, 1 dashboard command stream and 0 phone streams on the server.
+- **Leaks:** growth per hour after warm-up (the first 15%, at least 3 minutes), by least squares: server heap ≤ 3 MB/h, server RSS ≤ 40 MB/h, browser heap ≤ 5 MB/h, detached DOM nodes ≤ 300/h, listeners ≤ 200/h, Web Audio nodes ≤ 60/h. Skipped (⏭️) when less than 15 minutes is left after warm-up.
+- **Timers and connections:** intervals flat after warm-up (in both processes), at most 2 EventSources, 1 WebSocket and 1 voice session open, at most 6,000 DOM nodes in the page (its panels are capped), and after the extra clients leave, exactly 1 log stream, 1 dashboard command stream and 0 phone streams on the server.
 - **Stalls:** `/api/health` under 1 s, heartbeat under 10 s old, no main-thread stall over 2 s, no fetch over 10 s, every phone command run by the dashboard, no page reloads or uncaught errors.
 - **Behavior:** at most 3% of new groups not greeted within 20 s (not counting kill-switch and outage windows), no voice session left open on an empty porch for more than a minute in total, and none open at the end.
 

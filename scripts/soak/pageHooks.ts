@@ -51,6 +51,7 @@ export interface SoakPageSnapshot {
   oversizeAppends: number;
   maxAppendChars: number;
   unknownEvents: number;
+  /** Nodes in the page's document (elements, text, comments): the rest of Chrome's count is detached. */
   domAttached: number;
 }
 
@@ -173,24 +174,33 @@ export function soakPageHooks(o: PageHookOptions): void {
   let maxAppendChars = 0;
   let unknownEvents = 0;
 
-  /** One shared synthesized "voice": a tone whose gain goes up while the creature talks. */
+  /**
+   * The synthesized "voice": one tone whose gain goes up while the creature talks, sent to each
+   * session as its own stream. Like a real call's remote track, it ends when the session does.
+   */
   let voiceCtx: AudioContext | null = null;
   let voiceGain: GainNode | null = null;
-  let voiceDest: MediaStreamAudioDestinationNode | null = null;
   let speakingUntil = 0;
-  const voiceStream = (): MediaStream => {
+  const voiceStream = (): { stream: MediaStream; end(): void } => {
     if (!voiceCtx) {
       voiceCtx = new AudioContext();
       const osc = voiceCtx.createOscillator();
       osc.frequency.value = 170;
       voiceGain = voiceCtx.createGain();
       voiceGain.gain.value = 0;
-      voiceDest = voiceCtx.createMediaStreamDestination();
-      osc.connect(voiceGain).connect(voiceDest);
+      osc.connect(voiceGain);
       osc.start();
     }
     void voiceCtx.resume().catch(() => undefined);
-    return voiceDest!.stream;
+    const dest = voiceCtx.createMediaStreamDestination();
+    voiceGain!.connect(dest);
+    return {
+      stream: dest.stream,
+      end() {
+        voiceGain?.disconnect(dest);
+        for (const track of dest.stream.getTracks()) track.stop();
+      },
+    };
   };
   const setVoice = (on: boolean) => {
     if (voiceGain && voiceCtx) voiceGain.gain.setTargetAtTime(on ? 0.35 : 0, voiceCtx.currentTime, 0.02);
@@ -358,6 +368,7 @@ export function soakPageHooks(o: PageHookOptions): void {
     localDescription: RTCSessionDescriptionInit | null = null;
     remoteDescription: RTCSessionDescriptionInit | null = null;
     private readonly sim = new LiveSim(this);
+    private endVoice: () => void = () => undefined;
 
     addTrack(): RTCRtpSender {
       return {} as RTCRtpSender;
@@ -387,7 +398,8 @@ export function soakPageHooks(o: PageHookOptions): void {
         if (this.connectionState === "closed") return;
         this.connectionState = "connected";
         this.dispatchEvent(new Event("connectionstatechange"));
-        const stream = voiceStream();
+        const { stream, end } = voiceStream();
+        this.endVoice = end;
         const track = Object.assign(new Event("track"), { streams: [stream], track: stream.getAudioTracks()[0] });
         this.dispatchEvent(track);
         const channel = this.sim.channel;
@@ -413,9 +425,18 @@ export function soakPageHooks(o: PageHookOptions): void {
       const channel = this.sim.channel;
       if (channel && channel.readyState !== "closed") channel.readyState = "closed";
       this.sim.end();
+      this.endVoice();
     }
   }
   anyWindow.RTCPeerConnection = FakePeerConnection;
+
+  const countNodes = () => {
+    // Plus one for the document itself, as Chrome's Nodes counter includes it.
+    let n = 1;
+    const walker = document.createTreeWalker(document, NodeFilter.SHOW_ALL);
+    while (walker.nextNode()) n++;
+    return n;
+  };
 
   w.__soak = {
     snapshot(): SoakPageSnapshot {
@@ -440,7 +461,7 @@ export function soakPageHooks(o: PageHookOptions): void {
         oversizeAppends,
         maxAppendChars,
         unknownEvents,
-        domAttached: document.getElementsByTagName("*").length,
+        domAttached: countNodes(),
       };
     },
     /** Context appends, and ended sessions, since the last call. */

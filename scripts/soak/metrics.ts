@@ -41,7 +41,7 @@ export const SLOPE_LIMITS: readonly { key: string; label: string; perHour: numbe
   { key: "serverHeapUsed", label: "server heap (after GC)", perHour: 3, unit: "MB" },
   { key: "serverRss", label: "server RSS", perHour: 40, unit: "MB" },
   { key: "browserHeapUsed", label: "browser JS heap (after GC)", perHour: 5, unit: "MB" },
-  { key: "domNodes", label: "browser DOM nodes (incl. detached)", perHour: 1000, unit: "count" },
+  { key: "domDetached", label: "browser detached DOM nodes", perHour: 300, unit: "count" },
   { key: "jsListeners", label: "browser event listeners", perHour: 200, unit: "count" },
   { key: "audioHandlers", label: "browser Web Audio nodes", perHour: 60, unit: "count" },
 ];
@@ -81,6 +81,8 @@ export function leakChecks(samples: readonly Sample[], opts: EvaluateOptions): C
   const firstIntervals = steady.find((s) => Number.isFinite(s.pageIntervals))?.pageIntervals;
   if (firstIntervals !== undefined) bounded("browser intervals (flat after warm-up)", "pageIntervals", firstIntervals + 2);
   bounded("browser pending timeouts", "pageTimeouts", 150);
+  // The panels are capped (200 Conversation lines, 500 server log lines): the page itself stays bounded.
+  bounded("browser DOM nodes in the page", "domAttached", 6000);
   const firstServerTimers = steady.find((s) => Number.isFinite(s.serverTimeouts))?.serverTimeouts;
   if (firstServerTimers !== undefined) bounded("server timers (flat after warm-up)", "serverTimeouts", firstServerTimers + 12);
   bounded("browser open EventSources", "pageEventSources", 2);

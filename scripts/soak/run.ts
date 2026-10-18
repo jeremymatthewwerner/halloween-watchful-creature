@@ -491,6 +491,7 @@ async function main(): Promise<void> {
         maxLagMs: snap.maxLagMs,
         oversizeAppends: snap.oversizeAppends,
         domAttached: snap.domAttached,
+        domDetached: Math.max(0, metric("Nodes") - snap.domAttached),
       });
       const drained = await evaluate<{ appends: SoakAppend[]; sessions: { from: number; to: number }[] }>("__soak.drain()");
       for (const a of drained.appends) appends.push({ t: a.at - t0, type: a.type });
@@ -510,7 +511,7 @@ async function main(): Promise<void> {
       if (samples.length % 6 === 1) {
         say(
           `t=${Math.round(s.t / 60_000)} min · server heap ${(s.serverHeapUsed! / MB).toFixed(1)} MB rss ${(s.serverRss! / MB).toFixed(0)} MB · ` +
-            `page heap ${(s.browserHeapUsed! / MB).toFixed(1)} MB, ${s.domNodes} nodes, ${s.jsListeners} listeners · sessions ${s.sessionsStarted} · ` +
+            `page heap ${(s.browserHeapUsed! / MB).toFixed(1)} MB, ${s.domNodes} nodes (${s.domDetached} detached), ${s.jsListeners} listeners · sessions ${s.sessionsStarted} · ` +
             `vision ${s.mockVision} · logs ${(s.logBytes! / MB).toFixed(1)} MB`,
         );
       }
