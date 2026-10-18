@@ -1,5 +1,6 @@
 [Desktop Entry]
 Type=Application
 Name=Watchful Creature kiosk
-Exec=sh -c 'sleep 8; chromium-browser --kiosk --noerrdialogs --disable-infobars --use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required "http://localhost:8787/?autowake"'
+# setup.sh replaces REPO_DIR with the clone's path. kiosk.sh keeps Chromium running (see the script).
+Exec=sh -c 'sleep 8; exec "REPO_DIR/scripts/pi/kiosk.sh"'
 X-GNOME-Autostart-enabled=true

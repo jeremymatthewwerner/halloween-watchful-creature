@@ -134,3 +134,9 @@ code { background: #140c22; padding: 0 4px; border-radius: 4px; }
 .voice-notes { color: #d9c8f0; }
 .tag { font-size: 11px; font-weight: normal; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; color: var(--muted); white-space: nowrap; }
 .tag.on { border-color: var(--orange); color: var(--orange); }
+/* Health alerts (also on the phone remote at /remote). */
+.alerts ol { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+.alerts li { padding: 6px 10px; border-radius: 8px; border-left: 4px solid var(--orange); background: rgba(255, 122, 26, .08); font-size: 14px; }
+.alerts li.error { border-left-color: var(--red); background: rgba(255, 77, 106, .1); }
+.alerts li.resolved { border-left-color: var(--green); background: none; color: var(--muted); }
+.alerts time { color: var(--muted); font-size: 12px; }

@@ -95,6 +95,16 @@ export class ModePanel {
     return [head, group];
   }
 
+  /** Every mode with whether it's on (for the phone remote). */
+  list(): { id: ModeId; label: string; on: boolean }[] {
+    return MODES.map((m) => ({ id: m.id, label: m.label, on: this.standing.active.includes(m.id) }));
+  }
+
+  /** Turns a mode on or off (from the phone remote); same as tapping its button. */
+  set(id: ModeId, on: boolean): void {
+    if (this.standing.active.includes(id) !== on) this.toggle(id);
+  }
+
   private toggle(id: ModeId): void {
     const before = this.standing.spookiness;
     const on = this.standing.toggleMode(id);
