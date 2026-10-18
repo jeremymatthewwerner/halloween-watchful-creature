@@ -3,6 +3,8 @@
 Expect about 1–2 hours, plus soldering for the eyes.
 
 ## 1. Carve and hide the electronics
+**Printable template:** [templates/pumpkin-carving-template.pdf](templates/pumpkin-carving-template.pdf) has actual-size outlines for the eyes, mouth and back hatch, plus the steps below. Print it at **100% ("Actual size")** and check its ruler before cutting. The source is [templates/pumpkin-carving-template.html](templates/pumpkin-carving-template.html); to rebuild the PDF, open it in Chrome and print to PDF with no margins and no headers.
+
 **Cutting a plastic craft pumpkin** (ours is 13" tall and hollow):
 - **Hot knife:** your soldering iron works as one. Use an old or spare tip, because melted plastic ruins it.
 - **Ventilate:** cut **outdoors or with a fan**, since melting plastic gives off nasty fumes.
@@ -14,10 +16,10 @@ Expect about 1–2 hours, plus soldering for the eyes.
 - **one** Logitech Z150 speaker (about 4.5" × 6.5"), or a speakerphone, inside;
 - the second Z150 speaker sits hidden behind the pumpkin.
 
-1. Cut a **service hatch** in the back, big enough for the speaker (about 5" × 7"). Keep the cut-out piece to use as a door.
-2. Carve the **eyes** about 1.5" across, and a **wide mouth**.
+1. Cut a **service hatch** in the back, big enough for the speaker: **5" × 7"** with rounded corners, plus a 1.2" × 0.5" cable notch below it. Keep the cut-out piece to use as a door.
+2. Carve **round eyes 1.5" across, centres 3" apart** (a NeoPixel Jewel fits behind each), and a **grin 6" wide and 2" tall at the centre**, with its top about 0.3" below the pumpkin's widest line.
 3. Glue **black tulle** behind the mouth. The camera sees through it and sound passes through it, but from outside it just looks dark.
-4. Mount the **webcam** behind the mouth, lens against the tulle, aimed slightly down at where visitors stand (1–2 m away). Its clip or a hot-glued foam block holds it.
+4. Mount the **webcam** behind the mouth, lens against the tulle at the centre of the grin. Its clip or a hot-glued foam block holds it. With the mouth about 26–30" off the porch floor (a crate helps), aim it level to about 10° upward, so that a child at the candy bowl is in frame from the waist up and an adult's head fits too. Check on the dashboard.
 5. Put the **speakerphone** inside, facing the mouth, sitting flat. Its mics need open air, so keep foam scraps away from it.
 6. Run the cables out of the hatch to the **powered USB hub** behind the pumpkin. Run the **16 ft active USB cable** from the hub to the Mac.
 7. Dress him up with a beret or chef's toque, a monocle and a bow tie.
