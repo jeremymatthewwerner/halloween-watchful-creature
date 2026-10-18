@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { WebSocketServer } from "ws";
 import { readFile, readdir } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import type {
   BodyMessage,
@@ -21,7 +22,9 @@ import { config } from "./config.ts";
 import { buildGallery } from "./gallery.ts";
 import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId, wantsSnapshot } from "./logs.ts";
 import { OpenAIError, characterVoice, createLiveSession, createRealtimeCall, describeFrame, generateImage, sessionVoice } from "./openai.ts";
+import { NtfyNotifier } from "./alerts.ts";
 import { listenHost } from "./auth.ts";
+import { NightRecapPush, installRecap, phoneBaseUrl, shortName } from "./recap.ts";
 import { Remote } from "./remote.ts";
 import { MAX_PER_REQUEST, VisitorCache, checkRequest, generateVisitors } from "./rehearsalGen.ts";
 
@@ -37,6 +40,26 @@ if (sessionLog) {
 
 const app = new Hono();
 
+// The night recap (server/recap.ts), and one push of its headline when the night is over.
+const recapName = shortName(loadCharacter(config.character).name);
+const recapPush =
+  sessionLog && config.ntfyTopic && (config.recapAt !== null || config.recapSleepMinutes !== null)
+    ? new NightRecapPush({
+        logDir: config.logDir,
+        notifier: new NtfyNotifier(config.ntfyTopic, config.ntfyServer, config.ntfyToken),
+        atMinutes: config.recapAt,
+        sleepMs: config.recapSleepMinutes === null ? null : config.recapSleepMinutes * 60_000,
+        baseUrl: phoneBaseUrl({
+          pinSet: Boolean(config.remotePin),
+          remoteUrl: config.remoteUrl,
+          host: listenHost({ HOST: process.env.HOST, pinSet: Boolean(config.remotePin) }).host,
+          port: config.port,
+          interfaces: networkInterfaces(),
+        }),
+        name: recapName,
+      })
+    : null;
+
 // Only the dashboard itself may call the API (origin check), so other web pages open in the same
 // browser can't start (billed) sessions against this local server. Other devices (the phone remote)
 // need REMOTE_PIN and a signed-in session. Also health alerts. See server/auth.ts and server/remote.ts.
@@ -45,6 +68,8 @@ const remote = new Remote({
   arduinoEnabled: config.bodySerialPort !== "none",
   bodyStatus: () => body.status,
   todayLogUrl: () => (sessionLog ? `/api/session-logs/${sessionLog.currentDay}/log.html` : null),
+  recapUrl: () => (sessionLog ? "/recap" : null),
+  onDashboardStatus: (status) => recapPush?.dashboardStatus(status),
 });
 remote.install(app);
 
@@ -132,7 +157,7 @@ app.post("/api/conversation", async (c) => {
 /** Past days' logs, newest first. */
 app.get("/api/session-logs", async (c) => {
   const days = sessionLog ? (await readdir(config.logDir).catch(() => [])).filter((d) => LOG_DAY.test(d)).sort().reverse() : [];
-  const items = days.map((d) => `<li><a href="/api/session-logs/${d}/log.html">${d}</a> · <a href="/api/session-logs/${d}/log.txt">text</a> · <a href="/api/session-logs/${d}/gallery.html">🖼️ costume gallery</a></li>`);
+  const items = days.map((d) => `<li><a href="/api/session-logs/${d}/log.html">${d}</a> · <a href="/api/session-logs/${d}/log.txt">text</a> · <a href="/api/session-logs/${d}/gallery.html">🖼️ costume gallery</a> · <a href="/recap/${d}">🌙 night recap</a></li>`);
   return c.html(
     `<!doctype html><meta charset="utf-8"><title>Creature logs</title><style>body{background:#120a1c;color:#f3eaff;font:15px system-ui;padding:16px}a{color:#ff7a1a}</style>` +
       `<h1>🎃 Creature logs</h1><ul>${items.join("") || "<li>No logs yet.</li>"}</ul>`,
@@ -150,6 +175,9 @@ app.get("/api/session-logs/:day/gallery.html", async (c) => {
     : null;
   return c.html(buildGallery({ day, logText, snapshots }), 200, { "cache-control": "no-store" });
 });
+
+/** The morning-after recap: GET /recap/<day> and /recap (the latest evening). Behind the same guard. */
+if (sessionLog) installRecap(app, { logDir: config.logDir, logSnapshots: config.logSnapshots, name: recapName });
 
 const LOG_FILES: Record<string, string> = { html: "text/html; charset=utf-8", txt: "text/plain; charset=utf-8", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
@@ -260,6 +288,7 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: listen.hos
   console.log(`Creature server on http://localhost:${info.port} (engine: ${config.engine}, character: ${config.character})`);
   if (config.remotePin) console.log(`Phone remote on: open http://<this computer's address>:${info.port}/remote on your phone`);
   remote.start();
+  recapPush?.start();
   if (!config.apiKey) console.warn("OPENAI_API_KEY is not set: copy .env.example to .env and add your key.");
   if (!config.production) console.log("Open the dashboard at http://localhost:5173");
 });

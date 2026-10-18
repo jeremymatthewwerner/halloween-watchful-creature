@@ -29,6 +29,7 @@ export default defineConfig({
     // xfwd: the creature server sees who the request is really from (it treats loopback as the dashboard).
     proxy: {
       "/api": { target: `http://localhost:${serverPort}`, xfwd: true },
+      "/recap": { target: `http://localhost:${serverPort}`, xfwd: true },
       "/ws": { target: `ws://localhost:${serverPort}`, ws: true, xfwd: true },
     },
   },

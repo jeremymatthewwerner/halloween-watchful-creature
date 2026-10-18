@@ -72,6 +72,7 @@ const ui = {
   serverLogStatus: $<HTMLSpanElement>("server-log-status"),
   sessionLogLink: $<HTMLAnchorElement>("session-log-link"),
   galleryLink: $<HTMLAnchorElement>("gallery-link"),
+  recapLink: $<HTMLAnchorElement>("recap-link"),
   rehearsal: $<HTMLDivElement>("rehearsal"),
   alerts: $<HTMLElement>("alerts"),
   alertList: $<HTMLOListElement>("alert-list"),
@@ -272,6 +273,7 @@ async function main(): Promise<void> {
   if (cfg.sessionLogUrl) ui.sessionLogLink.href = cfg.sessionLogUrl;
   ui.galleryLink.hidden = !cfg.sessionLogUrl;
   if (cfg.sessionLogUrl) ui.galleryLink.href = cfg.sessionLogUrl.replace(/log\.html$/, "gallery.html");
+  ui.recapLink.hidden = !cfg.sessionLogUrl;
   for (const c of cfg.characters) ui.characterSelect.add(new Option(c.name, c.id, false, c.id === cfg.character.id));
   ui.characterSelect.addEventListener("change", () => {
     prefs.set("character", ui.characterSelect.value);

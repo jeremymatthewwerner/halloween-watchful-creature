@@ -24,6 +24,10 @@ export interface RemoteOptions {
   production: boolean;
   bodyStatus: () => string;
   todayLogUrl: () => string | null;
+  /** The night recap's page, or null when there are no logs. */
+  recapUrl?: () => string | null;
+  /** Each dashboard check-in (the night recap watches the kill switch). */
+  onDashboardStatus?: (status: DashboardStatus) => void;
   now?: () => number;
   fetch?: typeof fetch;
 }
@@ -259,6 +263,7 @@ export class Remote {
     this.dashboard = status;
     this.lastStateAt = this.now();
     this.alerts.resolve("dashboard-offline");
+    this.opts.onDashboardStatus?.(status);
     if (changed) this.snapshotChanged();
   }
 
@@ -271,7 +276,7 @@ export class Remote {
       dashboardSeenAgo: this.lastStateAt === null ? null : Math.round((t - this.lastStateAt) / 1000),
       arduino: { enabled: this.opts.arduinoEnabled, connected: this.arduinoConnected, status: this.opts.bodyStatus() },
       alerts: this.alerts.alerts.slice(0, 15),
-      links: { todayLog: today, gallery: today ? today.replace(/log\.html$/, "gallery.html") : null, allLogs: "/api/session-logs" },
+      links: { todayLog: today, gallery: today ? today.replace(/log\.html$/, "gallery.html") : null, allLogs: "/api/session-logs", recap: this.opts.recapUrl?.() ?? null },
     };
   }
 

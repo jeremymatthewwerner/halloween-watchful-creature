@@ -1,5 +1,6 @@
 import "dotenv/config";
 import type { BodyMode, EngineKind } from "../shared/types.ts";
+import { parseRecapAt } from "./recap.ts";
 
 function str(name: string, fallback: string): string {
   const value = process.env[name]?.trim();
@@ -29,6 +30,13 @@ for (const mode of bodyModes) {
 const remotePin = process.env.REMOTE_PIN?.trim() ?? "";
 if (remotePin && remotePin.length < 6) {
   throw new Error("REMOTE_PIN must be at least 6 characters (or leave it empty to keep the phone remote off)");
+}
+
+function recapSleepMinutes(value: string | undefined): number | null {
+  const v = value?.trim() ?? "";
+  if (v === "off" || v === "0") return null;
+  const n = Number(v);
+  return v && Number.isFinite(n) && n > 0 ? n : 15;
 }
 
 export const config = {
@@ -68,6 +76,12 @@ export const config = {
   ntfyServer: str("NTFY_SERVER", "https://ntfy.sh"),
   /** Access token for a protected topic or a self-hosted ntfy server (optional). */
   ntfyToken: process.env.NTFY_TOKEN?.trim() ?? "",
+  /** Night recap push: at this local time (minutes after midnight), or null for no clock trigger. */
+  recapAt: parseRecapAt(process.env.RECAP_AT),
+  /** ...and when the kill switch has been on this many minutes (null: "off" or 0). */
+  recapSleepMinutes: recapSleepMinutes(process.env.RECAP_SLEEP_MINUTES),
+  /** How the phone reaches this server (e.g. http://192.168.1.5:8787), for the recap link; else guessed. */
+  remoteUrl: process.env.REMOTE_URL?.trim() ?? "",
   production: process.env.NODE_ENV === "production",
 };
 

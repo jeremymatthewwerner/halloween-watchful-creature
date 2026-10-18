@@ -154,7 +154,7 @@ function render() {
   renderModes(online ? d.modes : null);
   renderAlerts(s.alerts);
 
-  for (const [id, link] of [["today-log", s.links.todayLog], ["gallery", s.links.gallery]]) {
+  for (const [id, link] of [["today-log", s.links.todayLog], ["gallery", s.links.gallery], ["recap", s.links.recap]]) {
     $(id).hidden = !link;
     if (link) $(id).href = link;
   }
