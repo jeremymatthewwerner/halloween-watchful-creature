@@ -75,6 +75,8 @@ button.big { font-size: 18px; padding: 12px 20px; background: #3b2160; border-co
 .modes button.mode { padding: 6px 10px; font-size: 14px; }
 .modes button.mode.on { background: #4a2a10; border-color: var(--orange); color: #ffd9b8; box-shadow: 0 0 0 1px var(--orange) inset; }
 .modes button.mode.on::after { content: " · ON"; font-weight: 600; font-size: 12px; color: var(--orange); }
+.modes button.level { padding: 6px 10px; font-size: 14px; }
+.modes button.level.on { background: #2e1a4a; border-color: #b07cff; color: #e8d9ff; box-shadow: 0 0 0 1px #b07cff inset; }
 .say { display: flex; gap: 8px; margin-top: 10px; }
 .say input {
   flex: 1; min-width: 0; background: #140c22; color: var(--text);

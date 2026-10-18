@@ -89,7 +89,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   private utteranceStartedAt = 0;
   private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
   /** Picks a different style twist for each greeting, so the creature doesn't repeat itself. */
-  protected variety = new Variety();
+  protected variety = new Variety(Math.random, () => this.deps.spookiness?.() ?? 1);
   private nudgePoll: ReturnType<typeof setInterval> | null = null;
   /** If a greeting hasn't started this long after we asked, nudge with an instruction. */
   protected nudgeMs = 5000;

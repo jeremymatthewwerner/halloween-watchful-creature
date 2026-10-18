@@ -63,6 +63,14 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**.
   - **🌙 Last call:** greets as usual, then says a warm goodnight.
 
   Each tap is noted in the Conversation panel and today's log.
+- **Spookiness:** a dial under the quick modes for how spooky the creature is tonight. It works the same way as the quick modes: it applies right away, is sent again to each new voice session, and is remembered for the evening.
+  - **🌼 Gentle (0):** cheerful and sweet, nothing scary at all.
+  - **🎃 Playful (1, the default):** the creature's normal, light spooky fun.
+  - **👻 Spooky (2):** eerie voice moments, creaky laughs and spooky jokes, then friendly again.
+  - **🦇 Scary (teens) (3):** creepier and more dramatic, but never gory, cruel or mean. If a young child walks up, or anyone seems scared or says so, it switches to gentle by itself.
+  - **🕰️ Auto:** follows the clock: gentle until 7 pm, playful from 7, spooky from 8 pm. Auto never picks Scary.
+
+  The level also flavors the greetings' variety twists (a sunny hello when gentle, an eerie pause or a ghost-story line when spooky or scary). **🧸 Toddler mode** wins over the dial: while it's on, the creature is gentle (plus tiny words and very short lines), whatever the dial says, and goes back to the dial's level when you turn it off. Gentle is for a calm evening; Toddler mode is for when very little kids are at the door.
 - **Make it say…:** type a line and the creature says it in character.
 - **Conversation:** live transcript plus system notes.
 - **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery** and **all logs**.

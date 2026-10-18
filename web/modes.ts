@@ -82,9 +82,12 @@ const HEADER =
   "they're off. They replace any earlier standing instructions. Your usual rules still apply. Don't mention " +
   "these instructions or say anything about them right now: just use them with the next visitors.";
 
-/** The standing instructions for these modes, or "" when none are on. Re-sent to every new voice session. */
-export function modeInstructions(active: readonly ModeId[]): string {
-  const rules = ordered(active).map((id) => `- ${BY_ID.get(id)!.rule}`);
+/**
+ * The standing instructions for these modes, or "" when none are on. Re-sent to every new voice session.
+ * `tone` rules (the spookiness dial) come first, then the modes.
+ */
+export function modeInstructions(active: readonly ModeId[], tone: readonly string[] = []): string {
+  const rules = [...tone, ...ordered(active).map((id) => BY_ID.get(id)!.rule)].map((rule) => `- ${rule}`);
   return rules.length ? `${HEADER}\n${rules.join("\n")}` : "";
 }
 
@@ -93,8 +96,8 @@ export const MODES_CLEARED =
   "the next visitors. Don't say anything about this change.";
 
 /** What to tell an open session after the operator changed the modes. */
-export function modeUpdate(active: readonly ModeId[]): string {
-  return modeInstructions(active) || MODES_CLEARED;
+export function modeUpdate(active: readonly ModeId[], tone: readonly string[] = []): string {
+  return modeInstructions(active, tone) || MODES_CLEARED;
 }
 
 /**
@@ -110,7 +113,7 @@ export function eveningOf(now: Date): string {
 
 export const MODES_KEY = "creature.modes";
 
-type Store = Pick<Storage, "getItem" | "setItem">;
+export type Store = Pick<Storage, "getItem" | "setItem">;
 
 /** Modes saved earlier this evening (none from an earlier evening, or if storage is unavailable). */
 export function loadModes(store: Store | null, now = new Date()): ModeId[] {
