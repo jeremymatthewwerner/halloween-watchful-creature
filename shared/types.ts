@@ -9,6 +9,14 @@ export const BODY_STATES: readonly BodyState[] = ["sleeping", "idle", "listening
 
 export type BodyMode = "eyes" | "jaw" | "relay";
 
+/**
+ * One-shot eye animations played over the current state, then back to normal:
+ * a rainbow burst for a greeting, a quick double-blink gasp, a slow thoughtful blink.
+ */
+export type EyeFlourish = "sparkle" | "gasp" | "slowblink";
+
+export const EYE_FLOURISHES: readonly EyeFlourish[] = ["sparkle", "gasp", "slowblink"];
+
 export type Rgb = [number, number, number];
 
 export type EyePalette = Record<BodyState, Rgb>;
@@ -35,12 +43,15 @@ export interface ClientConfig {
   hasApiKey: boolean;
   /** Today's on-disk log (log.html), or null when disk logging is off. */
   sessionLogUrl: string | null;
+  /** The voice fallbacks under the dashboard's pick: VOICE in .env (null if unset), then the character's default. */
+  voice: { env: string | null; character: string };
 }
 
 /** Messages from the browser to the server over /ws/body. */
 export type BodyMessage =
   | { type: "state"; state: BodyState }
   | { type: "level"; level: number }
+  | { type: "flourish"; effect: EyeFlourish }
   | { type: "palette"; eyes: EyePalette; eyeStyle: CharacterInfo["eyeStyle"] };
 
 /** Why the client is asking the vision backend to look. */
@@ -55,6 +66,8 @@ export interface VisionRequest {
   previous?: string;
   /** The frame those visitors were greeted from (data URL), so the comparison can use both photos. */
   previousImage?: string;
+  /** From rehearsal mode (a sample image, not the real camera): logged as such, and no snapshot is saved. */
+  rehearsal?: boolean;
 }
 
 export interface VisionResult {
@@ -82,5 +95,62 @@ export interface ServerLogEntry {
 
 /** Finished Conversation-panel lines the dashboard sends for the on-disk log. */
 export interface ConversationLogRequest {
-  lines: { who: "visitor" | "creature" | "system"; text: string; /** Epoch milliseconds. */ at: number }[];
+  lines: {
+    who: "visitor" | "creature" | "system";
+    text: string;
+    /** Epoch milliseconds. */
+    at: number;
+    /** Said during rehearsal mode: marked as such in the log and left out of the costume gallery. */
+    rehearsal?: boolean;
+  }[];
+}
+
+/** Rehearsal mode: a made-up group of trick-or-treaters for one generated image. */
+export interface VisitorScenario {
+  /** How many people are in the picture (1–4): the rehearsal's simulated detection count. */
+  groupSize: number;
+  /** One costume id per person (see COSTUMES in server/rehearsalGen.ts). */
+  costumes: string[];
+  lighting: "bright" | "dim" | "backlit" | "lantern";
+  style: "animated" | "storybook" | "clay";
+}
+
+/** A generated rehearsal visitor image cached on disk, with the scenario it was drawn from. */
+export interface GeneratedVisitor extends VisitorScenario {
+  id: string;
+  /** ISO time it was generated. */
+  createdAt: string;
+  /** Human-readable costume names, one per person. */
+  costumeLabels: string[];
+  model: string;
+  quality: string;
+  size: string;
+  /** What it cost in US dollars: from the API's reported token usage, or the estimate if it reported none. */
+  costUsd: number;
+  costEstimated: boolean;
+}
+
+export interface GeneratedVisitorList {
+  items: GeneratedVisitor[];
+  /** Estimated cost of generating one more image, and how it'd be made. */
+  estimate: { perImageUsd: number; model: string; quality: string; size: string };
+  hasApiKey: boolean;
+  /** Most images one generate request may ask for. */
+  maxPerRequest: number;
+}
+
+export interface GenerateVisitorsRequest {
+  /** How many images (1 to maxPerRequest); default 1. */
+  count?: number;
+  /** Fix the group size (1–4) instead of picking one at random. */
+  groupSize?: number;
+  /** Fix the costumes (known costume ids); their number sets the group size. */
+  costumes?: string[];
+  lighting?: VisitorScenario["lighting"];
+}
+
+export interface GenerateVisitorsResult {
+  items: GeneratedVisitor[];
+  /** Images that failed (e.g. the API refused a prompt); the rest are still returned. */
+  errors: string[];
 }

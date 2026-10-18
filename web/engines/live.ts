@@ -4,12 +4,15 @@ import { Variety } from "./variety.ts";
 
 type ServerEvent = { type: string; [key: string]: unknown };
 
+/** The vision model names each costume's standout detail ("standout: ..."); make the compliment about it. */
+const PRAISE_DETAIL = " Make the compliment specific: praise each costume's standout detail in your own words (for a big group, just a few).";
+
 const GREETING: Record<GreetReason, (seen: string) => string> = {
-  arrived: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.`,
-  grew: (seen) => `[CAMERA] More visitors just joined the group. What you see now: ${seen} Welcome the newcomers and compliment their costumes.`,
-  manual: (seen) => `[CAMERA] What you see right now: ${seen} Greet whoever is there and compliment their costumes.`,
+  arrived: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.${PRAISE_DETAIL}`,
+  grew: (seen) => `[CAMERA] More visitors just joined the group. What you see now: ${seen} Welcome the newcomers and compliment their costumes.${PRAISE_DETAIL}`,
+  manual: (seen) => `[CAMERA] What you see right now: ${seen} Greet whoever is there and compliment their costumes.${PRAISE_DETAIL}`,
   // "returned" is resolved to "arrived" (new visitors) or a welcome-back before speaking.
-  returned: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.`,
+  returned: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.${PRAISE_DETAIL}`,
 };
 
 /**
@@ -30,9 +33,9 @@ const QUICK_HELLO: Partial<Record<GreetReason, string>> = {
 
 /** After a quick hello: the costume details, once the vision model has them. */
 const FOLLOW_UP: Partial<Record<GreetReason, (seen: string) => string>> = {
-  arrived: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.`,
-  manual: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.`,
-  grew: (seen) => `[CAMERA] Your eyes have focused on the group. What you see now: ${seen} Now compliment the newcomers' costumes.`,
+  arrived: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.${PRAISE_DETAIL}`,
+  manual: (seen) => `[CAMERA] Your eyes have focused. What you see: ${seen} Now compliment their costumes.${PRAISE_DETAIL}`,
+  grew: (seen) => `[CAMERA] Your eyes have focused on the group. What you see now: ${seen} Now compliment the newcomers' costumes.${PRAISE_DETAIL}`,
 };
 
 /** Wait this long for the vision model before saying a quick hello. */
@@ -86,10 +89,12 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   private utteranceStartedAt = 0;
   private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
   /** Picks a different style twist for each greeting, so the creature doesn't repeat itself. */
-  protected variety = new Variety();
+  protected variety = new Variety(Math.random, () => this.deps.spookiness?.() ?? 1);
   private nudgePoll: ReturnType<typeof setInterval> | null = null;
   /** If a greeting hasn't started this long after we asked, nudge with an instruction. */
   protected nudgeMs = 5000;
+  /** Operator modes, re-applied to each new session (sessions restart often). */
+  private standing = "";
 
   protected waitUntilReady(): Promise<void> {
     return new Promise((resolve) => (this.onStarted = resolve));
@@ -105,6 +110,11 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         this.onStarted = null;
         // Apply the director's mic gating to the new session as well as the local track.
         this.send({ type: this.micEnabled ? "session.input_audio.unmute" : "session.input_audio.mute", event_id: this.nextId("mic") });
+        this.remindOfTonight();
+        if (this.standing) {
+          this.append("session.instructions.append", null, this.standing);
+          this.emit({ type: "note", text: "operator modes re-applied to the new session" });
+        }
         break;
       case "session.closed": {
         const usage = event.usage as { seconds?: number } | undefined;
@@ -161,6 +171,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     let saidHello = false;
     if (looking && hello && !alreadyGreeted && !(await settlesWithin(looking, HELLO_AFTER_MS))) {
       this.append("session.commentary.append", null, hello + this.variety.opening());
+      this.emit({ type: "greeting", kind: "visitors" });
       this.scheduleNudge(reason === "grew" ? NUDGE.grew : NUDGE.greet);
       saidHello = true;
     }
@@ -185,6 +196,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         // Keep lastGroup: the next return that gets a clear look still compares with them.
         this.emit({ type: "note", text: "couldn't check whether these are the same visitors (no clear look): asking them" });
         this.append("session.commentary.append", null, UNSURE_RETURN);
+        this.emit({ type: "greeting", kind: "visitors" });
         this.scheduleNudge(NUDGE.greet);
         return;
       }
@@ -192,6 +204,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         this.emit({ type: "note", text: `same visitors as before (vision saw: ${seen})` });
         if ((opts.awayMs ?? 0) >= WELCOME_BACK_AFTER_MS) {
           this.append("session.commentary.append", null, `[CAMERA] The same visitors you were talking to are back: ${seen} Give them a quick, fun "welcome back".`);
+          this.emit({ type: "greeting", kind: "welcome-back" });
         } else {
           this.append("session.thinking.append", null, `[CAMERA] Background update, for reference only (don't greet again): ${seen}`);
         }
@@ -207,6 +220,8 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       this.append("session.thinking.append", null, `[CAMERA] Background update, for reference only (don't greet again): ${seen}`);
       return;
     }
+    // A manual greeting may be the same people again: it isn't counted as a new group.
+    const tonight = reason === "manual" ? "" : this.countGroup(looked ? seen : null, reason === "grew" ? this.lastGroup : "");
     if (reason !== "grew") this.lastGroup = seen;
     else this.lastGroup = `${this.lastGroup} ${seen}`.trim();
     if (image) this.lastGroupImage = image;
@@ -214,9 +229,31 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     this.append(
       "session.commentary.append",
       null,
-      saidHello && followUp ? followUp(seen) + this.variety.verdict() : GREETING[reason](seen) + this.variety.greeting(),
+      (saidHello && followUp ? followUp(seen) + this.variety.verdict() : GREETING[reason](seen) + this.variety.greeting()) + tonight,
     );
+    if (!saidHello) this.emit({ type: "greeting", kind: "visitors" });
     this.scheduleNudge(reason === "grew" ? NUDGE.grew : saidHello ? NUDGE.compliment : NUDGE.greet);
+  }
+
+  /**
+   * Counts a newly greeted group for tonight's running gags; returns the optional fun facts for its
+   * greeting. `previous`: the group's description before it grew, so costumes aren't counted twice.
+   */
+  private countGroup(seen: string | null, previous = ""): string {
+    const evening = this.deps.evening;
+    if (!evening) return "";
+    evening.recordGroup(seen, previous);
+    return evening.tonightContext(seen) ?? "";
+  }
+
+  /** A new session remembers nothing: tell it, in the background, what it already said tonight. */
+  private remindOfTonight(): void {
+    const evening = this.deps.evening;
+    const memory = evening?.memoryContext();
+    if (!evening || !memory) return;
+    this.append("session.thinking.append", null, memory);
+    const { said, groups } = evening.current;
+    this.emit({ type: "note", text: `reminded the new session of tonight (${said.length} lines said, ${groups} groups greeted)` });
   }
 
   /**
@@ -280,6 +317,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       const seen = result.text;
       if (previous && result.sameGroup === false) {
         this.emit({ type: "note", text: `someone new is here (vision saw: ${seen})` });
+        const tonight = this.countGroup(seen, previous);
         this.lastObservation = this.lastGroup = seen;
         this.lastGroupImage = image;
         this.lastNewcomerAt = Date.now();
@@ -287,8 +325,10 @@ export class LiveEngine extends WebRtcEngine implements Engine {
           "session.commentary.append",
           null,
           `[CAMERA] Someone new is in front of you who you haven't greeted yet. What you see now: ${seen} Greet them now and compliment their costumes.` +
-            this.variety.greeting(),
+            this.variety.greeting() +
+            tonight,
         );
+        this.emit({ type: "greeting", kind: "visitors" });
         this.scheduleNudge(NUDGE.newcomer);
         return;
       }
@@ -304,6 +344,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
             null,
             `[CAMERA] The visitors you're talking to just changed their look. What you see now: ${seen} Make one quick, playful remark about the change. Don't greet them again.`,
           );
+          this.emit({ type: "greeting", kind: "costume" });
         } else {
           this.emit({ type: "note", text: `costume change, but remarked on one recently (vision saw: ${seen})` });
           this.append("session.thinking.append", null, `[CAMERA] Background update, for reference only (don't respond to it or greet again): ${seen}`);
@@ -329,6 +370,11 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       null,
       `Immediately say the following to the visitors, in your character's voice and style, then continue normally: "${text}"`,
     );
+  }
+
+  setStanding(standing: string, change?: string): void {
+    this.standing = standing;
+    if (change && this.status === "open") this.append("session.instructions.append", null, change);
   }
 
   setMicEnabled(enabled: boolean): void {

@@ -1,14 +1,25 @@
+import type { DashboardStatus, RemoteCommand } from "../shared/remote.ts";
 import type { BodyState, ClientConfig, ConversationLogRequest } from "../shared/types.ts";
 import { BodyLink } from "./bodyLink.ts";
 import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from "./devices.ts";
 import { Director } from "./director.ts";
+import { EveningMemory, browserStorage } from "./evening.ts";
+import { eyeLook, GREETING_FLOURISH, type ActiveFlourish } from "./eyeFlourish.ts";
+import { startPorchSounds } from "./porchSounds.ts";
 import { followServerLog } from "./serverLog.ts";
+import { ModePanel } from "./modePanel.ts";
+import { Rehearsal } from "./rehearsal.ts";
+import { RehearsalPanel } from "./rehearsalPanel.ts";
+import { isModeId, modeLabel } from "./modes.ts";
+import { RemoteLink, renderAlerts } from "./remoteLink.ts";
+import { Watchdog, loadReloads, loadResume, resumeAudio, saveReloads, saveResume } from "./watchdog.ts";
 import { LiveEngine } from "./engines/live.ts";
 import { RealtimeEngine } from "./engines/realtime.ts";
 import type { Engine, EngineDeps } from "./engines/types.ts";
 import { Transcript, type Speaker } from "./transcript.ts";
 import { Camera, PersonDetector, type DetectedPerson } from "./vision.ts";
 import { VisitorTracker } from "./visitors.ts";
+import { VoicePanel } from "./voicePanel.ts";
 import { VoiceMeter } from "./voiceLevel.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -60,10 +71,16 @@ const ui = {
   serverLog: $<HTMLOListElement>("server-log"),
   serverLogStatus: $<HTMLSpanElement>("server-log-status"),
   sessionLogLink: $<HTMLAnchorElement>("session-log-link"),
+  galleryLink: $<HTMLAnchorElement>("gallery-link"),
+  rehearsal: $<HTMLDivElement>("rehearsal"),
+  alerts: $<HTMLElement>("alerts"),
+  alertList: $<HTMLOListElement>("alert-list"),
   voice: $<HTMLAudioElement>("voice"),
 };
 
 const transcript = new Transcript();
+/** What the creature said and saw earlier tonight, so each new voice session says fresh things. */
+const evening = new EveningMemory(browserStorage());
 const lineElements = new Map<object, HTMLLIElement>();
 
 function show(who: Speaker, text: string): void {
@@ -85,8 +102,12 @@ function saveConversation(all = false): void {
   const now = performance.now();
   const lines: ConversationLogRequest["lines"] = transcript
     .takeFinished(now, all)
-    .map((line) => ({ who: line.who, text: line.text.trim(), at: Date.now() - (now - line.start) }));
+    .map((line) => {
+      const at = Date.now() - (now - line.start);
+      return { who: line.who, text: line.text.trim(), at, ...(rehearsal.wasActiveAt(at) && { rehearsal: true }) };
+    });
   if (!lines.length) return;
+  for (const line of lines) if (line.who === "creature" && !line.rehearsal) evening.recordLine(line.text);
   const body = JSON.stringify({ lines } satisfies ConversationLogRequest);
   void fetch("/api/conversation", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => undefined);
 }
@@ -97,6 +118,128 @@ const log = (text: string) => {
   console.log(`[creature] ${text}`);
   show("system", text);
 };
+
+/** Rehearsal mode: sample images and pretend visitors instead of the real camera (see rehearsal.ts). */
+const rehearsal = new Rehearsal({ log });
+/** Rehearsal greetings mustn't count toward tonight's real visitors, so they get a throwaway memory. */
+const rehearsalEvening = new EveningMemory(null);
+
+// --- phone remote + watchdog (web/remoteLink.ts, web/watchdog.ts) ---
+const store = (() => {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+})();
+/** Set when this load should wake by itself: it was awake moments ago (a reload, or the watchdog). */
+const resume = loadResume(store, Date.now());
+// Failing voice sessions only reload the page if it's known to wake again without a click.
+const watchdog = new Watchdog(Date.now(), loadReloads(store), { reloadForVoice: prefs.get("autoWakeOk") === "1" });
+
+/** What the remote and the watchdog act on once the creature is awake. */
+interface Awake {
+  director: Director;
+  engine: Engine;
+  tracker: VisitorTracker;
+  setAutopilot(on: boolean, why: string): void;
+  awakeSeconds(): number;
+  capReached(): boolean;
+}
+let awake: Awake | null = null;
+let awakeStarting: Promise<boolean> | null = null;
+let startWake: ((gesture: boolean) => Promise<boolean>) | null = null;
+let modePanel: ModePanel | null = null;
+let clientConfig: ClientConfig | null = null;
+let needsTap = false;
+let detectorState: DashboardStatus["detector"] = "off";
+let bodyState: BodyState = "sleeping";
+
+/** Wakes once (later calls share the attempt); false if the browser blocked sound or it failed. */
+function tryWake(gesture: boolean): Promise<boolean> {
+  if (awake) return Promise.resolve(true);
+  if (!startWake) return Promise.resolve(false);
+  awakeStarting ??= startWake(gesture)
+    .catch((err: Error) => {
+      log(`Wake failed: ${err.message}`);
+      ui.start.disabled = false;
+      ui.startHint.textContent = "Waking failed (see Conversation). Click to try again.";
+      return false;
+    })
+    .finally(() => (awakeStarting = null));
+  return awakeStarting;
+}
+
+function dashboardStatus(): Omit<DashboardStatus, "lastCommand"> {
+  const cfg = clientConfig;
+  const today = new Date().toISOString().slice(0, 10);
+  const seconds = awake?.awakeSeconds() ?? Number(prefs.get(`awake.${today}`) ?? 0);
+  return {
+    character: cfg?.character.name ?? "",
+    woken: awake !== null,
+    needsTap,
+    autopilot: awake?.director.autopilot ?? true,
+    voice: awake?.engine.status ?? "closed",
+    body: bodyState,
+    present: awake?.director.visitorsPresent ?? false,
+    visitors: awake?.tracker.count ?? 0,
+    camera: !awake ? "off" : watchdog.cameraStalled ? "stalled" : "ok",
+    detector: detectorState,
+    awakeMinutesToday: Math.round(seconds / 60),
+    costToday: cfg?.engine === "live" ? (seconds / 60) * cfg.liveCostPerMinute : null,
+    capReached: awake?.capReached() ?? false,
+    modes: modePanel?.list() ?? [],
+  };
+}
+
+/** A button press on the phone remote. Returns what to show on the phone; throws to show an error. */
+async function runCommand(cmd: RemoteCommand): Promise<string> {
+  switch (cmd.type) {
+    case "wake":
+      if (awake) {
+        if (awake.director.autopilot) return "Already awake";
+        awake.setAutopilot(true, "from the phone remote");
+        return "Awake: autopilot on";
+      }
+      if (await tryWake(false)) return "Woke up";
+      throw new Error(
+        needsTap
+          ? "Still blocked: the browser won't play sound until someone clicks the dashboard once. Starting Chrome with --autoplay-policy=no-user-gesture-required avoids this."
+          : "Couldn't wake (see the dashboard's Conversation panel)",
+      );
+    case "sleep":
+      if (!awake) return "Not woken yet: nothing to stop";
+      awake.setAutopilot(false, "from the phone remote");
+      return "Asleep until you press Wake";
+    case "greet":
+      if (!awake) throw new Error("Not woken yet: press Wake first");
+      log("(phone remote) Greet now");
+      void awake.director.greetNow();
+      return "Greeting whoever is there";
+    case "say":
+      if (awake?.engine.status !== "open") throw new Error("Not awake yet: press Greet now first");
+      awake.engine.say(cmd.text);
+      log(`(operator, phone) ${cmd.text}`);
+      return "Saying it";
+    case "mode":
+      if (!isModeId(cmd.mode) || !modePanel) throw new Error("Unknown mode");
+      modePanel.set(cmd.mode, cmd.on);
+      return `${modeLabel(cmd.mode)} ${cmd.on ? "on" : "off"}`;
+  }
+}
+
+const remote = new RemoteLink({ status: dashboardStatus, run: runCommand }, (alerts) => renderAlerts(ui.alerts, ui.alertList, alerts));
+
+/** The watchdog decided a reload is the way out: remember to wake again, tell the owner, reload. */
+let reloadPending = false;
+async function watchdogReload(reason: string): Promise<void> {
+  reloadPending = true;
+  log(`Watchdog: ${reason}; reloading the page to recover`);
+  saveReloads(store, watchdog.reloadHistory);
+  saveResume(store, { awake: true, autopilot: awake?.director.autopilot ?? true, at: Date.now(), reloadReason: reason });
+  await Promise.race([remote.alert("watchdog-reload", reason), new Promise((resolve) => setTimeout(resolve, 1500))]);
+  location.reload();
+}
 
 /**
  * The server may still be starting (a kiosk at boot) or restarting (tsx watch): keep trying
@@ -127,6 +270,8 @@ async function main(): Promise<void> {
   ui.keyWarning.hidden = cfg.hasApiKey;
   ui.sessionLogLink.hidden = !cfg.sessionLogUrl;
   if (cfg.sessionLogUrl) ui.sessionLogLink.href = cfg.sessionLogUrl;
+  ui.galleryLink.hidden = !cfg.sessionLogUrl;
+  if (cfg.sessionLogUrl) ui.galleryLink.href = cfg.sessionLogUrl.replace(/log\.html$/, "gallery.html");
   for (const c of cfg.characters) ui.characterSelect.add(new Option(c.name, c.id, false, c.id === cfg.character.id));
   ui.characterSelect.addEventListener("change", () => {
     prefs.set("character", ui.characterSelect.value);
@@ -142,17 +287,48 @@ async function main(): Promise<void> {
   body.connect();
   renderEyes(cfg, "sleeping", 0, 0);
 
-  ui.start.addEventListener("click", () => void wake(cfg, body, minArea), { once: true });
-  // Kiosk mode (Pi): start without a click; needs Chromium's --autoplay-policy=no-user-gesture-required.
-  if (new URLSearchParams(location.search).has("autowake")) ui.start.click();
+  const modes = new ModePanel($("modes"), log);
+  const voices = new VoicePanel($("voice-picker"), cfg, log);
+  const rehearsalPanel = new RehearsalPanel(ui.rehearsal, ui.video.parentElement!, rehearsal, log);
+  void rehearsalPanel.loadDays();
+  void rehearsalPanel.loadGenerated();
+  clientConfig = cfg;
+  modePanel = modes;
+  startWake = (gesture) => wake(cfg, body, minArea, modes, voices, gesture);
+  remote.start();
+  ui.start.addEventListener("click", () => void tryWake(true));
+  // Kiosk mode (Pi), or a reload of a page that was awake (the watchdog's, say): wake without a click.
+  // Sound then needs Chrome's --autoplay-policy=no-user-gesture-required (or the browser's leave).
+  if (resume?.reloadReason) log(`The watchdog reloaded the page (${resume.reloadReason}): waking again`);
+  if (new URLSearchParams(location.search).has("autowake") || resume) void tryWake(false);
 }
 
-async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise<void> {
+async function wake(
+  cfg: ClientConfig,
+  body: BodyLink,
+  minArea: number,
+  modes: ModePanel,
+  voices: VoicePanel,
+  gesture: boolean,
+): Promise<boolean> {
   ui.start.disabled = true;
   ui.startHint.textContent = "Waking up…";
 
   const audioCtx = new AudioContext();
-  await audioCtx.resume();
+  if (!(await resumeAudio(audioCtx, gesture ? 10_000 : 1500))) {
+    void audioCtx.close();
+    needsTap = true;
+    ui.start.disabled = false;
+    ui.startHint.textContent =
+      "Click to wake: the browser blocks sound until someone clicks this page. (For unattended use, start Chrome with --autoplay-policy=no-user-gesture-required.)";
+    log("Sound is blocked until someone clicks the page: click Wake the creature");
+    void remote.alert("needs-wake", resume?.reloadReason ? `after the watchdog reloaded the page (${resume.reloadReason})` : "waiting for a click on the dashboard");
+    void remote.beat();
+    return false;
+  }
+  if (!gesture) prefs.set("autoWakeOk", "1");
+  if (needsTap) void remote.resolve("needs-wake");
+  needsTap = false;
 
   // Saved devices are found by id, else by name (ids can change when gear is re-plugged), else the default.
   // Device names are only visible once the mic is allowed, so open it first, then switch if needed.
@@ -171,26 +347,40 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
     await camera.start(cameraDevice?.deviceId);
   } catch (err) {
     log(`Camera failed (${describeError(err)}); trying the default camera`);
-    await camera.start().catch((err2) => log(`Camera failed: ${describeError(err2)}`));
+    await camera.start().catch((err2) => {
+      log(`Camera failed: ${describeError(err2)}`);
+      void remote.alert("camera-lost", `couldn't start the camera: ${describeError(err2)}`);
+    });
   }
+  watchdog.cameraStarted(Date.now());
 
   const speakerDevice = pickDevice(devices, "audiooutput", "speaker", "speaker");
   if (speakerDevice) await setSpeaker(speakerDevice.deviceId);
   await fillDeviceSelects(camera);
 
+  // While rehearsing, frames come from the chosen sample image instead of the camera.
+  const capture = () => rehearsal.capture(() => camera.capture());
   const deps: EngineDeps = {
     mic,
     character: cfg.character.id,
-    capture: () => camera.capture(),
+    capture,
     recentTranscript: () => transcript.recent(),
     lastVoiceAt: () => meter.lastLoudTime,
+    get evening() {
+      return rehearsal.active ? rehearsalEvening : evening;
+    },
+    spookiness: () => modes.spookiness,
+    voice: voices.requestVoice,
+    rehearsal: () => rehearsal.active,
   };
   const engine: Engine = cfg.engine === "live" ? new LiveEngine(deps) : new RealtimeEngine(deps);
+  modes.attach(engine);
   const meter = new VoiceMeter(audioCtx);
   const director = new Director(
-    { engine, capture: () => camera.capture(), isSpeaking: () => meter.speaking(performance.now()), now: () => performance.now(), log },
+    { engine, capture, isSpeaking: () => meter.speaking(performance.now()), now: () => performance.now(), log },
     { idleCloseMs: cfg.idleCloseSeconds * 1000, backgroundMs: cfg.backgroundFrameSeconds * 1000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000 },
   );
+  voices.attach(engine, () => director.visitorsPresent);
 
   // --- usage / cost ---
   let pastVoiceSeconds = 0;
@@ -215,9 +405,13 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
           renderCost();
         }
         log(`Voice session ${e.status}${e.detail ? ` (${e.detail})` : ""}`);
+        watchdog.voiceStatus(e.status);
         break;
       case "transcript":
         show(e.who, e.delta);
+        break;
+      case "greeting":
+        body.flourish(GREETING_FLOURISH[e.kind]);
         break;
       case "note":
         log(e.text);
@@ -229,6 +423,8 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
         break;
       case "error":
         log(`⚠️ ${e.message}`);
+        // Vision failures are counted by the server (it sees every look); these are the voice session's.
+        if (!e.message.startsWith("vision:")) watchdog.voiceError(Date.now());
         break;
     }
   });
@@ -241,18 +437,50 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
     ui.minAreaValue.textContent = `${Math.round(value * 100)}% of frame`;
     tracker.setMinArea(value);
   });
+  // Spooky ambience and lure call-outs between visitors: local audio only, never the voice session.
+  const porchSounds = startPorchSounds({
+    audioCtx,
+    character: cfg.character.id,
+    sinkId: speakerDevice?.deviceId,
+    status: () => ({
+      porchEmpty: tracker.state === "empty",
+      talking: meter.speaking(performance.now()) || engine.isThinking(),
+      autopilot: director.autopilot,
+    }),
+    prefs,
+    log,
+  });
   let detector: PersonDetector | null = null;
+  detectorState = "loading";
   PersonDetector.create()
     .then((d) => {
       detector = d;
+      detectorState = "ok";
       log("Person detector ready");
     })
-    .catch((err) => log(`Person detector failed to load: ${(err as Error).message}. Use "Greet now".`));
+    .catch((err) => {
+      detectorState = "failed";
+      log(`Person detector failed to load: ${(err as Error).message}. Use "Greet now".`);
+      watchdog.detectorLoadFailed((err as Error).message);
+    });
   setInterval(() => {
-    if (!detector || !camera.ready) return;
+    watchdog.cameraTime(ui.video.currentTime, Date.now());
     const now = performance.now();
-    const people = detector.detect(ui.video, now);
+    // While rehearsing, pretend visitors replace the real detections (the detector isn't run).
+    const people = rehearsal.detections(() => {
+      if (!detector || !camera.ready) return null;
+      try {
+        const found = detector.detect(ui.video, now);
+        watchdog.detectorOk();
+        return found;
+      } catch (err) {
+        watchdog.detectorError((err as Error).message);
+        return null;
+      }
+    });
+    if (!people) return;
     drawOverlay(people, Number(ui.minArea.value));
+    porchSounds.see(people, Number(ui.minArea.value));
     for (const event of tracker.update(people, now)) void director.onVisitorEvent(event);
     const best = people.reduce((m, p) => Math.max(m, p.score), 0);
     ui.presence.textContent = `${tracker.state}${tracker.count ? ` · ${tracker.count} visitor${tracker.count > 1 ? "s" : ""}` : ""} · ${people.length} detected${people.length ? ` (best ${Math.round(best * 100)}%)` : ""}`;
@@ -270,6 +498,7 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
         log(`Daily limit of ${cfg.maxVoiceMinutesPerDay} awake minutes reached: going to sleep (raise MAX_VOICE_MINUTES_PER_DAY to change)`);
         void director.sleep();
         ui.sleep.textContent = "▶️ Wake (autopilot on)";
+        void remote.alert("cost-cap", `${cfg.maxVoiceMinutesPerDay} awake minutes today`);
       }
     }
     void director.tick();
@@ -281,7 +510,12 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
     if (engine.remoteStream !== attached) {
       attached = engine.remoteStream;
       ui.voice.srcObject = attached;
-      if (attached) void ui.voice.play().catch(() => log("Click anywhere to allow audio playback"));
+      if (attached) {
+        void ui.voice.play().catch(() => {
+          log("Click anywhere to allow audio playback");
+          void remote.alert("needs-wake", "the browser blocked the creature's voice");
+        });
+      }
       meter.attach(attached);
     }
     const level = meter.sample(t);
@@ -295,10 +529,11 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
             : t - engine.lastHeardAt() < 1500
               ? "listening"
               : "idle";
-    body.setState(state);
+    body.setState(state, t);
     body.setLevel(state === "speaking" ? level : 0, t);
-    renderEyes(cfg, state, level, t);
+    renderEyes(cfg, state, level, t, body.activeFlourish(t));
     ui.statePill.textContent = state;
+    bodyState = state;
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
@@ -310,18 +545,20 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
   setControls(true);
   ui.startCard.hidden = true;
   ui.greet.addEventListener("click", () => void director.greetNow());
-  ui.sleep.addEventListener("click", () => {
-    if (director.autopilot) {
+  const setAutopilot = (on: boolean, why = "") => {
+    if (!on) {
       void director.sleep();
       ui.sleep.textContent = "▶️ Wake (autopilot on)";
-      log("Kill switch: asleep until you press Wake");
+      log(`Kill switch: asleep until you press Wake${why ? ` (${why})` : ""}`);
     } else {
       director.wake();
       if (awakeToday >= cfg.maxVoiceMinutesPerDay * 60) capOverridden = true;
       ui.sleep.textContent = "🛑 Sleep (kill switch)";
-      log("Autopilot on");
+      log(`Autopilot on${why ? ` (${why})` : ""}`);
     }
-  });
+    void remote.beat();
+  };
+  ui.sleep.addEventListener("click", () => setAutopilot(!director.autopilot));
   ui.sayForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = ui.sayInput.value.trim();
@@ -345,9 +582,50 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
   ui.speakerSelect.addEventListener("change", () => {
     rememberChoice("speaker", ui.speakerSelect);
     void setSpeaker(ui.speakerSelect.value);
+    porchSounds.setSink(ui.speakerSelect.value);
   });
 
   log(cfg.hasApiKey ? "Awake and watching. Walk up to the camera to test!" : "Watching, but the server has no OPENAI_API_KEY");
+
+  // --- phone remote + watchdog ---
+  awake = {
+    director,
+    engine,
+    tracker,
+    setAutopilot,
+    awakeSeconds: () => awakeToday,
+    capReached: () => awakeToday >= cfg.maxVoiceMinutesPerDay * 60 && !capOverridden,
+  };
+  // The kill switch was on before the reload: keep it on.
+  if (resume && !resume.autopilot) setAutopilot(false, "it was on before the page reloaded");
+  setInterval(() => {
+    if (reloadPending) return; // keep the reason saved for the next load
+    const now = Date.now();
+    watchdog.setVisible(!document.hidden, now);
+    for (const action of watchdog.check(now)) {
+      switch (action.type) {
+        case "restartCamera":
+          log("Watchdog: no camera frames; restarting the camera");
+          void camera
+            .start(prefs.get("camera") ?? undefined)
+            .catch(() => camera.start())
+            .catch((err) => log(`Camera restart failed: ${describeError(err)}`));
+          break;
+        case "alert":
+          void remote.alert(action.kind, action.detail);
+          break;
+        case "resolve":
+          void remote.resolve(action.kind);
+          break;
+        case "reload":
+          void watchdogReload(action.reason);
+          return;
+      }
+    }
+    saveResume(store, { awake: true, autopilot: director.autopilot, at: now });
+  }, 2000);
+  void remote.beat();
+  return true;
 }
 
 type DeviceSlot = "camera" | "mic" | "speaker";
@@ -434,8 +712,7 @@ function drawOverlay(people: DetectedPerson[], minArea: number): void {
 }
 
 /** On-screen preview of what the Arduino eyes are doing. */
-function renderEyes(cfg: ClientConfig, state: BodyState, level: number, t: number): void {
-  const [r, g, b] = cfg.character.eyes[state];
+function renderEyes(cfg: ClientConfig, state: BodyState, level: number, t: number, flourish: ActiveFlourish | null = null): void {
   let brightness: number;
   switch (state) {
     case "speaking":
@@ -455,11 +732,12 @@ function renderEyes(cfg: ClientConfig, state: BodyState, level: number, t: numbe
             ? 0.05
             : 0.8;
   }
-  const color = `rgb(${Math.round(r * brightness)}, ${Math.round(g * brightness)}, ${Math.round(b * brightness)})`;
-  for (const eye of [ui.eyeLeft, ui.eyeRight]) {
+  [ui.eyeLeft, ui.eyeRight].forEach((eye, i) => {
+    const look = eyeLook(cfg.character.eyes[state], brightness, flourish, t, i);
+    const color = `rgb(${look.rgb.map(Math.round).join(", ")})`;
     eye.style.backgroundColor = color;
-    eye.style.boxShadow = `0 0 ${Math.round(10 + 30 * brightness)}px ${color}`;
-  }
+    eye.style.boxShadow = `0 0 ${Math.round(10 + 30 * look.brightness)}px ${color}`;
+  });
 }
 
 main().catch((err) => log(`Startup failed: ${(err as Error).message}`));

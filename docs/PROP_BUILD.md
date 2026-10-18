@@ -12,21 +12,34 @@ Expect about 1–2 hours, plus soldering for the eyes.
 - **Without heat:** Pumpkin Masters craft carving tools work too.
 
 **What fits in a 13" pumpkin:**
-- the webcam behind the mouth;
-- **one** Logitech Z150 speaker (about 4.5" × 6.5"), or a speakerphone, inside;
-- the second Z150 speaker sits hidden behind the pumpkin.
+- the webcam behind the mouth (its built-in mics are the creature's ears);
+- **one** Logitech Z150 speaker (about 4.5" × 6.5") inside: the one **without** the volume knob, so the knob (also the power switch) stays reachable behind the pumpkin with the second speaker. The voice plays from both.
+- the two eye cups and the Arduino with its breadboard.
+- A USB speakerphone also fits instead of the Z150, if you get one.
 
-1. Cut a **service hatch** in the back, big enough for the speaker: **5" × 7"** with rounded corners, plus a 1.2" × 0.5" cable notch below it. Keep the cut-out piece to use as a door.
+1. Cut a **service hatch** in the back, big enough for the speaker: **5" × 7"** with rounded corners, plus a 1.2" × 0.5" cable notch below it. Keep the cut-out piece to use as a door (see **Back hatch door** below).
 2. Carve **round eyes 1.5" across, centres 3" apart** (a NeoPixel Jewel fits behind each), and a **grin 6" wide and 2" tall at the centre**, with its top about 0.3" below the pumpkin's widest line.
 3. Glue **black tulle** behind the mouth. The camera sees through it and sound passes through it, but from outside it just looks dark.
 4. Mount the **webcam** behind the mouth, lens against the tulle at the centre of the grin. Its clip or a hot-glued foam block holds it. With the mouth about 26–30" off the porch floor (a crate helps), aim it level to about 10° upward, so that a child at the candy bowl is in frame from the waist up and an adult's head fits too. Check on the dashboard.
-5. Put the **speakerphone** inside, facing the mouth, sitting flat. Its mics need open air, so keep foam scraps away from it.
+5. Put the **speaker** inside through the hatch, facing the mouth. Push its 3.5 mm plug **all the way** into the USB sound card's headphone jack (a half-seated plug is faint and hums), and plug the sound card into the hub. Then re-check echo: stay quiet while the creature talks, and make sure no 🧒 lines in the Conversation panel repeat its own words.
 6. Run the cables out of the hatch to the **powered USB hub** behind the pumpkin. Run the **16 ft active USB cable** from the hub to the Mac.
 7. Dress him in his **tall black top hat, round spectacles and bow tie**: the look his persona talks about. (He's a costume *critic*, not a chef, so no toque.)
 8. Set the **candy bowl** right in front, so visitors stop at the sweet spot for the camera and mic.
 
+### Back hatch door
+It has to open again (for the NeoPixel swap and any fixes), so:
+1. **Stop it falling in.** A hot knife removes a sliver of plastic, so a straight-cut door drops through. Either **bevel the cut** about 30° inward all round (the jack-o'-lantern lid trick, so it rests on the slanted edge), or hot-glue 3–4 small scrap **tabs** inside the door that overlap the opening by about ½".
+2. **Hinge it** along the top edge with a strip of **black duct tape on the inside**: it swings up and gravity keeps it shut.
+3. **Hold it shut** at the bottom with two small **Velcro** tabs or a pair of small adhesive **magnets**.
+4. Leave the **cable notch** below the door open, so cables don't prop it ajar.
+
+### What goes where (tethered to the Mac)
+- **Inside the pumpkin:** the C920 behind the mouth (on its clip or a foam block), black tulle glued inside the mouth, one Z150 speaker, the two eye cups with their LEDs or Jewels, and the Arduino Uno with its breadboard (Velcro or hot glue), near the eyes so their wires stay short. Cables leave through the hatch notch: webcam USB, speaker cable, Arduino USB.
+- **Behind the pumpkin:** the powered USB hub and its 12 V adapter (the webcam, USB sound card and Arduino plug into it), the second Z150 speaker with the volume knob, and a power strip on an outdoor extension cord for the hub and the speakers (one strip helps avoid hum). The 16 ft active USB cable runs from the hub to the Mac indoors.
+- **On the pumpkin:** top hat, round spectacles, bow tie. **In front:** the candy bowl.
+
 ## 2. Lighting
-Clamp the warm LED light so it shines on the **visitors**, not into the camera. Test at night: the dashboard video should clearly show costume colors at the candy bowl.
+Test at dusk with your porch light first: the dashboard video and the snapshots in the day's `log.html` should clearly show costume colors at the candy bowl. Only if they don't, clamp a warm LED flood (a BR30 2700K bulb gives soft, even light) so it shines on the **visitors**, not into the camera.
 
 ## 3. Eyes (NeoPixels)
 ```
@@ -36,10 +49,22 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
                        Jewel #1 DOUT ── Jewel #2 DIN
                        (5V / GND of both jewels to the rails above)
 ```
-1. Solder three wires (5V, GND, DIN) to Jewel #1. Then chain Jewel #1 **DOUT** to Jewel #2 **DIN**, plus 5V and GND.
-2. Put the 330 Ω resistor in the data line (on the breadboard is fine).
-3. Hot-glue one jewel behind each carved eye, facing out. A scrap of white paper or tulle in front diffuses the light nicely.
-4. Plug the Arduino into the USB hub.
+1. Solder **7 joints**: Jewel #1 gets 5V, GND, DIN and DOUT; Jewel #2 gets 5V, GND and DIN. Run Jewel #2's power from Jewel #1 (two wires in each of Jewel #1's 5V and GND pads), so only three wires (5V, GND, data) go back to the Arduino. Optionally tin those three ends, or splice them onto halves of kit jumper wires, so they sit firmly in the breadboard. Practise on the spare Jewel first.
+2. Put the 330 Ω resistor in the data line (on the breadboard is fine; a 220 Ω from the kit works too).
+3. **Test before mounting:** Serial Monitor commands below. Then put a dab of hot glue over the joints for strain relief.
+4. Mount each Jewel in an **eye cup** (below), LEDs facing the eye, and plug the Arduino into the USB hub.
+
+**Soldering tips (for 7 small joints):**
+- Iron at about 330–350 °C (625–660 °F); your lead-free solder melts at 217 °C. Use a clean, tinned tip, **not** the one you carved the pumpkin with. Ventilate.
+- Tape the Jewel face-down so both hands are free. Strip about 3 mm of wire, twist it, and **tin** both the wire and the pad first; then touch them together with the iron for 2–3 s and hold still while it sets.
+- A good joint is shiny, like a small volcano. Dull, balled or wobbly: reheat 2 s. Use little solder, so neighbouring pads don't bridge; if a pad won't melt within about 5 s, stop and re-tin the tip rather than cooking the pad.
+- Red for 5V, black for GND, another colour for data.
+
+**Eye cups** (made from scraps, one per eye):
+1. Glue a circle of **white printer paper**, about 2" across, inside the pumpkin over the eye hole: it diffuses the light so the whole 1.5" eye glows.
+2. Hot-glue a **½–¾" ring cut from a toilet-paper tube** (about 1.7" across) around the hole, over the paper. Notch its edge for the wires.
+3. Hot-glue the Jewel (or poke a plain LED's legs) through the centre of a **cardboard disc** that covers the back of the ring, facing the eye.
+4. Stick the disc onto the ring with two **Velcro** dots or tape, so you can pull it off to swap LEDs for Jewels. The light then sits about ½" behind the paper and glows evenly instead of showing bright dots.
 
 **No NeoPixels yet?** Use two plain LEDs from the Arduino kit:
 1. In the firmware, set `#define EYES_NEOPIXEL 0`.
@@ -61,15 +86,20 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
 | `S idle` | orange flicker |
 | `S speaking` | speaking color |
 | `L 255` | bright |
+| `F sparkle` | about a second of spinning rainbow with white twinkles, then back to normal (plain LEDs: a quick left-right twinkle) |
+| `F gasp` | two quick blinks, then wide-eyed for a moment |
+| `F slowblink` | a slow, thoughtful blink |
 | (stop typing for 2 s) | eyes dim to "sleeping"; that's the fail-safe |
 
    State names are exact and lowercase (`S speaking`, not `S Speaking`), or the board answers `ERR state`.
+   The `F` flourishes play over whatever state the eyes are in (even after the fail-safe has dimmed them), and an unknown one answers `ERR flourish`. In the app, new visitors and costume changes get a sparkle, the same visitors back after a while get a gasp, and the eyes slow-blink when the creature starts thinking.
 6. Close Serial Monitor. The app can't open the port while it's open.
 7. In `.env`, keep `BODY_SERIAL_PORT=auto` and `BODY_MODES=eyes`. When the server starts it logs `[body] connected to /dev/tty.usbmodem…`.
 
-## 4. Jaw (optional, last)
+## 4. Jaw (optional, skipped this year)
+The servo (a 9g SG90) is in the Arduino kit. The carving template has no jaw: the webcam sits behind the grin, so a jaw would need a separate hinged "chin" flap below the mouth, added to the template **before** carving.
 - SG90 signal → **D9**, 5V and GND to the rails.
-- Attach a hinged jaw piece (cut from the pumpkin's mouth) to the servo horn with a stiff wire linkage.
+- Attach the chin flap to the servo horn with a **stiff wire linkage**: a pushrod with a small Z-bend at each end (a straightened large paperclip, or coat-hanger wire).
 - Tune `JAW_CLOSED_DEG` and `JAW_OPEN_DEG` in the firmware, then set `BODY_MODES=eyes,jaw`.
 
 ## 5. Animatronic relay (parked)
@@ -80,9 +110,13 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
 
 ## 6. Porch checklist (Halloween night)
 - [ ] The Mac is plugged in, and `caffeinate -dis` is running (see README).
-- [ ] The dashboard is open in Chrome. You clicked **Wake the creature**, and the camera, mic and speaker are selected in Settings.
+- [ ] Chrome was started with `--autoplay-policy=no-user-gesture-required` (README, **Watchdog**), so it can wake itself after a reload.
+- [ ] The dashboard is open. You clicked **Wake the creature**, and the camera, mic and speaker are selected in Settings. The server log shows `[body] connected to …`.
+- [ ] Voice picked, **Spookiness** set (Auto is a good default), quick modes off, spooky sounds and lure toggled as you like.
+- [ ] The phone remote works on your phone (`REMOTE_PIN`). To test push alerts (`NTFY_TOPIC`), unplug the Arduino for a moment: an "Arduino disconnected" push should reach the ntfy app.
 - [ ] Walk-up test: you get greeted within about 2 s, and "what am I dressed as?" works.
 - [ ] Volume: loud enough at the candy bowl, without echo.
 - [ ] The **"How close counts as a visitor"** slider is set so people walking past on the sidewalk aren't greeted.
-- [ ] You know where the kill switch is.
+- [ ] You know where the kill switch is (dashboard and phone), and `MAX_VOICE_MINUTES_PER_DAY` is set to a cap you're happy with.
+- [ ] A small sign: "This pumpkin talks back (it's AI, and it records)".
 - [ ] Rain plan: everything is under the porch roof, with a clear bag over the hub.

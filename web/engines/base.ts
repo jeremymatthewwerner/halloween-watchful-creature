@@ -80,7 +80,7 @@ export abstract class WebRtcEngine {
       const res = await fetch("/api/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sdp: pc.localDescription?.sdp, character: this.deps.character }),
+        body: JSON.stringify({ sdp: pc.localDescription?.sdp, character: this.deps.character, voice: this.deps.voice?.() ?? undefined }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
@@ -151,6 +151,7 @@ export abstract class WebRtcEngine {
           transcript: opts.withTranscript ? this.deps.recentTranscript() : undefined,
           previous: opts.previous,
           previousImage: opts.previousImage,
+          rehearsal: this.deps.rehearsal?.() || undefined,
         }),
       });
       const body = (await res.json()) as {

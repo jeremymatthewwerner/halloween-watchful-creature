@@ -34,6 +34,8 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
   private onCreated: (() => void) | null = null;
   private responding = false;
   private queue: (() => void)[] = [];
+  /** Operator modes, re-applied to each new session. */
+  private standing = "";
 
   protected waitUntilReady(): Promise<void> {
     return new Promise((resolve) => (this.onCreated = resolve));
@@ -46,6 +48,7 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
         this.queue = [];
         this.onCreated?.();
         this.onCreated = null;
+        if (this.standing) this.addSystemNote(this.standing);
         break;
       case "input_audio_buffer.speech_started":
         this.heardAt = performance.now();
@@ -85,6 +88,7 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
       content.push({ type: "input_text", text: image ? GREETING[reason] : blindGreeting(reason) });
       this.send({ type: "conversation.item.create", item: { type: "message", role: "user", content } });
       this.createResponse();
+      this.emit({ type: "greeting", kind: "visitors" });
     });
   }
 
@@ -121,6 +125,16 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
       });
       this.createResponse();
     });
+  }
+
+  setStanding(standing: string, change?: string): void {
+    this.standing = standing;
+    if (change) this.whenIdle(() => this.addSystemNote(change));
+  }
+
+  /** A system message the model follows from now on, without a response of its own. */
+  private addSystemNote(text: string): void {
+    this.send({ type: "conversation.item.create", item: { type: "message", role: "system", content: [{ type: "input_text", text }] } });
   }
 
   isThinking(): boolean {

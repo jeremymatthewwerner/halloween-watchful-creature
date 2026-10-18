@@ -37,10 +37,21 @@
           <p class="warn" id="key-warning" hidden>OPENAI_API_KEY isn't set on the server. Copy <code>.env.example</code> to <code>.env</code>, add your key and restart.</p>
         </div>
 
+        <section id="alerts" class="alerts" hidden>
+          <h2>Alerts</h2>
+          <ol id="alert-list"></ol>
+        </section>
+
         <div class="buttons">
           <button id="greet" disabled>👋 Greet now</button>
           <button id="sleep" disabled>🛑 Sleep (kill switch)</button>
         </div>
+
+        <div class="modes-head">
+          <h2>Quick modes</h2>
+          <span class="hint">Tap to turn on or off. They stay on tonight until you tap again.</span>
+        </div>
+        <div id="modes" class="modes" role="group" aria-label="Quick modes"></div>
 
         <form id="say-form" class="say">
           <input id="say-input" placeholder="Make it say… (e.g. 'Only one piece each, please!')" autocomplete="off" disabled />
@@ -57,8 +68,14 @@
             <input type="range" id="min-area" min="0.005" max="0.15" step="0.005" />
             <span id="min-area-value"></span>
           </label>
+          <label><input type="checkbox" id="ambience-toggle" /> Spooky sounds between visitors</label>
+          <label><input type="checkbox" id="lure-toggle" /> Call out to people walking by (recorded, free)</label>
+          <label>Seconds between call-outs <input type="number" id="lure-cooldown" min="15" max="600" step="5" /></label>
           <p class="hint">Changing character or microphone reloads the page.</p>
+          <div id="rehearsal"></div>
         </details>
+
+        <details class="settings voice-picker" id="voice-picker"></details>
 
         <h2>Conversation</h2>
         <ol id="transcript" class="transcript"></ol>
@@ -69,6 +86,7 @@
           <h2>Server log <span id="server-log-status" class="log-status">connecting…</span></h2>
           <div class="log-links">
             <a id="session-log-link" target="_blank" hidden>📜 Today's log (with snapshots)</a>
+            <a id="gallery-link" target="_blank" hidden>🖼️ Costume gallery</a>
             <a href="/api/session-logs" target="_blank">All logs</a>
           </div>
         </div>

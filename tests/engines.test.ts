@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveEngine } from "../web/engines/live.ts";
 import { RealtimeEngine } from "../web/engines/realtime.ts";
 import type { EngineDeps, EngineEvent } from "../web/engines/types.ts";
+import { EveningMemory } from "../web/evening.ts";
+import { MODES_CLEARED, modeInstructions, modeUpdate } from "../web/modes.ts";
+import { standingInstructions, standingUpdate } from "../web/standing.ts";
 
 type Sent = Record<string, unknown>;
 
@@ -71,6 +74,7 @@ describe("LiveEngine", () => {
     expect(e.sent[0]).toMatchObject({ type: "session.commentary.append", delegation_id: null });
     expect(String(e.sent[0]!.content)).toContain("green dinosaur");
     expect(String(e.sent[0]!.content)).toMatch(/^\[CAMERA\]/);
+    expect(String(e.sent[0]!.content)).toContain("praise each costume's standout detail");
   });
 
   it("compares a returning group with the last one and greets them as new when different", async () => {
@@ -132,6 +136,7 @@ describe("LiveEngine", () => {
     expect(e.sent).toHaveLength(2);
     expect(String(e.sent[1]!.content)).toContain("Your eyes have focused. What you see: One visitor in a green dinosaur costume");
     expect(String(e.sent[1]!.content)).toContain("Now compliment their costumes.");
+    expect(String(e.sent[1]!.content)).toContain("praise each costume's standout detail");
   });
 
   it("looks while the session connects, and stays silent if it can't connect", async () => {
@@ -375,6 +380,162 @@ describe("LiveEngine", () => {
     expect(e.sent[0]).toMatchObject({ type: "session.instructions.append", delegation_id: null });
     expect(String(e.sent[0]!.content)).toContain("One piece each!");
   });
+
+  it("keeps operator modes as standing instructions and re-applies them to each new session", () => {
+    const e = new TestLive();
+    e.setStanding(modeInstructions(["toddler"]), modeUpdate(["toddler"]));
+    expect(e.sent).toEqual([expect.objectContaining({ type: "session.instructions.append", delegation_id: null })]);
+    expect(String(e.sent[0]!.content)).toContain("Very little kids are here");
+    // A new voice session starts without them: send them again.
+    e.sent = [];
+    e.server({ type: "session.started" });
+    const appended = e.sent.filter((s) => s.type === "session.instructions.append");
+    expect(appended.map((s) => String(s.content))).toEqual([modeInstructions(["toddler"])]);
+    // Turned off: the open session hears so, and new sessions get nothing.
+    e.sent = [];
+    e.setStanding(modeInstructions([]), modeUpdate([]));
+    expect(String(e.sent[0]!.content)).toBe(MODES_CLEARED);
+    e.sent = [];
+    e.server({ type: "session.started" });
+    expect(e.sent.filter((s) => s.type === "session.instructions.append")).toEqual([]);
+  });
+
+  it("re-applies the spookiness dial, with the modes, to each new session", () => {
+    const e = new TestLive();
+    e.setStanding(standingInstructions(["candyLow"], 3), standingUpdate(["candyLow"], 3));
+    expect(String(e.sent[0]!.content)).toContain("scary, for teens");
+    e.sent = [];
+    e.server({ type: "session.started" });
+    const appended = e.sent.filter((s) => s.type === "session.instructions.append").map((s) => String(s.content));
+    expect(appended).toEqual([standingInstructions(["candyLow"], 3)]);
+    expect(appended[0]).toContain("candy is almost gone");
+  });
+
+  it("mixes spooky twists into greetings when the dial is up", async () => {
+    const twists: string[] = [];
+    for (const level of [1, 3] as const) {
+      const e = new TestLive({ ...deps(), spookiness: () => level });
+      for (let i = 0; i < 60; i++) {
+        e.sent = [];
+        await e.greet("data:image/jpeg;base64,AAA", "manual");
+        const content = String(e.sent.find((s) => s.type === "session.commentary.append")?.content ?? "");
+        twists.push(`${level}:${content.slice(content.indexOf("For variety"))}`);
+      }
+    }
+    const spooky = (t: string) => /eerie|ghost-story|creepy whisper/.test(t);
+    expect(twists.filter((t) => t.startsWith("1:")).some(spooky)).toBe(false);
+    expect(twists.filter((t) => t.startsWith("3:")).some(spooky)).toBe(true);
+  });
+
+  it("only stores operator modes while asleep, for the next session", () => {
+    const e = new TestLive();
+    e.status = "closed";
+    e.setStanding(modeInstructions(["candyOut"]), modeUpdate(["candyOut"]));
+    expect(e.sent).toEqual([]);
+    e.server({ type: "session.started" });
+    expect(e.sent.some((s) => s.type === "session.instructions.append" && String(s.content).includes("candy is all gone"))).toBe(true);
+  });
+});
+
+describe("LiveEngine: tonight's memory and running gags", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const withEvening = (evening = new EveningMemory(null, () => new Date("2026-10-31T19:00:00"))) => ({
+    evening,
+    engine: new TestLive({ ...deps(), evening }),
+  });
+  const contents = (e: TestLive) => e.sent.map((s) => String(s.content));
+
+  it("tells a new session, in the background, what it already said tonight", () => {
+    const { evening, engine: e } = withEvening();
+    evening.recordLine("Boo! What a spooky cape!");
+    evening.recordGroup("A vampire in a cape.");
+    e.server({ type: "session.started" });
+    expect(e.sent.map((s) => s.type)).toEqual(["session.input_audio.mute", "session.thinking.append"]);
+    const memory = contents(e)[1]!;
+    expect(memory).toMatch(/^\[MEMORY\]/);
+    expect(memory).toContain(`- "Boo! What a spooky cape!"`);
+    expect(memory).toContain("greeted 1 visitor group; costumes seen: vampire 1");
+    expect(e.events).toContainEqual({ type: "note", text: "reminded the new session of tonight (1 lines said, 1 groups greeted)" });
+  });
+
+  it("sends no memory on the first session of the evening, or without a store", () => {
+    const { engine: e } = withEvening();
+    e.server({ type: "session.started" });
+    const plain = new TestLive();
+    plain.server({ type: "session.started" });
+    expect(e.sent.map((s) => s.type)).toEqual(["session.input_audio.mute"]);
+    expect(plain.sent.map((s) => s.type)).toEqual(["session.input_audio.mute"]);
+  });
+
+  it("counts each new group and offers tonight's tally with its greeting", async () => {
+    const { evening, engine: e } = withEvening();
+    await e.greet("img", "arrived");
+    expect(contents(e)[0]).toContain("[TONIGHT] Optional fun facts");
+    expect(contents(e)[0]).toContain("group number 1 you've greeted tonight");
+    e.vision = "Two visitors: a witch and a green dinosaur.";
+    e.sameGroup = false;
+    e.sent = [];
+    await e.greet("img", "returned", { awayMs: 30_000 });
+    expect(contents(e)[0]).toContain("group number 2 you've greeted tonight");
+    expect(contents(e)[0]).toContain("the second dinosaur tonight");
+    expect(evening.current.costumes).toEqual({ dinosaur: 2, witch: 1 });
+  });
+
+  it("doesn't count the same group coming back, a manual greeting, or newcomers already greeted", async () => {
+    const { evening, engine: e } = withEvening();
+    await e.greet("img", "arrived");
+    e.sameGroup = true;
+    await e.greet("img", "returned", { awayMs: 60_000 });
+    e.sent = [];
+    await e.greet("img", "manual");
+    expect(contents(e)[0]).not.toContain("[TONIGHT]");
+    expect(evening.current.groups).toBe(1);
+
+    // A newcomer spotted by a background look counts once; the tracker's "grew" for them doesn't again.
+    e.sameGroup = false;
+    e.vision = "A dinosaur and a ghost.";
+    e.sent = [];
+    await e.observe("frame");
+    expect(contents(e)[0]).toContain("group number 2 you've greeted tonight");
+    await e.greet("img", "grew");
+    expect(evening.current.groups).toBe(2);
+    expect(evening.current.costumes).toEqual({ dinosaur: 1, ghost: 1 });
+  });
+
+  it("counts a grown group's new costumes only", async () => {
+    const { evening, engine: e } = withEvening();
+    await e.greet("img", "arrived");
+    vi.advanceTimersByTime(30_000);
+    e.vision = "A green dinosaur and a pirate.";
+    e.sent = [];
+    await e.greet("img", "grew");
+    expect(contents(e)[0]).toContain("group number 2 you've greeted tonight");
+    expect(evening.current.costumes).toEqual({ dinosaur: 1, pirate: 1 });
+  });
+
+  it("counts a group greeted without a clear look, but no costumes", async () => {
+    const { evening, engine: e } = withEvening();
+    e.visionError = new Error("Failed to fetch");
+    await e.greet("img", "arrived");
+    expect(evening.current).toMatchObject({ groups: 1, costumes: {} });
+    expect(contents(e)[0]).toContain("group number 1 you've greeted tonight");
+  });
+
+  it("offers milestones after a quick hello too", async () => {
+    const { evening, engine: e } = withEvening();
+    for (let i = 0; i < 24; i++) evening.recordGroup("A witch.");
+    let finishLook = () => {};
+    e.lookGate = new Promise<void>((resolve) => (finishLook = resolve));
+    const greeting = e.greet("img", "arrived");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(contents(e)[0]).not.toContain("[TONIGHT]"); // the quick hello comes before the count
+    finishLook();
+    await greeting;
+    expect(contents(e)[1]).toContain("Your eyes have focused");
+    expect(contents(e)[1]).toContain('Group 25 is a milestone: you could celebrate it ("visitor number 25!")');
+  });
 });
 
 describe("RealtimeEngine", () => {
@@ -415,5 +576,76 @@ describe("RealtimeEngine", () => {
     const e = new TestRealtime();
     await e.observe("img");
     expect(e.sent.map((s) => s.type)).toEqual(["conversation.item.create"]);
+  });
+
+  it("adds operator modes as a system note without a response, and again on a new session", () => {
+    const e = new TestRealtime();
+    e.setStanding(modeInstructions(["lastCall"]), modeUpdate(["lastCall"]));
+    expect(e.sent).toEqual([{ type: "conversation.item.create", item: expect.objectContaining({ role: "system" }) }]);
+    e.sent = [];
+    e.server({ type: "session.created" });
+    expect(e.sent.map((s) => s.type)).toEqual(["conversation.item.create"]);
+    expect(JSON.stringify(e.sent[0])).toContain("almost over");
+  });
+});
+
+describe("greeting events (they drive the eyes' flourishes)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const greetings = (e: TestLive) => e.events.filter((ev) => ev.type === "greeting");
+
+  it("fires once per greeting, at its first line, even with a quick hello first", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    expect(greetings(e)).toEqual([{ type: "greeting", kind: "visitors" }]);
+
+    const slow = new TestLive();
+    let finishLook = () => {};
+    slow.lookGate = new Promise<void>((resolve) => (finishLook = resolve));
+    const greeting = slow.greet("img", "arrived");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(greetings(slow)).toHaveLength(1); // with the quick hello
+    finishLook();
+    await greeting;
+    expect(greetings(slow)).toHaveLength(1); // not again for the costume follow-up
+  });
+
+  it("marks a welcome back, but not a silent same-group return", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    e.sameGroup = true;
+    e.events = [];
+    await e.greet("img", "returned", { awayMs: 20_000 });
+    expect(greetings(e)).toEqual([]);
+    await e.greet("img", "returned", { awayMs: 60_000 });
+    expect(greetings(e)).toEqual([{ type: "greeting", kind: "welcome-back" }]);
+  });
+
+  it("fires for a costume-change remark and a newcomer, not for plain background looks", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    e.events = [];
+    e.sameGroup = true;
+    e.vision = "Still the dinosaur, now waving.";
+    await e.observe("frame");
+    expect(greetings(e)).toEqual([]);
+    e.verdict = "CHANGED";
+    e.vision = "The dinosaur, now wearing a witch hat.";
+    await e.recheck("frame");
+    expect(greetings(e)).toEqual([{ type: "greeting", kind: "costume" }]);
+    e.events = [];
+    e.verdict = undefined;
+    e.sameGroup = false;
+    e.vision = "One visitor in a ghost sheet.";
+    await e.observe("frame");
+    expect(greetings(e)).toEqual([{ type: "greeting", kind: "visitors" }]);
+  });
+
+  it("fires for a realtime greeting too", async () => {
+    const e = new TestRealtime();
+    const events: EngineEvent[] = [];
+    e.on((ev) => events.push(ev));
+    await e.greet("img", "arrived");
+    expect(events).toContainEqual({ type: "greeting", kind: "visitors" });
   });
 });

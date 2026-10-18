@@ -26,6 +26,11 @@ for (const mode of bodyModes) {
   }
 }
 
+const remotePin = process.env.REMOTE_PIN?.trim() ?? "";
+if (remotePin && remotePin.length < 6) {
+  throw new Error("REMOTE_PIN must be at least 6 characters (or leave it empty to keep the phone remote off)");
+}
+
 export const config = {
   apiKey: process.env.OPENAI_API_KEY?.trim() ?? "",
   apiBase: str("OPENAI_API_BASE", "https://api.openai.com/v1"),
@@ -47,7 +52,22 @@ export const config = {
   logDir: str("LOG_DIR", "logs"),
   /** Save the camera frame of each greeting in the day's log. */
   logSnapshots: str("LOG_SNAPSHOTS", "true") !== "false",
+  /** Rehearsal mode's "Generate visitors": image model, quality and size (landscape, like the webcam). */
+  rehearsalImageModel: str("REHEARSAL_IMAGE_MODEL", "gpt-image-2.5-flare"),
+  rehearsalImageQuality: str("REHEARSAL_IMAGE_QUALITY", "low"),
+  rehearsalImageSize: str("REHEARSAL_IMAGE_SIZE", "1536x1024"),
+  /** Estimated US dollars per generated image, shown before generating (the real cost is logged after). */
+  rehearsalImageCostUsd: num("REHEARSAL_IMAGE_COST_USD", 0.01),
+  /** Where generated rehearsal visitors are cached (gitignored); "none" turns generating off. */
+  rehearsalCacheDir: str("REHEARSAL_CACHE_DIR", "rehearsal-cache"),
   port: num("PORT", 8787),
+  /** Turns on the phone remote: the server listens on the LAN and asks other devices for this PIN. */
+  remotePin,
+  /** ntfy.sh topic for push alerts to the owner's phone; empty: no pushes. */
+  ntfyTopic: process.env.NTFY_TOPIC?.trim() ?? "",
+  ntfyServer: str("NTFY_SERVER", "https://ntfy.sh"),
+  /** Access token for a protected topic or a self-hosted ntfy server (optional). */
+  ntfyToken: process.env.NTFY_TOKEN?.trim() ?? "",
   production: process.env.NODE_ENV === "production",
 };
 

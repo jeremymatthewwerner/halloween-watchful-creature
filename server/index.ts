@@ -5,12 +5,25 @@ import { streamSSE } from "hono/streaming";
 import { WebSocketServer } from "ws";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { BodyMessage, ClientConfig, ConversationLogRequest, ServerLogEntry, VisionRequest } from "../shared/types.ts";
+import type {
+  BodyMessage,
+  ClientConfig,
+  ConversationLogRequest,
+  GenerateVisitorsRequest,
+  GenerateVisitorsResult,
+  GeneratedVisitorList,
+  ServerLogEntry,
+  VisionRequest,
+} from "../shared/types.ts";
 import { BodyController, NullSink, SerialSink } from "./body/driver.ts";
 import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "./characters.ts";
 import { config } from "./config.ts";
-import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId } from "./logs.ts";
-import { OpenAIError, createLiveSession, createRealtimeCall, describeFrame, voiceFor } from "./openai.ts";
+import { buildGallery } from "./gallery.ts";
+import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId, wantsSnapshot } from "./logs.ts";
+import { OpenAIError, characterVoice, createLiveSession, createRealtimeCall, describeFrame, generateImage, sessionVoice } from "./openai.ts";
+import { listenHost } from "./auth.ts";
+import { Remote } from "./remote.ts";
+import { MAX_PER_REQUEST, VisitorCache, checkRequest, generateVisitors } from "./rehearsalGen.ts";
 
 // Everything this process prints also goes to the dashboard's server log, and (unless
 // LOG_DIR=none) to today's log on disk along with the conversation and greeting snapshots.
@@ -24,14 +37,16 @@ if (sessionLog) {
 
 const app = new Hono();
 
-// Only the dashboard itself may call the API, so other web pages open in the
-// same browser can't start (billed) sessions against this local server.
-const allowedOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-app.use("/api/*", async (c, next) => {
-  const origin = c.req.header("origin");
-  if (origin && !allowedOrigin.test(origin)) return c.json({ error: "forbidden origin" }, 403);
-  await next();
+// Only the dashboard itself may call the API (origin check), so other web pages open in the same
+// browser can't start (billed) sessions against this local server. Other devices (the phone remote)
+// need REMOTE_PIN and a signed-in session. Also health alerts. See server/auth.ts and server/remote.ts.
+const remote = new Remote({
+  ...config,
+  arduinoEnabled: config.bodySerialPort !== "none",
+  bodyStatus: () => body.status,
+  todayLogUrl: () => (sessionLog ? `/api/session-logs/${sessionLog.currentDay}/log.html` : null),
 });
+remote.install(app);
 
 function characterFrom(id: unknown) {
   const wanted = typeof id === "string" && id ? id : config.character;
@@ -59,6 +74,7 @@ app.get("/api/config", (c) => {
     maxVoiceMinutesPerDay: config.maxVoiceMinutesPerDay,
     hasApiKey: Boolean(config.apiKey),
     sessionLogUrl: sessionLog ? `/api/session-logs/${sessionLog.currentDay}/log.html` : null,
+    voice: { env: config.voiceOverride || null, character: characterVoice(config, character) },
   };
   return c.json(body);
 });
@@ -67,19 +83,22 @@ app.get("/api/health", (c) => c.json({ ok: true, engine: config.engine, body: bo
 
 /** Exchanges the browser's WebRTC offer for an answer from GPT-Live or gpt-realtime. */
 app.post("/api/session", async (c) => {
-  const req = await c.req.json<{ sdp?: string; character?: string }>();
+  const req = await c.req.json<{ sdp?: string; character?: string; voice?: unknown }>();
   if (typeof req.sdp !== "string" || !req.sdp.trim()) return c.json({ error: "An SDP offer is required" }, 400);
   const character = characterFrom(req.character);
   const instructions = buildInstructions(character, config.engine);
-  const voice = voiceFor(config, character);
+  // Only allowlisted voices from the dashboard reach OpenAI; anything else falls back.
+  const { voice, source, rejected } = sessionVoice(config, character, req.voice);
+  if (rejected) console.warn(`[voice] ignoring unknown ${config.engine} voice ${JSON.stringify(String(req.voice).slice(0, 40))}; using ${voice}`);
+  const voiceInfo = { voice, voiceSource: source };
   if (config.engine === "live") {
     const { sdp, sessionId } = await createLiveSession(config, { sdp: req.sdp, instructions, voice });
-    console.log(`[live] session ${sessionId} started as ${character.name} (${voice})`);
-    return c.json({ engine: "live", sdp, sessionId }, 201);
+    console.log(`[live] session ${sessionId} started as ${character.name} (${voice}, ${source})`);
+    return c.json({ engine: "live", sdp, sessionId, ...voiceInfo }, 201);
   }
   const { sdp } = await createRealtimeCall(config, { sdp: req.sdp, instructions, voice });
-  console.log(`[realtime] session started as ${character.name} (${voice})`);
-  return c.json({ engine: "realtime", sdp }, 201);
+  console.log(`[realtime] session started as ${character.name} (${voice}, ${source})`);
+  return c.json({ engine: "realtime", sdp, ...voiceInfo }, 201);
 });
 
 /** Streams server log lines (Server-Sent Events): the backlog first, then new lines as they happen. */
@@ -105,7 +124,7 @@ app.post("/api/conversation", async (c) => {
   if (!Array.isArray(lines)) return c.json({ error: "lines must be an array" }, 400);
   for (const line of lines.slice(0, 100)) {
     if (!["visitor", "creature", "system"].includes(line?.who) || typeof line.text !== "string" || !Number.isFinite(line.at)) continue;
-    sessionLog?.conversation(line.who, line.text.slice(0, 4000), line.at);
+    sessionLog?.conversation(line.who, line.text.slice(0, 4000), line.at, line.rehearsal === true);
   }
   return c.body(null, 204);
 });
@@ -113,11 +132,23 @@ app.post("/api/conversation", async (c) => {
 /** Past days' logs, newest first. */
 app.get("/api/session-logs", async (c) => {
   const days = sessionLog ? (await readdir(config.logDir).catch(() => [])).filter((d) => LOG_DAY.test(d)).sort().reverse() : [];
-  const items = days.map((d) => `<li><a href="/api/session-logs/${d}/log.html">${d}</a> · <a href="/api/session-logs/${d}/log.txt">text</a></li>`);
+  const items = days.map((d) => `<li><a href="/api/session-logs/${d}/log.html">${d}</a> · <a href="/api/session-logs/${d}/log.txt">text</a> · <a href="/api/session-logs/${d}/gallery.html">🖼️ costume gallery</a></li>`);
   return c.html(
     `<!doctype html><meta charset="utf-8"><title>Creature logs</title><style>body{background:#120a1c;color:#f3eaff;font:15px system-ui;padding:16px}a{color:#ff7a1a}</style>` +
       `<h1>🎃 Creature logs</h1><ul>${items.join("") || "<li>No logs yet.</li>"}</ul>`,
   );
+});
+
+/** A day's costume gallery: each greeting snapshot with its caption and the creature's best line. Built on request. */
+app.get("/api/session-logs/:day/gallery.html", async (c) => {
+  const { day } = c.req.param();
+  if (!sessionLog || !LOG_DAY.test(day)) return c.notFound();
+  const logText = await readFile(join(config.logDir, day, "log.txt"), "utf8").catch(() => null);
+  if (logText === null) return c.notFound();
+  const snapshots = config.logSnapshots
+    ? new Set((await readdir(join(config.logDir, day, "snapshots")).catch(() => [])).map((f) => `snapshots/${f}`))
+    : null;
+  return c.html(buildGallery({ day, logText, snapshots }), 200, { "cache-control": "no-store" });
 });
 
 const LOG_FILES: Record<string, string> = { html: "text/html; charset=utf-8", txt: "text/plain; charset=utf-8", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
@@ -130,9 +161,6 @@ app.get("/api/session-logs/:day/:file{(?:log\\.(?:html|txt)|snapshots/[\\w-]+\\.
   if (!data) return c.notFound();
   return c.body(data, 200, { "content-type": LOG_FILES[file.split(".").pop()!]!, "cache-control": "no-store" });
 });
-
-/** Looks that start a greeting: their camera frame is worth keeping in the log. */
-const GREETING_LOOKS = new Set(["arrived", "grew", "returned", "manual"]);
 
 /** Describes a camera frame for GPT-Live (which can't take images directly). */
 app.post("/api/vision", async (c) => {
@@ -147,9 +175,9 @@ app.post("/api/vision", async (c) => {
   const started = Date.now();
   const result = await describeFrame(config, req);
   const verdict = result.verdict ?? (result.sameGroup === false ? "NEW" : undefined);
-  console.log(`[vision] ${req.reason}${verdict ? ` (${verdict})` : ""} in ${Date.now() - started} ms: ${result.text}`);
-  // Greetings, and checks that found someone new or a costume change, are worth a snapshot.
-  if (sessionLog && config.logSnapshots && (GREETING_LOOKS.has(req.reason) || verdict === "NEW" || verdict === "CHANGED")) {
+  const rehearsal = req.rehearsal === true;
+  console.log(`[vision]${rehearsal ? " [REHEARSAL]" : ""} ${req.reason}${verdict ? ` (${verdict})` : ""} in ${Date.now() - started} ms: ${result.text}`);
+  if (sessionLog && config.logSnapshots && wantsSnapshot(req.reason, verdict, rehearsal)) {
     try {
       sessionLog.snapshot(req.image, req.reason, result.text, verdict);
     } catch (err) {
@@ -157,6 +185,60 @@ app.post("/api/vision", async (c) => {
     }
   }
   return c.json(result);
+});
+
+// --- rehearsal mode: generated visitors (billed image generation, cached on disk) ---
+const visitorCache = config.rehearsalCacheDir === "none" ? null : new VisitorCache(config.rehearsalCacheDir);
+let generating = false;
+
+app.get("/api/rehearsal/generated", async (c) => {
+  const body: GeneratedVisitorList = {
+    items: visitorCache ? await visitorCache.list() : [],
+    estimate: { perImageUsd: config.rehearsalImageCostUsd, model: config.rehearsalImageModel, quality: config.rehearsalImageQuality, size: config.rehearsalImageSize },
+    hasApiKey: Boolean(config.apiKey) && Boolean(visitorCache),
+    maxPerRequest: MAX_PER_REQUEST,
+  };
+  return c.json(body, 200, { "cache-control": "no-store" });
+});
+
+app.get("/api/rehearsal/generated/:file{[a-z0-9]+-[a-f0-9]+\\.jpg}", async (c) => {
+  const data = await visitorCache?.image(c.req.param("file").slice(0, -".jpg".length));
+  if (!data) return c.notFound();
+  return c.body(data, 200, { "content-type": "image/jpeg", "cache-control": "private, max-age=86400" });
+});
+
+app.delete("/api/rehearsal/generated/:id{[a-z0-9]+-[a-f0-9]+}", async (c) => {
+  if (!(await visitorCache?.remove(c.req.param("id")))) return c.notFound();
+  console.log(`[rehearsal] deleted generated visitor ${c.req.param("id")}`);
+  return c.body(null, 204);
+});
+
+/** Generates pretend visitors with the image API (billed); one request at a time. */
+app.post("/api/rehearsal/generate", async (c) => {
+  if (!visitorCache) return c.json({ error: "Generating is off (REHEARSAL_CACHE_DIR=none)" }, 503);
+  if (!config.apiKey) return c.json({ error: "OPENAI_API_KEY is not set on the server" }, 503);
+  const req = await c.req.json<GenerateVisitorsRequest>().catch(() => null);
+  const problem = req && typeof req === "object" ? checkRequest(req) : "Expected a JSON object";
+  if (problem) return c.json({ error: problem }, 400);
+  if (generating) return c.json({ error: "Already generating: wait for it to finish" }, 409);
+  generating = true;
+  try {
+    const result: GenerateVisitorsResult = await generateVisitors(
+      {
+        cache: visitorCache,
+        generate: (prompt) => generateImage(config, { prompt, model: config.rehearsalImageModel, size: config.rehearsalImageSize, quality: config.rehearsalImageQuality }),
+        model: config.rehearsalImageModel,
+        quality: config.rehearsalImageQuality,
+        size: config.rehearsalImageSize,
+        estimateUsd: config.rehearsalImageCostUsd,
+        log: (text) => (text.includes("couldn't") ? console.warn(text) : console.log(text)),
+      },
+      { ...req!, count: req!.count ?? 1 },
+    );
+    return c.json(result, result.items.length ? 201 : 502);
+  } finally {
+    generating = false;
+  }
 });
 
 if (config.production) {
@@ -172,15 +254,19 @@ if (config.bodySerialPort !== "none") {
 }
 body.startHeartbeat();
 
-const server = serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST ?? "127.0.0.1" }, (info) => {
+const listen = listenHost({ HOST: process.env.HOST, pinSet: Boolean(config.remotePin) });
+if (listen.warning) console.warn(listen.warning);
+const server = serve({ fetch: app.fetch, port: config.port, hostname: listen.host }, (info) => {
   console.log(`Creature server on http://localhost:${info.port} (engine: ${config.engine}, character: ${config.character})`);
+  if (config.remotePin) console.log(`Phone remote on: open http://<this computer's address>:${info.port}/remote on your phone`);
+  remote.start();
   if (!config.apiKey) console.warn("OPENAI_API_KEY is not set: copy .env.example to .env and add your key.");
   if (!config.production) console.log("Open the dashboard at http://localhost:5173");
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 server.on("upgrade", (req, socket, head) => {
-  if (req.url !== "/ws/body") {
+  if (req.url !== "/ws/body" || !remote.checkUpgrade(req).allow) {
     socket.destroy();
     return;
   }

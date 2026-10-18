@@ -9,6 +9,8 @@ export interface Character extends CharacterInfo {
   realtimeVoice: string;
   /** Character-specific prompt (markdown body of the character file). */
   persona: string;
+  /** Opt-in (frontmatter `games: on`): include the trick-or-treat mini-games in prompts/games.md. */
+  games: boolean;
 }
 
 /** Parses the flat `key: value` frontmatter used by character files. */
@@ -30,6 +32,8 @@ export function parseCharacterFile(id: string, source: string): Character {
   if (eyeStyle !== "flicker" && eyeStyle !== "glow" && eyeStyle !== "blink") {
     throw new Error(`Character "${id}" has unknown eye_style "${eyeStyle}"`);
   }
+  const games = fields.games ?? "off";
+  if (games !== "on" && games !== "off") throw new Error(`Character "${id}" has games "${games}" (use on or off)`);
   return {
     id,
     name: need("name"),
@@ -38,6 +42,7 @@ export function parseCharacterFile(id: string, source: string): Character {
     eyes,
     eyeStyle,
     persona: match[2]!.trim(),
+    games: games === "on",
   };
 }
 
@@ -85,5 +90,6 @@ const SENSES: Record<EngineKind, string> = {
 /** Full voice-model instructions for a character and engine. */
 export function buildInstructions(c: Character, engine: EngineKind): string {
   const base = readFileSync(join(PROMPTS_DIR, "base.md"), "utf8").trim();
-  return [base, c.persona, SENSES[engine]].join("\n\n");
+  const games = c.games ? [readFileSync(join(PROMPTS_DIR, "games.md"), "utf8").trim()] : [];
+  return [base, c.persona, ...games, SENSES[engine]].join("\n\n");
 }

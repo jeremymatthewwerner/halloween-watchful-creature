@@ -1,11 +1,21 @@
 /** A voice engine connects the creature to an OpenAI speech-to-speech model. */
+import type { EveningMemory } from "../evening.ts";
+import type { SpookyLevel } from "../spookiness.ts";
 
 export type EngineStatus = "closed" | "connecting" | "open" | "closing";
 
 export type GreetReason = "arrived" | "grew" | "returned" | "manual";
 
+/**
+ * What kind of greeting the creature was just asked to say: hello to new visitors, a remark on a
+ * costume change, or a welcome back to the same visitors. Drives the eyes' flourish.
+ */
+export type GreetingKind = "visitors" | "costume" | "welcome-back";
+
 export type EngineEvent =
   | { type: "status"; status: EngineStatus; detail?: string }
+  /** The creature was just asked to greet someone (fires once, at the greeting's first line). */
+  | { type: "greeting"; kind: GreetingKind }
   | { type: "transcript"; who: "visitor" | "creature"; delta: string }
   | { type: "note"; text: string }
   | { type: "usage"; voiceSeconds?: number; tokens?: number }
@@ -36,6 +46,11 @@ export interface Engine {
   recheck(image: string): Promise<void>;
   /** Operator puppeteering: have the creature say this line, in character. */
   say(text: string): void;
+  /**
+   * Operator modes: standing instructions kept until changed. `standing` ("" for none) is re-sent
+   * to every new voice session; `change`, if given, is sent now to an open session.
+   */
+  setStanding(standing: string, change?: string): void;
   setMicEnabled(enabled: boolean): void;
   /** True while waiting on vision or a model response. */
   isThinking(): boolean;
@@ -53,4 +68,12 @@ export interface EngineDeps {
   recentTranscript(): string;
   /** When the creature's voice was last audible (performance.now() ms). */
   lastVoiceAt(): number;
+  /** What it said and saw earlier tonight, kept across sessions (optional). */
+  evening?: EveningMemory;
+  /** The operator's spookiness dial right now, 0 (gentle) to 3 (scary, for teens). Flavors greetings. */
+  spookiness?(): SpookyLevel;
+  /** The voice picked on the dashboard, read as each session starts (null: the server's default). */
+  voice?: () => string | null;
+  /** True while rehearsal mode feeds sample images instead of the camera (optional). */
+  rehearsal?(): boolean;
 }

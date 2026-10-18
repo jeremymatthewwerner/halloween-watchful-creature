@@ -1,0 +1,25 @@
+/* Rehearsal mode: the panel under Settings, and the banner over the video. */
+.rehearsal { margin-top: 12px; border: 1px dashed var(--purple); border-radius: 8px; padding: 6px 10px; }
+.rehearsal summary { cursor: pointer; color: var(--purple); }
+.rehearsal h3 { font-size: 13px; color: var(--muted); margin: 12px 0 4px; font-weight: 600; }
+.rehearsal .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.rehearsal .rehearsal-toggle { font-weight: 600; }
+.rehearsal-thumbs { display: flex; flex-wrap: wrap; gap: 6px; max-height: 180px; overflow-y: auto; }
+.rehearsal-thumbs img { width: 72px; height: 54px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 2px solid transparent; display: block; }
+.rehearsal-thumbs > img:hover { border-color: var(--orange); }
+.rehearsal-thumbs .thumb { position: relative; }
+.rehearsal-thumbs .thumb.current img { border-color: var(--green); }
+.rehearsal-thumbs .remove { position: absolute; top: -6px; right: -6px; padding: 0 5px; line-height: 16px; border-radius: 50%; font-size: 12px; }
+.rehearsal-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.rehearsal-banner {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  padding: 4px 14px; border-radius: 6px; background: var(--red); color: #fff;
+  font-weight: 700; letter-spacing: .04em; white-space: nowrap; pointer-events: none;
+}
+body.rehearsing header { background: repeating-linear-gradient(45deg, #2a1030, #2a1030 12px, #1e1330 12px, #1e1330 24px); }
+.rehearsal .gen-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rehearsal .gen-count { width: 3.5em; }
+.rehearsal-thumbs .badge {
+  position: absolute; left: 2px; bottom: 2px; padding: 0 4px; border-radius: 4px;
+  background: rgba(0, 0, 0, .7); color: #fff; font-size: 11px; pointer-events: none;
+}

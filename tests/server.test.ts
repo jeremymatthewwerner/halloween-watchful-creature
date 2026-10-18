@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildInstructions, listCharacterIds, loadCharacter, parseCharacterFile } from "../server/characters.ts";
 import { extractOutputText } from "../server/openai.ts";
 import { Transcript } from "../web/transcript.ts";
+import { isKnownVoice } from "../shared/voices.ts";
 
 describe("characters", () => {
   it("loads every character file", () => {
@@ -25,9 +26,39 @@ describe("characters", () => {
     expect(buildInstructions(c, "realtime")).toContain('"look" tool');
   });
 
+  it("includes the trick-or-treat mini-games only for characters that opt in", () => {
+    const pumpkin = loadCharacter("pumpkin");
+    expect(pumpkin.games).toBe(true);
+    const live = buildInstructions(pumpkin, "live");
+    expect(live).toContain("# Trick-or-treat mini-games");
+    expect(live).toContain("Pick 'trick' and you get a riddle!");
+    expect(live).toContain("At most one game per visit");
+    expect(live).toContain("Never block the candy");
+    // Games sit after the persona and before the senses.
+    expect(live.indexOf("Jacques O'Lantern")).toBeLessThan(live.indexOf("# Trick-or-treat mini-games"));
+    expect(live.indexOf("# Trick-or-treat mini-games")).toBeLessThan(live.indexOf("# How your senses work"));
+
+    const raven = loadCharacter("raven");
+    expect(raven.games).toBe(false);
+    expect(buildInstructions(raven, "live")).not.toContain("mini-games");
+
+    const head = "---\nname: X\nvoice: v\neyes_sleeping: '#000000'\neyes_idle: '#000000'\neyes_listening: '#000000'\neyes_thinking: '#000000'\neyes_speaking: '#000000'\n";
+    expect(parseCharacterFile("x", `${head}games: on\n---\nbody`).games).toBe(true);
+    expect(parseCharacterFile("x", `${head}---\nbody`).games).toBe(false);
+    expect(() => parseCharacterFile("x", `${head}games: sometimes\n---\nbody`)).toThrow(/games/);
+  });
+
   it("validates frontmatter", () => {
     expect(() => parseCharacterFile("x", "no frontmatter")).toThrow(/frontmatter/);
     expect(() => parseCharacterFile("x", "---\nname: X\n---\nbody")).toThrow(/is missing/);
+  });
+
+  it("gives every character voices from the allowlists", () => {
+    for (const id of listCharacterIds()) {
+      const c = loadCharacter(id);
+      expect(isKnownVoice("live", c.voice), `${id} voice ${c.voice}`).toBe(true);
+      expect(isKnownVoice("realtime", c.realtimeVoice), `${id} realtime_voice ${c.realtimeVoice}`).toBe(true);
+    }
   });
 
   it("rejects path traversal in character ids", () => {

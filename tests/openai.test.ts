@@ -2,7 +2,8 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { config } from "../server/config.ts";
-import { createLiveSession, describeFrame } from "../server/openai.ts";
+import { loadCharacter } from "../server/characters.ts";
+import { createLiveSession, describeFrame, generateImage, sessionVoice, voiceFor } from "../server/openai.ts";
 
 /** A fake OpenAI API that records requests. */
 let server: Server;
@@ -31,6 +32,14 @@ beforeAll(async () => {
         return;
       }
       res.end(JSON.stringify({ output: [{ type: "message", content: [{ type: "output_text", text: visionReply }] }], usage: { input_tokens: 90, output_tokens: 5 } }));
+    } else if (req.url === "/v1/images/generations") {
+      res.end(
+        JSON.stringify({
+          created: 1,
+          data: [{ b64_json: Buffer.from("fake-jpeg").toString("base64") }],
+          usage: { input_tokens: 310, output_tokens: 180, input_tokens_details: { text_tokens: 310, image_tokens: 0 } },
+        }),
+      );
     } else {
       res.statusCode = 404;
       res.end("{}");
@@ -69,6 +78,13 @@ describe("OpenAI calls", () => {
     const content = (calls[1]!.body.input as { content: { type: string; text?: string }[] }[])[0]!.content;
     expect(content[1]).toMatchObject({ type: "input_image", detail: "low" });
     expect(content[0]!.text).toContain("Visitor: hi");
+    // Each costume's single standout detail, so compliments can be specific.
+    expect(content[0]!.text).toContain("standout detail");
+    const instructions = calls[1]!.body.instructions as string;
+    expect(instructions).toContain('"standout: <detail>"');
+    expect(instructions).toContain("glow-in-the-dark bones");
+    expect(instructions).toContain("Never describe bodies, faces");
+    expect(instructions).toContain("Under 80 words");
 
     // Remembered: the next call goes straight through without reasoning.
     await describeFrame(config, { image: "data:image/jpeg;base64,AAA", reason: "background" });
@@ -83,6 +99,7 @@ describe("OpenAI calls", () => {
     const prompt = (requests.at(-1)!.body.input as { content: { text?: string }[] }[])[0]!.content[0]!.text!;
     expect(prompt).toContain('"A dinosaur."');
     expect(prompt).toContain("If anything about the costumes differs, or you are unsure");
+    expect(prompt).toContain("Then describe who is there now and their costumes, with each one's standout detail.");
 
     visionReply = "SAME: The dinosaur is back.";
     expect(await describeFrame(config, { image, reason: "returned", previous: "A dinosaur." })).toMatchObject({ sameGroup: true, text: "The dinosaur is back." });
@@ -124,5 +141,59 @@ describe("OpenAI calls", () => {
     const plain = await describeFrame(config, { image, reason: "background" });
     expect(plain).toMatchObject({ text: "NEW: whoever.", sameGroup: undefined });
     visionReply = "A witch.";
+  });
+
+  it("generates a rehearsal image as a JPEG from b64_json, with its token usage", async () => {
+    const result = await generateImage(config, { prompt: "A cartoon pirate.", model: "gpt-image-2.5-flare", size: "1536x1024", quality: "low" });
+    expect(result.image.toString()).toBe("fake-jpeg");
+    expect(result.usage).toEqual({ inputTokens: 310, textInputTokens: 310, outputTokens: 180 });
+    const req = requests.find((r) => r.url === "/v1/images/generations")!;
+    expect(req.body).toEqual({
+      model: "gpt-image-2.5-flare",
+      prompt: "A cartoon pirate.",
+      n: 1,
+      size: "1536x1024",
+      quality: "low",
+      output_format: "jpeg",
+      output_compression: 80,
+    });
+  });
+});
+
+describe("session voice", () => {
+  const pumpkin = loadCharacter("pumpkin");
+  const live = { ...config, engine: "live" as const, voiceOverride: "" };
+  const realtime = { ...config, engine: "realtime" as const, voiceOverride: "" };
+
+  it("uses the dashboard pick, else VOICE in .env, else the character's voice for the engine", () => {
+    expect(sessionVoice(live, pumpkin, "gleam")).toEqual({ voice: "gleam", source: "dashboard", rejected: false });
+    expect(sessionVoice({ ...live, voiceOverride: "ripple" }, pumpkin, "gleam")).toMatchObject({ voice: "gleam", source: "dashboard" });
+    expect(sessionVoice({ ...live, voiceOverride: "ripple" }, pumpkin)).toEqual({ voice: "ripple", source: "env", rejected: false });
+    expect(sessionVoice(live, pumpkin)).toEqual({ voice: pumpkin.voice, source: "character", rejected: false });
+    expect(sessionVoice(realtime, pumpkin)).toEqual({ voice: pumpkin.realtimeVoice, source: "character", rejected: false });
+    // Without a pick, voiceFor keeps its old meaning (VOICE in .env, else the character's).
+    expect(voiceFor({ ...live, voiceOverride: "ripple" }, pumpkin)).toBe("ripple");
+    expect(voiceFor(live, pumpkin)).toBe(pumpkin.voice);
+  });
+
+  it("never passes a voice that isn't on the engine's allowlist", () => {
+    for (const bad of ["evil", "MERIDIAN", "gleam; drop", 7, { voice: "gleam" }, ["gleam"], true]) {
+      const choice = sessionVoice({ ...live, voiceOverride: "ripple" }, pumpkin, bad);
+      expect(choice).toEqual({ voice: "ripple", source: "env", rejected: true });
+    }
+    // A GPT-Live voice isn't valid for gpt-realtime, and vice versa.
+    expect(sessionVoice(realtime, pumpkin, "ripple")).toEqual({ voice: pumpkin.realtimeVoice, source: "character", rejected: true });
+    expect(sessionVoice(live, pumpkin, "cedar")).toMatchObject({ voice: pumpkin.voice, rejected: true });
+    expect(sessionVoice(realtime, pumpkin, "cedar")).toMatchObject({ voice: "cedar", source: "dashboard", rejected: false });
+    // No pick at all isn't a rejection.
+    for (const none of [undefined, null, ""]) expect(sessionVoice(live, pumpkin, none).rejected).toBe(false);
+  });
+
+  it("sends the chosen voice to GPT-Live", async () => {
+    // The fake API's key and URL are set in beforeAll, after `live` was copied.
+    const { voice } = sessionVoice(live, pumpkin, "stone");
+    await createLiveSession({ ...config, engine: "live" }, { sdp: "v=0 offer", instructions: "Be a pumpkin.", voice });
+    const req = requests.filter((r) => r.url === "/v1/live/sessions").at(-1)!;
+    expect((req.body.session as { audio: unknown }).audio).toEqual({ output: { voice: "stone" } });
   });
 });
