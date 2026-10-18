@@ -11,7 +11,7 @@ import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "
 import { config } from "./config.ts";
 import { buildGallery } from "./gallery.ts";
 import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId } from "./logs.ts";
-import { OpenAIError, createLiveSession, createRealtimeCall, describeFrame, voiceFor } from "./openai.ts";
+import { OpenAIError, characterVoice, createLiveSession, createRealtimeCall, describeFrame, sessionVoice } from "./openai.ts";
 
 // Everything this process prints also goes to the dashboard's server log, and (unless
 // LOG_DIR=none) to today's log on disk along with the conversation and greeting snapshots.
@@ -60,6 +60,7 @@ app.get("/api/config", (c) => {
     maxVoiceMinutesPerDay: config.maxVoiceMinutesPerDay,
     hasApiKey: Boolean(config.apiKey),
     sessionLogUrl: sessionLog ? `/api/session-logs/${sessionLog.currentDay}/log.html` : null,
+    voice: { env: config.voiceOverride || null, character: characterVoice(config, character) },
   };
   return c.json(body);
 });
@@ -68,19 +69,22 @@ app.get("/api/health", (c) => c.json({ ok: true, engine: config.engine, body: bo
 
 /** Exchanges the browser's WebRTC offer for an answer from GPT-Live or gpt-realtime. */
 app.post("/api/session", async (c) => {
-  const req = await c.req.json<{ sdp?: string; character?: string }>();
+  const req = await c.req.json<{ sdp?: string; character?: string; voice?: unknown }>();
   if (typeof req.sdp !== "string" || !req.sdp.trim()) return c.json({ error: "An SDP offer is required" }, 400);
   const character = characterFrom(req.character);
   const instructions = buildInstructions(character, config.engine);
-  const voice = voiceFor(config, character);
+  // Only allowlisted voices from the dashboard reach OpenAI; anything else falls back.
+  const { voice, source, rejected } = sessionVoice(config, character, req.voice);
+  if (rejected) console.warn(`[voice] ignoring unknown ${config.engine} voice ${JSON.stringify(String(req.voice).slice(0, 40))}; using ${voice}`);
+  const voiceInfo = { voice, voiceSource: source };
   if (config.engine === "live") {
     const { sdp, sessionId } = await createLiveSession(config, { sdp: req.sdp, instructions, voice });
-    console.log(`[live] session ${sessionId} started as ${character.name} (${voice})`);
-    return c.json({ engine: "live", sdp, sessionId }, 201);
+    console.log(`[live] session ${sessionId} started as ${character.name} (${voice}, ${source})`);
+    return c.json({ engine: "live", sdp, sessionId, ...voiceInfo }, 201);
   }
   const { sdp } = await createRealtimeCall(config, { sdp: req.sdp, instructions, voice });
-  console.log(`[realtime] session started as ${character.name} (${voice})`);
-  return c.json({ engine: "realtime", sdp }, 201);
+  console.log(`[realtime] session started as ${character.name} (${voice}, ${source})`);
+  return c.json({ engine: "realtime", sdp, ...voiceInfo }, 201);
 });
 
 /** Streams server log lines (Server-Sent Events): the backlog first, then new lines as they happen. */

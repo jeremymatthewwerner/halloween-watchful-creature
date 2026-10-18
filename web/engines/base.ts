@@ -80,7 +80,7 @@ export abstract class WebRtcEngine {
       const res = await fetch("/api/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sdp: pc.localDescription?.sdp, character: this.deps.character }),
+        body: JSON.stringify({ sdp: pc.localDescription?.sdp, character: this.deps.character, voice: this.deps.voice?.() ?? undefined }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };

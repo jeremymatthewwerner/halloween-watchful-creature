@@ -72,4 +72,6 @@ export interface EngineDeps {
   evening?: EveningMemory;
   /** The operator's spookiness dial right now, 0 (gentle) to 3 (scary, for teens). Flavors greetings. */
   spookiness?(): SpookyLevel;
+  /** The voice picked on the dashboard, read as each session starts (null: the server's default). */
+  voice?: () => string | null;
 }

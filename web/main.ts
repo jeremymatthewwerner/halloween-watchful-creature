@@ -12,6 +12,7 @@ import type { Engine, EngineDeps } from "./engines/types.ts";
 import { Transcript, type Speaker } from "./transcript.ts";
 import { Camera, PersonDetector, type DetectedPerson } from "./vision.ts";
 import { VisitorTracker } from "./visitors.ts";
+import { VoicePanel } from "./voicePanel.ts";
 import { VoiceMeter } from "./voiceLevel.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -152,12 +153,13 @@ async function main(): Promise<void> {
   renderEyes(cfg, "sleeping", 0, 0);
 
   const modes = new ModePanel($("modes"), log);
-  ui.start.addEventListener("click", () => void wake(cfg, body, minArea, modes), { once: true });
+  const voices = new VoicePanel($("voice-picker"), cfg, log);
+  ui.start.addEventListener("click", () => void wake(cfg, body, minArea, modes, voices), { once: true });
   // Kiosk mode (Pi): start without a click; needs Chromium's --autoplay-policy=no-user-gesture-required.
   if (new URLSearchParams(location.search).has("autowake")) ui.start.click();
 }
 
-async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: ModePanel): Promise<void> {
+async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: ModePanel, voices: VoicePanel): Promise<void> {
   ui.start.disabled = true;
   ui.startHint.textContent = "Waking up…";
 
@@ -196,6 +198,7 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: M
     lastVoiceAt: () => meter.lastLoudTime,
     evening,
     spookiness: () => modes.spookiness,
+    voice: voices.requestVoice,
   };
   const engine: Engine = cfg.engine === "live" ? new LiveEngine(deps) : new RealtimeEngine(deps);
   modes.attach(engine);
@@ -204,6 +207,7 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: M
     { engine, capture: () => camera.capture(), isSpeaking: () => meter.speaking(performance.now()), now: () => performance.now(), log },
     { idleCloseMs: cfg.idleCloseSeconds * 1000, backgroundMs: cfg.backgroundFrameSeconds * 1000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000 },
   );
+  voices.attach(engine, () => director.visitorsPresent);
 
   // --- usage / cost ---
   let pastVoiceSeconds = 0;
