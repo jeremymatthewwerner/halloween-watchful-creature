@@ -259,7 +259,7 @@ describe("LiveEngine", () => {
     expect(e.looks.at(-1)).toMatchObject({ reason: "recheck", opts: { previousImage: "img" } });
   });
 
-  it("remarks on a costume change at most every 30 s, then compares with the new look", async () => {
+  it("caps remarks on changes from background looks at one per 30 s, and compares with the new look", async () => {
     const e = new TestLive();
     await e.greet("greeting-frame", "arrived");
     vi.advanceTimersByTime(6000); // past the greeting's nudge
@@ -288,6 +288,22 @@ describe("LiveEngine", () => {
     vi.advanceTimersByTime(16_000);
     await e.observe("witch-frame");
     expect(e.sent.map((s) => s.type)).toEqual(["session.commentary.append"]);
+  });
+
+  it("always remarks on a costume change found after a gap, whatever the background cap", async () => {
+    const e = new TestLive();
+    await e.greet("greeting-frame", "arrived");
+    vi.advanceTimersByTime(6000);
+    e.sameGroup = true;
+    e.verdict = "CHANGED";
+    e.vision = "One visitor in a black top hat.";
+    await e.recheck("top-hat-frame");
+    e.sent = [];
+    vi.advanceTimersByTime(20_000);
+    e.vision = "One visitor holding a pumpkin up in front of their face.";
+    await e.recheck("pumpkin-frame");
+    expect(e.sent.map((s) => s.type)).toEqual(["session.commentary.append"]);
+    expect(String(e.sent[0]!.content)).toContain("pumpkin up in front of their face");
   });
 
   it("keeps quiet when a check finds the same visitors, or has no greeted group to compare", async () => {

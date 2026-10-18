@@ -48,7 +48,10 @@ const NUDGE = {
 /** Speech after at least this much quiet counts as a new utterance. */
 const QUIET_MS = 700;
 
-/** Remark on a costume change (a new hat, a mask off) at most this often. */
+/**
+ * Remark on a costume change spotted by a background look (a hat tipped back mid-chat) at most this
+ * often. A change found after a gap (someone stepped out and back in) is deliberate: always remarked.
+ */
 const CHANGE_REMARK_EVERY_MS = 30_000;
 
 /** A "grew" this soon after a same/new check greeted the newcomers isn't greeted again. */
@@ -285,7 +288,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         // Same people, new look: compare with the new look from now on, so it's only remarked on once.
         this.lastObservation = this.lastGroup = seen;
         this.lastGroupImage = image;
-        if (Date.now() - this.lastChangeRemarkAt >= CHANGE_REMARK_EVERY_MS) {
+        if (reason === "recheck" || Date.now() - this.lastChangeRemarkAt >= CHANGE_REMARK_EVERY_MS) {
           this.lastChangeRemarkAt = Date.now();
           this.emit({ type: "note", text: `costume change (vision saw: ${seen})` });
           this.append(
