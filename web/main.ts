@@ -97,10 +97,29 @@ const log = (text: string) => {
   show("system", text);
 };
 
+/**
+ * The server may still be starting (a kiosk at boot) or restarting (tsx watch): keep trying
+ * instead of giving up, so the page never needs a manual reload.
+ */
+async function loadConfig(character: string): Promise<ClientConfig> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(`/api/config?character=${encodeURIComponent(character)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const cfg = (await res.json()) as ClientConfig;
+      if (attempt > 1) log("Server is up");
+      return cfg;
+    } catch (err) {
+      if (attempt === 1) log(`Waiting for the server (${(err as Error).message}); retrying…`);
+      await new Promise((resolve) => setTimeout(resolve, Math.min(5000, 500 * attempt)));
+    }
+  }
+}
+
 async function main(): Promise<void> {
   followServerLog(ui.serverLog, ui.serverLogStatus);
   const savedCharacter = prefs.get("character") ?? "";
-  const cfg = (await (await fetch(`/api/config?character=${encodeURIComponent(savedCharacter)}`)).json()) as ClientConfig;
+  const cfg = await loadConfig(savedCharacter);
   ui.characterName.textContent = cfg.character.name;
   document.title = cfg.character.name;
   ui.enginePill.textContent = cfg.engine === "live" ? "GPT-Live" : "gpt-realtime";

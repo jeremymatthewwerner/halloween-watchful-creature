@@ -65,13 +65,26 @@ describe("VisitorTracker", () => {
     expect(tracker.state).toBe("present");
   });
 
-  it("reports a gap when someone reappears after a few seconds, but not after a blip", () => {
-    const tracker = new VisitorTracker({ leaveMs: 8000, gapMs: 2000 });
+  it("reports a gap once someone is back in view for a second after a few seconds away, but not after a blip", () => {
+    const tracker = new VisitorTracker({ leaveMs: 8000, gapMs: 2000, gapSettleMs: 1000 });
     run(tracker, [1, 1, 1, 1, 1]);
     expect(run(tracker, [0, 0, 0, 1, 1], 1000)).toEqual([]); // 600 ms blip
-    const events = run(tracker, [...Array(15).fill(0), 1], 3000); // 3 s: maybe someone else
-    expect(events).toEqual([{ t: 6000, e: { type: "gap", count: 1, awayMs: 3000 } }]);
+    // 3 s away (maybe someone else), back at t=6000, settled at t=7000.
+    const events = run(tracker, [...Array(15).fill(0), 1, 1, 1, 1, 1, 1], 3000);
+    expect(events).toEqual([{ t: 7000, e: { type: "gap", count: 1, awayMs: 3000 } }]);
     expect(tracker.state).toBe("present");
+  });
+
+  it("waits for someone stepping back in to settle: a blip restarts the wait, leaving cancels it", () => {
+    const tracker = new VisitorTracker({ leaveMs: 8000, gapMs: 2000, gapSettleMs: 1000 });
+    run(tracker, [1, 1, 1, 1, 1]);
+    // Away 3 s, back at t=4000, a blip at t=4600, back at t=4800: settled at t=5800.
+    const events = run(tracker, [...Array(15).fill(0), 1, 1, 1, 0, 1, 1, 1, 1, 1, 1], 1000);
+    expect(events).toEqual([{ t: 5800, e: { type: "gap", count: 1, awayMs: 3000 } }]);
+    // Glimpsed for half a second, then gone for good: no gap check, just left.
+    const tracker2 = new VisitorTracker({ leaveMs: 8000, gapMs: 2000, gapSettleMs: 1000 });
+    run(tracker2, [1, 1, 1, 1, 1]);
+    expect(run(tracker2, [...Array(15).fill(0), 1, 1, ...Array(45).fill(0)], 1000).map((x) => x.e.type)).toEqual(["left"]);
   });
 
   it("emits grew when a bigger group is stable, respecting the cooldown", () => {
@@ -100,9 +113,9 @@ describe("VisitorTracker", () => {
   it("uses conservative defaults so detection flicker doesn't trigger greetings", () => {
     const tracker = new VisitorTracker();
     run(tracker, [1, 1, 1, 1, 1]); // arrived
-    // 6 s of nothing then back: still the same visit, no greeting; just a gap to check for a swap.
-    const events = run(tracker, [...Array(30).fill(0), 1, 1, 1], 1000);
-    expect(events).toEqual([{ t: 7000, e: { type: "gap", count: 1, awayMs: 6000 } }]);
+    // 6 s of nothing then back: still the same visit, no greeting; just a gap (once they've settled) to check for a swap.
+    const events = run(tracker, [...Array(30).fill(0), 1, 1, 1, 1, 1, 1], 1000);
+    expect(events).toEqual([{ t: 8000, e: { type: "gap", count: 1, awayMs: 6000 } }]);
     // A brief second box (2 s) doesn't count as a bigger group.
     expect(run(tracker, Array(10).fill(2), 20000)).toEqual([]);
   });

@@ -49,7 +49,7 @@ const NUDGE = {
 const QUIET_MS = 700;
 
 /** Remark on a costume change (a new hat, a mask off) at most this often. */
-const CHANGE_REMARK_EVERY_MS = 60_000;
+const CHANGE_REMARK_EVERY_MS = 30_000;
 
 /** A "grew" this soon after a same/new check greeted the newcomers isn't greeted again. */
 const NEWCOMER_GREETED_MS = 20_000;

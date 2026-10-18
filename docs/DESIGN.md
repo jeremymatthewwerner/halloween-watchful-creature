@@ -57,7 +57,7 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
   - `sighted` fires the moment anyone appears on an empty porch. They must be seen for 0.7 s before they count as arrived. Detection dropouts shorter than 0.5 s are ignored.
   - `grew` fires when a bigger group is stable for 2.5 s, with a 30 s cooldown between greetings.
   - `left` fires after 8 s with nobody visible.
-  - `gap` fires when someone reappears after 2–8 s with nobody visible. That's too short to count as leaving, but long enough for one person to step out and another to step in. The Director logs every gap and asks the engine to **recheck** (at most once per 10 s).
+  - `gap` fires when someone reappears after 2–8 s with nobody visible, once they've been back in view for 1 s, so the check photographs them properly rather than half in the doorway. That's too short to count as leaving, but long enough for one person to step out and another to step in. The Director logs every gap and asks the engine to **recheck** (at most once per 10 s).
   - `returned` fires when someone reappears within 90 s of `left`. For every return, the **vision model compares the fresh photo with the description of the group just greeted** and answers SAME or NEW, leaning toward NEW whenever anything differs or it's unsure:
     - **NEW:** a full greeting.
     - **SAME, back in under 45 s:** silence (a background update only). This covers detection flicker and someone stepping aside.
@@ -70,7 +70,7 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
 - **grew:** greet the newcomers, unless a recheck greeted them in the last 20 s.
 - **While present:** a background frame every `BACKGROUND_FRAME_SECONDS` (default 30), skipped while it's talking. Background frames and gap rechecks are also **compared with the greeting photo**, leaning SAME: only someone clearly different counts as new, not the same person who took off a hat or turned around. That catches **swaps** the tracker can't see, such as one person leaving and another arriving within 8 s, or crossing in frame. The check answers one of three verdicts:
   - **NEW** (someone clearly different): a greeting and a snapshot in the log.
-  - **CHANGED** (same people, but a hat, mask, cape, wig or prop clearly put on, taken off or swapped): one quick, playful remark, at most once a minute, plus a snapshot. Later checks compare with the new look.
+  - **CHANGED** (same people, but a hat, mask, cape, wig or prop clearly put on, taken off or swapped): one quick, playful remark, at most every 30 s, plus a snapshot. Later checks compare with the new look.
   - **SAME**: "reference only, don't greet again".
 - **Nudge:** a greeting request that doesn't make the creature start a **new** utterance within 5 s gets one firmer instruction, worded for the case (visitors, newcomers to a group, or someone new). The tail of a reply already under way when the request went out doesn't count. That's how a newcomer's greeting got lost while the creature was mid-sentence.
 - **left:** mute the mic, so street noise doesn't get answers. After `IDLE_CLOSE_SECONDS` (default 180) of empty porch, **close the session** to stop the meter. Visitors reconnect it automatically, in about 1–2 s.

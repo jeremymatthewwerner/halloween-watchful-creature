@@ -259,7 +259,7 @@ describe("LiveEngine", () => {
     expect(e.looks.at(-1)).toMatchObject({ reason: "recheck", opts: { previousImage: "img" } });
   });
 
-  it("remarks on a costume change at most once a minute, then compares with the new look", async () => {
+  it("remarks on a costume change at most every 30 s, then compares with the new look", async () => {
     const e = new TestLive();
     await e.greet("greeting-frame", "arrived");
     vi.advanceTimersByTime(6000); // past the greeting's nudge
@@ -277,15 +277,15 @@ describe("LiveEngine", () => {
     // Another change soon after: noted, but not remarked on.
     e.sent = [];
     e.vision = "One visitor in a blue shirt, hat off.";
-    vi.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(15_000);
     await e.observe("hat-off-frame");
     expect(e.looks.at(-1)).toMatchObject({ opts: { previous: "One visitor in a blue shirt and a tan brimmed hat.", previousImage: "hat-frame" } });
     expect(e.sent.map((s) => s.type)).toEqual(["session.thinking.append"]);
 
-    // After a minute, a change gets a remark again.
+    // 30 s after the last remark, a change gets one again.
     e.sent = [];
     e.vision = "One visitor in a blue shirt and a witch hat.";
-    vi.advanceTimersByTime(31_000);
+    vi.advanceTimersByTime(16_000);
     await e.observe("witch-frame");
     expect(e.sent.map((s) => s.type)).toEqual(["session.commentary.append"]);
   });

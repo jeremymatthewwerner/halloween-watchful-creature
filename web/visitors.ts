@@ -17,6 +17,8 @@ export interface VisitorOptions {
    * reported as a "gap": one person may have stepped out and another in.
    */
   gapMs: number;
+  /** A gap is only reported once the person has been back in view this long, so the check sees them properly. */
+  gapSettleMs: number;
   /** A bigger group must be stable this long to count as "grew". */
   growMs: number;
   /** Minimum time between greetings for the same group. */
@@ -34,6 +36,7 @@ export const DEFAULT_VISITOR_OPTIONS: VisitorOptions = {
   dropoutMs: 500,
   leaveMs: 8000,
   gapMs: 2000,
+  gapSettleMs: 1000,
   growMs: 2500,
   growCooldownMs: 30000,
   regreetAfterMs: 90000,
@@ -67,6 +70,8 @@ export class VisitorTracker {
   private lastLeftAt = -Infinity;
   private growSince: number | null = null;
   private shrinkSince: number | null = null;
+  /** A gap waiting for the person to settle back into view before it's reported. */
+  private pendingGap: { awayMs: number; backAt: number } | null = null;
   private readonly opts: VisitorOptions;
 
   constructor(options: Partial<VisitorOptions> = {}) {
@@ -121,15 +126,22 @@ export class VisitorTracker {
           // Back in view: a detection blip, or (after a longer gap) maybe someone else.
           this.state = "present";
           const awayMs = now - this.since;
-          if (awayMs >= this.opts.gapMs) events.push({ type: "gap", count: close, awayMs });
+          // Report the gap once they're properly back in view; a blip meanwhile restarts the wait.
+          if (awayMs >= this.opts.gapMs) this.pendingGap = { awayMs: Math.max(awayMs, this.pendingGap?.awayMs ?? 0), backAt: now };
+          else if (this.pendingGap) this.pendingGap.backAt = now;
           this.trackGroupSize(close, now, events);
         } else if (now - this.since >= this.opts.leaveMs) {
           this.state = "empty";
           this.count = 0;
+          this.pendingGap = null;
           this.lastLeftAt = now;
           events.push({ type: "left" });
         }
         break;
+    }
+    if (this.state === "present" && close > 0 && this.pendingGap && now - this.pendingGap.backAt >= this.opts.gapSettleMs) {
+      events.push({ type: "gap", count: close, awayMs: this.pendingGap.awayMs });
+      this.pendingGap = null;
     }
     return events;
   }
