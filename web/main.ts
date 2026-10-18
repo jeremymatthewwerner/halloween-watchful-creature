@@ -1,5 +1,6 @@
 import type { BodyState, ClientConfig, ConversationLogRequest } from "../shared/types.ts";
 import { BodyLink } from "./bodyLink.ts";
+import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from "./devices.ts";
 import { Director } from "./director.ts";
 import { followServerLog } from "./serverLog.ts";
 import { LiveEngine } from "./engines/live.ts";
@@ -153,25 +154,29 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
   const audioCtx = new AudioContext();
   await audioCtx.resume();
 
-  const micId = prefs.get("mic") ?? undefined;
-  const mic = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      deviceId: micId ? { ideal: micId } : undefined,
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
-  });
-  const camera = new Camera(ui.video);
-  try {
-    await camera.start(prefs.get("camera") ?? undefined);
-  } catch (err) {
-    log(`Camera failed: ${(err as Error).message}`);
+  // Saved devices are found by id, else by name (ids can change when gear is re-plugged), else the default.
+  // Device names are only visible once the mic is allowed, so open it first, then switch if needed.
+  const savedMic = saved("mic");
+  let mic = await openMic(savedMic.id ?? undefined);
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const micDevice = pickDevice(devices, "audioinput", "mic", "microphone");
+  if (micDevice && micDevice.deviceId !== mic.getAudioTracks()[0]?.getSettings().deviceId) {
+    mic.getTracks().forEach((t) => t.stop());
+    mic = await openMic(micDevice.deviceId);
   }
-  await fillDeviceSelects(camera);
 
-  const speakerId = prefs.get("speaker");
-  if (speakerId) await setSpeaker(speakerId);
+  const camera = new Camera(ui.video);
+  const cameraDevice = pickDevice(devices, "videoinput", "camera", "camera");
+  try {
+    await camera.start(cameraDevice?.deviceId);
+  } catch (err) {
+    log(`Camera failed (${describeError(err)}); trying the default camera`);
+    await camera.start().catch((err2) => log(`Camera failed: ${describeError(err2)}`));
+  }
+
+  const speakerDevice = pickDevice(devices, "audiooutput", "speaker", "speaker");
+  if (speakerDevice) await setSpeaker(speakerDevice.deviceId);
+  await fillDeviceSelects(camera);
 
   const deps: EngineDeps = {
     mic,
@@ -330,19 +335,55 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
     ui.sayInput.value = "";
   });
   ui.cameraSelect.addEventListener("change", async () => {
-    prefs.set("camera", ui.cameraSelect.value);
-    await camera.start(ui.cameraSelect.value).catch((err) => log(`Camera failed: ${(err as Error).message}`));
+    rememberChoice("camera", ui.cameraSelect);
+    await camera.start(ui.cameraSelect.value).catch((err) => log(`Camera failed: ${describeError(err)}`));
   });
   ui.micSelect.addEventListener("change", () => {
-    prefs.set("mic", ui.micSelect.value);
+    rememberChoice("mic", ui.micSelect);
     location.reload();
   });
   ui.speakerSelect.addEventListener("change", () => {
-    prefs.set("speaker", ui.speakerSelect.value);
+    rememberChoice("speaker", ui.speakerSelect);
     void setSpeaker(ui.speakerSelect.value);
   });
 
   log(cfg.hasApiKey ? "Awake and watching. Walk up to the camera to test!" : "Watching, but the server has no OPENAI_API_KEY");
+}
+
+type DeviceSlot = "camera" | "mic" | "speaker";
+
+function saved(slot: DeviceSlot): SavedDevice {
+  return { id: prefs.get(slot), label: prefs.get(`${slot}Label`) };
+}
+
+/** Saves the operator's pick from a device dropdown, with its name for when its id changes. */
+function rememberChoice(slot: DeviceSlot, select: HTMLSelectElement): void {
+  prefs.set(slot, select.value);
+  prefs.set(`${slot}Label`, select.selectedOptions[0]?.text ?? "");
+}
+
+/** The saved device for this slot, refreshing its saved id; logs when falling back to the default. */
+function pickDevice(devices: readonly DeviceInfo[], kind: MediaDeviceKind, slot: DeviceSlot, noun: string): DeviceInfo | undefined {
+  const want = saved(slot);
+  const device = resolveDevice(devices, kind, want);
+  if (device) {
+    prefs.set(slot, device.deviceId);
+    if (device.label) prefs.set(`${slot}Label`, device.label);
+  } else if (want.id || want.label) {
+    log(`Saved ${noun} ${want.label ? `"${want.label}" ` : ""}isn't connected: using the default`);
+  }
+  return device;
+}
+
+function openMic(deviceId?: string): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({
+    audio: {
+      deviceId: deviceId ? { ideal: deviceId } : undefined,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
 }
 
 async function setSpeaker(deviceId: string): Promise<void> {

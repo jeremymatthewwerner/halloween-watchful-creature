@@ -47,8 +47,11 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
 ### Flash the firmware
 1. Install the [Arduino IDE](https://www.arduino.cc/en/software).
 2. In **Tools → Manage Libraries**, install **Adafruit NeoPixel**.
-3. Open `firmware/creature_body/creature_body.ino`, choose **Arduino Uno** and its port, then click **Upload**.
-4. Test it in **Serial Monitor** (115200 baud, newline line ending). Type each of these and watch the eyes:
+3. **Stop the creature server first** (`npm run dev` or the Pi service). It grabs the Arduino's port, and an upload then fails with "programmer is not responding".
+4. Open `firmware/creature_body/creature_body.ino`, choose **Arduino Uno** and its port, then click **Upload**.
+   - **The port** looks like `/dev/cu.usbmodem…`, or `/dev/cu.usbserial-…` / `cu.wchusbserial…` on clone boards. A USB-C hub can add a `usbmodem` port of its own; if the upload fails "not in sync", unplug the Arduino and see which port disappears.
+   - **Still "not in sync" on the right port?** Boards with an FTDI USB chip (port `cu.usbserial-…`) often have the older bootloader: choose **Arduino Duemilanove or Diecimila**, Processor **ATmega328P**.
+5. Test it in **Serial Monitor** (115200 baud, newline line ending). Type each of these and watch the eyes:
 
 | Command | What should happen |
 |---|---|
@@ -58,8 +61,9 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
 | `L 255` | bright |
 | (stop typing for 2 s) | eyes dim to "sleeping"; that's the fail-safe |
 
-5. Close Serial Monitor. The app can't open the port while it's open.
-6. In `.env`, keep `BODY_SERIAL_PORT=auto` and `BODY_MODES=eyes`. When the server starts it logs `[body] connected to /dev/tty.usbmodem…`.
+   State names are exact and lowercase (`S speaking`, not `S Speaking`), or the board answers `ERR state`.
+6. Close Serial Monitor. The app can't open the port while it's open.
+7. In `.env`, keep `BODY_SERIAL_PORT=auto` and `BODY_MODES=eyes`. When the server starts it logs `[body] connected to /dev/tty.usbmodem…`.
 
 ## 4. Jaw (optional, last)
 - SG90 signal → **D9**, 5V and GND to the rails.

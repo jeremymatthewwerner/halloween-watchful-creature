@@ -130,6 +130,7 @@ It appears in the dashboard's character picker.
   - check that your project has GPT-Live access;
   - read the server log for OpenAI's error detail;
   - try `ENGINE=realtime`.
+- **"Saved camera … isn't connected: using the default":** the dashboard remembers devices by ID and by name, so re-plugging the gear into another port or hub is usually fine. If it can't find one at all, pick it again in **Settings**.
 - **The Arduino isn't found:**
   - close the Arduino IDE's Serial Monitor;
   - check the server log for `[body]` lines;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BodyController, type LineSink } from "../server/body/driver.ts";
+import { BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
 import { encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { EyePalette } from "../shared/types.ts";
 
@@ -73,5 +73,24 @@ describe("BodyController", () => {
     now = 5000;
     body.tick();
     expect(sink.lines).toEqual(["S speaking"]);
+  });
+});
+
+describe("pickArduinoPort", () => {
+  // As macOS reported them: a USB-C hub's billboard device, and an FTDI-based Uno.
+  const ankerHub = { path: "/dev/tty.usbmodemSN234567892", vendorId: "291a" };
+  const ftdiUno = { path: "/dev/tty.usbserial-A5069RR4", vendorId: "0403" };
+
+  it("picks a known Arduino or USB-serial vendor over a merely Arduino-like name", () => {
+    expect(pickArduinoPort([ankerHub, ftdiUno])).toBe(ftdiUno.path);
+  });
+
+  it("never picks a port from another vendor, even if it's named like an Arduino", () => {
+    expect(pickArduinoPort([ankerHub])).toBeUndefined();
+  });
+
+  it("falls back to the name only for ports that report no vendor", () => {
+    expect(pickArduinoPort([{ path: "/dev/ttyACM0" }])).toBe("/dev/ttyACM0");
+    expect(pickArduinoPort([{ path: "/dev/tty.Bluetooth-Incoming-Port" }])).toBeUndefined();
   });
 });

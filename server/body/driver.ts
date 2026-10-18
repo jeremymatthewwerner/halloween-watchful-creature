@@ -101,10 +101,18 @@ export class SerialSink implements LineSink {
 }
 
 async function findArduino(SerialPort: typeof import("serialport").SerialPort): Promise<string | undefined> {
-  const ports = await SerialPort.list();
+  return pickArduinoPort(await SerialPort.list());
+}
+
+/**
+ * The Arduino among the serial ports: one whose USB vendor is a known Arduino or USB-serial chip
+ * (Arduino, CH340, CP210x, FTDI, Adafruit). Failing that, a likely-named port that reports no
+ * vendor at all. A port from some other vendor (a USB-C hub's "usbmodem" port, say) never counts.
+ */
+export function pickArduinoPort(ports: readonly { path: string; vendorId?: string }[]): string | undefined {
   const match =
     ports.find((p) => p.vendorId && ARDUINO_VENDOR_IDS.has(p.vendorId.toLowerCase())) ??
-    ports.find((p) => /usbmodem|usbserial|ttyACM|ttyUSB|wchusbserial/i.test(p.path));
+    ports.find((p) => !p.vendorId && /usbmodem|usbserial|ttyACM|ttyUSB|wchusbserial/i.test(p.path));
   return match?.path;
 }
 
