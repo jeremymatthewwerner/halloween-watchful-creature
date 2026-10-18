@@ -135,7 +135,7 @@ export abstract class WebRtcEngine {
   protected async look(
     image: string,
     reason: string,
-    opts: { withTranscript?: boolean; quiet?: boolean; previous?: string } = {},
+    opts: { withTranscript?: boolean; quiet?: boolean; previous?: string; previousImage?: string } = {},
   ): Promise<{ text: string; sameGroup?: boolean }> {
     // Quiet (background) looks don't show as "thinking" on the eyes.
     const counted = !opts.quiet;
@@ -149,6 +149,7 @@ export abstract class WebRtcEngine {
           reason,
           transcript: opts.withTranscript ? this.deps.recentTranscript() : undefined,
           previous: opts.previous,
+          previousImage: opts.previousImage,
         }),
       });
       const body = (await res.json()) as {

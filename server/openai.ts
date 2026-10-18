@@ -107,23 +107,38 @@ const REASON_PROMPTS: Record<LookReason, string> = {
   grew: "More visitors just joined the group. Describe everyone's costumes, noting who seems new if you can tell.",
   returned: "Someone just walked up to the decoration. Describe who is there and their costumes.",
   background: "Briefly describe who is in front of the decoration right now.",
+  recheck: "Someone just came back into view after a short gap. Describe who is there and their costumes.",
   delegation:
     "The character asked for a fresh look during a conversation. Using the recent conversation below, describe what the visitors are asking about (usually their costume or something they're holding up), plus anything else useful.",
   manual: "Describe the visitors' costumes.",
 };
+
+/** Looks that compare who's there with the last greeted group (when one is given). */
+const COMPARING_REASONS = new Set<LookReason>(["returned", "background", "recheck"]);
 
 let reasoningUnsupported = false;
 
 /** Describes a camera frame with a vision-capable Responses model. */
 export async function describeFrame(config: Config, req: VisionRequest): Promise<VisionResult> {
   let prompt = REASON_PROMPTS[req.reason];
-  const comparing = req.reason === "returned" && Boolean(req.previous);
+  const comparing = COMPARING_REASONS.has(req.reason) && Boolean(req.previous);
+  const previousImage = comparing && req.previousImage?.startsWith("data:image/") ? req.previousImage : undefined;
   if (comparing) {
+    const photos = previousImage
+      ? "The first image is a photo from when they were greeted; the second image is the view right now. Compare the people in the two photos. "
+      : "Compare them with who is in this image. ";
+    const verdict =
+      req.reason === "returned"
+        ? `Begin your reply with exactly "SAME:" only if these are clearly the same people ` +
+          `(the same costumes, masks, hats and props). If anything about the costumes differs, or you are unsure, begin with "NEW:". `
+        : `Begin your reply with exactly "NEW:" only if someone here now is clearly a different person from everyone who was greeted ` +
+          `(not just the same person who took off a hat, mask or jacket, turned around, or moved). Otherwise, including when you are ` +
+          `unsure or fewer people are visible, begin with "SAME:". `;
     prompt =
-      `The visitors who were here a minute ago were described as: "${req.previous!.slice(0, 600)}"\n\n` +
-      `Compare them with who is in this image. Begin your reply with exactly "SAME:" only if these are clearly the same people ` +
-      `(the same costumes, masks, hats and props). If anything about the costumes differs, or you are unsure, begin with "NEW:". ` +
-      `Then describe who is there and their costumes.`;
+      `The visitors greeted a little while ago were described as: "${req.previous!.slice(0, 600)}"\n\n` +
+      photos +
+      verdict +
+      `Then describe who is there now and their costumes.`;
   }
   if (req.transcript) prompt += `\n\nRecent conversation (oldest first, transcripts may have mistakes):\n${req.transcript.slice(-2000)}`;
   const body: Record<string, unknown> = {
@@ -134,6 +149,7 @@ export async function describeFrame(config: Config, req: VisionRequest): Promise
         role: "user",
         content: [
           { type: "input_text", text: prompt },
+          ...(previousImage ? [{ type: "input_image", image_url: previousImage, detail: "low" }] : []),
           { type: "input_image", image_url: req.image, detail: "low" },
         ],
       },
@@ -158,7 +174,8 @@ export async function describeFrame(config: Config, req: VisionRequest): Promise
   let sameGroup: boolean | undefined;
   if (comparing) {
     const verdict = /^\s*(SAME|NEW)\s*:\s*/i.exec(text);
-    sameGroup = verdict?.[1]?.toUpperCase() === "SAME";
+    // No verdict: a return leans NEW (don't ignore a possible new visitor); a recheck leans SAME.
+    sameGroup = verdict ? verdict[1]!.toUpperCase() === "SAME" : req.reason === "returned" ? false : undefined;
     if (verdict) text = text.slice(verdict[0].length);
   }
   return {

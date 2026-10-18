@@ -92,4 +92,25 @@ describe("OpenAI calls", () => {
     expect(await describeFrame(config, { image, reason: "returned", previous: "A dinosaur." })).toMatchObject({ sameGroup: false });
     visionReply = "A witch.";
   });
+
+  it("rechecks a present group against the greeting photo, leaning SAME", async () => {
+    const image = "data:image/jpeg;base64,BBB";
+    const previousImage = "data:image/jpeg;base64,AAA";
+    visionReply = "NEW: One visitor in a plain blue T-shirt.";
+    const result = await describeFrame(config, { image, reason: "recheck", previous: "One visitor in a top hat.", previousImage });
+    expect(result).toMatchObject({ sameGroup: false, text: "One visitor in a plain blue T-shirt." });
+    const content = (requests.at(-1)!.body.input as { content: { type: string; text?: string; image_url?: string }[] }[])[0]!.content;
+    expect(content.map((c) => c.image_url ?? c.type)).toEqual(["input_text", previousImage, image]);
+    expect(content[0]!.text).toContain("took off a hat, mask or jacket");
+    expect(content[0]!.text).toContain("The first image is a photo from when they were greeted");
+
+    // No verdict on a background look: not treated as new.
+    visionReply = "One visitor in a top hat.";
+    expect((await describeFrame(config, { image, reason: "background", previous: "One visitor in a top hat." })).sameGroup).toBeUndefined();
+    // Without a greeted group there's nothing to compare.
+    visionReply = "NEW: whoever.";
+    const plain = await describeFrame(config, { image, reason: "background" });
+    expect(plain).toMatchObject({ text: "NEW: whoever.", sameGroup: undefined });
+    visionReply = "A witch.";
+  });
 });

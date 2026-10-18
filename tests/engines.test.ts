@@ -76,7 +76,10 @@ describe("LiveEngine", () => {
     e.sameGroup = false;
     e.sent = [];
     await e.greet("img", "returned", { awayMs: 30_000 });
-    expect(e.looks[1]).toEqual({ reason: "returned", opts: { previous: "One visitor in a green dinosaur costume with a sparkly tail." } });
+    expect(e.looks[1]).toEqual({
+      reason: "returned",
+      opts: { previous: "One visitor in a green dinosaur costume with a sparkly tail.", previousImage: "img" },
+    });
     expect(e.sent[0]).toMatchObject({ type: "session.commentary.append" });
     expect(String(e.sent[0]!.content)).toContain("New visitors just walked up");
     expect(String(e.sent[0]!.content)).toContain("skeleton mask");
@@ -116,7 +119,7 @@ describe("LiveEngine", () => {
     expect(e.events).toContainEqual({ type: "note", text: expect.stringContaining("couldn't check whether these are the same visitors") });
     e.visionError = null;
     await e.greet("img", "returned", { awayMs: 20_000 });
-    expect(e.looks.at(-1)).toEqual({ reason: "returned", opts: { previous: "One visitor in a green dinosaur costume with a sparkly tail." } });
+    expect(e.looks.at(-1)).toMatchObject({ reason: "returned", opts: { previous: "One visitor in a green dinosaur costume with a sparkly tail." } });
   });
 
   it("hedges on a return with no camera frame", async () => {
@@ -154,6 +157,33 @@ describe("LiveEngine", () => {
     expect(e.sent).toHaveLength(1);
   });
 
+  it("nudges with newcomer wording when only the tail of an earlier reply is heard", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    vi.advanceTimersByTime(6000);
+    e.sent = [];
+    // Mid-sentence when the group grows: the rest of that sentence isn't the greeting.
+    e.server({ type: "session.output_transcript.delta", delta: "Hmm! I " });
+    await e.greet("img", "grew");
+    for (let i = 0; i < 4; i++) {
+      vi.advanceTimersByTime(200);
+      e.server({ type: "session.output_transcript.delta", delta: "can't " });
+    }
+    vi.advanceTimersByTime(5000);
+    expect(e.sent.map((s) => s.type)).toEqual(["session.commentary.append", "session.instructions.append"]);
+    expect(String(e.sent[1]!.content)).toContain("Welcome the newcomers now");
+  });
+
+  it("counts a new utterance after a pause as the greeting starting", async () => {
+    const e = new TestLive();
+    e.server({ type: "session.output_transcript.delta", delta: "Hmm! I " });
+    await e.greet("img", "arrived");
+    vi.advanceTimersByTime(1500);
+    e.server({ type: "session.output_transcript.delta", delta: "Bonsoir!" });
+    vi.advanceTimersByTime(5000);
+    expect(e.sent).toHaveLength(1);
+  });
+
   it("doesn't nudge when the creature started talking", async () => {
     const e = new TestLive();
     await e.greet("img", "arrived");
@@ -161,6 +191,46 @@ describe("LiveEngine", () => {
     e.server({ type: "session.output_transcript.delta", delta: "Ooh la la!" });
     vi.advanceTimersByTime(5000);
     expect(e.sent).toHaveLength(1);
+  });
+
+  it("greets someone new spotted by a background look, comparing with the greeting photo", async () => {
+    const e = new TestLive();
+    await e.greet("greeting-frame", "arrived");
+    e.sent = [];
+    e.vision = "One visitor in a plain blue T-shirt.";
+    e.sameGroup = false;
+    await e.observe("now-frame");
+    expect(e.looks.at(-1)).toEqual({
+      reason: "background",
+      opts: { quiet: true, previous: "One visitor in a green dinosaur costume with a sparkly tail.", previousImage: "greeting-frame" },
+    });
+    expect(e.sent[0]).toMatchObject({ type: "session.commentary.append" });
+    expect(String(e.sent[0]!.content)).toContain("Someone new is in front of you");
+    expect(e.events).toContainEqual({ type: "note", text: "someone new is here (vision saw: One visitor in a plain blue T-shirt.)" });
+
+    // The tracker's "grew" for the same newcomer shortly after isn't a second greeting.
+    e.sent = [];
+    await e.greet("img", "grew");
+    expect(e.sent.map((s) => s.type)).toEqual(["session.thinking.append"]);
+    // And the next check compares with the newcomer's photo.
+    e.sameGroup = true;
+    await e.recheck("later-frame");
+    expect(e.looks.at(-1)).toMatchObject({ reason: "recheck", opts: { previousImage: "img" } });
+  });
+
+  it("keeps quiet when a check finds the same visitors, or has no greeted group to compare", async () => {
+    const e = new TestLive();
+    e.sameGroup = false; // no greeted group yet: nothing to compare, never a greeting
+    await e.observe("frame");
+    expect(e.looks[0]).toEqual({ reason: "background", opts: { quiet: true, previous: undefined, previousImage: undefined } });
+    expect(e.sent.map((s) => s.type)).toEqual(["session.thinking.append"]);
+    await e.greet("img", "arrived");
+    e.sent = [];
+    e.sameGroup = true;
+    e.vision = "One visitor in a dinosaur costume, facing away.";
+    await e.recheck("frame");
+    expect(e.sent.map((s) => s.type)).toEqual(["session.thinking.append"]);
+    expect(e.events).toContainEqual({ type: "note", text: "no one new (vision saw: One visitor in a dinosaur costume, facing away.)" });
   });
 
   it("answers a client delegation with a fresh look on the same delegation id", async () => {

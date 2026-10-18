@@ -25,6 +25,9 @@ class FakeEngine implements Engine {
   observe = vi.fn(async (image: string) => {
     this.calls.push(`observe:${image}`);
   });
+  recheck = vi.fn(async (image: string) => {
+    this.calls.push(`recheck:${image}`);
+  });
   say = vi.fn();
   setMicEnabled(enabled: boolean) {
     this.mic = enabled;
@@ -44,13 +47,15 @@ function setup() {
   let now = 0;
   let speaking = false;
   const engine = new FakeEngine();
+  const logs: string[] = [];
   const director = new Director(
-    { engine, capture: () => "frame", isSpeaking: () => speaking, now: () => now, log: () => {} },
-    { idleCloseMs: 60_000, backgroundMs: 10_000 },
+    { engine, capture: () => "frame", isSpeaking: () => speaking, now: () => now, log: (m) => logs.push(m) },
+    { idleCloseMs: 60_000, backgroundMs: 10_000, recheckCooldownMs: 10_000 },
   );
   return {
     engine,
     director,
+    logs,
     advance: (ms: number) => (now += ms),
     setSpeaking: (v: boolean) => (speaking = v),
   };
@@ -127,6 +132,23 @@ describe("Director", () => {
     expect(engine.calls).toEqual(["greet:returned:frame:10000"]);
     expect(engine.mic).toBe(true);
     expect(director.visitorsPresent).toBe(true);
+  });
+
+  it("rechecks for someone new after a presence gap, at most once per cooldown, logging every gap", async () => {
+    const { engine, director, advance, logs } = setup();
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    engine.calls = [];
+    await director.onVisitorEvent({ type: "gap", count: 1, awayMs: 3200 });
+    advance(4000);
+    await director.onVisitorEvent({ type: "gap", count: 1, awayMs: 2500 });
+    advance(7000);
+    await director.onVisitorEvent({ type: "gap", count: 1, awayMs: 2100 });
+    expect(engine.calls).toEqual(["recheck:frame", "recheck:frame"]);
+    expect(logs.filter((l) => l.startsWith("Nobody in view"))).toEqual([
+      "Nobody in view for 3s, then someone again: checking for someone new",
+      "Nobody in view for 3s, then someone again (checked recently)",
+      "Nobody in view for 2s, then someone again: checking for someone new",
+    ]);
   });
 
   it("reconnects before greeting a returning group if the session went to sleep", async () => {

@@ -44,20 +44,22 @@ export type BodyMessage =
   | { type: "palette"; eyes: EyePalette; eyeStyle: CharacterInfo["eyeStyle"] };
 
 /** Why the client is asking the vision backend to look. */
-export type LookReason = "arrived" | "grew" | "returned" | "background" | "delegation" | "manual";
+export type LookReason = "arrived" | "grew" | "returned" | "background" | "recheck" | "delegation" | "manual";
 
 export interface VisionRequest {
   image: string; // data URL
   reason: LookReason;
   /** Recent conversation transcript, oldest first. */
   transcript?: string;
-  /** For "returned": how the previous visitors were described, to decide same vs new. */
+  /** For "returned", "background" and "recheck": how the last greeted visitors were described, to decide same vs new. */
   previous?: string;
+  /** The frame those visitors were greeted from (data URL), so the comparison can use both photos. */
+  previousImage?: string;
 }
 
 export interface VisionResult {
   text: string;
-  /** For "returned" with `previous`: true only if clearly the same visitors. */
+  /** With `previous`: the vision model's SAME (true) or NEW (false) verdict; missing if it gave none. */
   sameGroup?: boolean;
   usage?: { inputTokens: number; outputTokens: number };
 }

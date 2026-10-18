@@ -87,6 +87,11 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
     });
   }
 
+  /** The model sees frames itself; a recheck just gives it the current view. */
+  async recheck(image: string): Promise<void> {
+    await this.observe(image);
+  }
+
   async observe(image: string): Promise<void> {
     this.whenIdle(() => {
       this.send({

@@ -141,11 +141,15 @@ app.post("/api/vision", async (c) => {
     return c.json({ error: "image must be a data:image/... URL" }, 400);
   }
   if (req.image.length > 2_000_000) return c.json({ error: "image too large" }, 413);
+  if (req.previousImage !== undefined && (typeof req.previousImage !== "string" || !req.previousImage.startsWith("data:image/") || req.previousImage.length > 2_000_000)) {
+    return c.json({ error: "previousImage must be a data:image/... URL under 2 MB" }, 400);
+  }
   const started = Date.now();
   const result = await describeFrame(config, req);
   const verdict = result.sameGroup === undefined ? undefined : result.sameGroup ? "SAME" : "NEW";
   console.log(`[vision] ${req.reason}${verdict ? ` (${verdict})` : ""} in ${Date.now() - started} ms: ${result.text}`);
-  if (sessionLog && config.logSnapshots && GREETING_LOOKS.has(req.reason)) {
+  // Greetings, and checks that found someone new, are worth a snapshot.
+  if (sessionLog && config.logSnapshots && (GREETING_LOOKS.has(req.reason) || verdict === "NEW")) {
     try {
       sessionLog.snapshot(req.image, req.reason, result.text, verdict);
     } catch (err) {

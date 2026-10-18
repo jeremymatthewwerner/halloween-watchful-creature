@@ -49,7 +49,7 @@ Both engines implement the same `Engine` interface (`web/engines/types.ts`), so 
 ## Behavior: the Director (`web/director.ts`)
 
 ```
-person detector (5 fps, local) ─▶ VisitorTracker ─▶ arrived / grew / returned / left ─▶ Director
+person detector (5 fps, local) ─▶ VisitorTracker ─▶ arrived / grew / returned / gap / left ─▶ Director
 ```
 
 - **VisitorTracker** (`web/visitors.ts`, pure logic, unit tested):
@@ -57,15 +57,18 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ arrived / grew / ret
   - They must be seen for 0.7 s before they count as arrived. Detection dropouts shorter than 0.5 s are ignored.
   - `grew` fires when a bigger group is stable for 2.5 s, with a 30 s cooldown between greetings.
   - `left` fires after 8 s with nobody visible.
+  - `gap` fires when someone reappears after 2–8 s with nobody visible. That's too short to count as leaving, but long enough for one person to step out and another to step in. The Director logs every gap and asks the engine to **recheck** (at most once per 10 s).
   - `returned` fires when someone reappears within 90 s of `left`. For every return, the **vision model compares the fresh photo with the description of the group just greeted** and answers SAME or NEW, leaning toward NEW whenever anything differs or it's unsure:
     - **NEW:** a full greeting.
     - **SAME, back in under 45 s:** silence (a background update only). This covers detection flicker and someone stepping aside.
     - **SAME, back after 45 s or more:** a quick "welcome back".
     - **No clear look** (vision call failed, or no camera frame): the creature says it can't see well and asks whether they're back or new, instead of assuming strangers. The next return with a clear look still compares with the group greeted before.
     - **Over 90 s away:** a normal `arrived` greeting with no comparison.
+  - The return comparison sends **the photo the group was greeted from** along with its description, so the vision model compares two photos rather than a photo against text.
 - **arrived:** unmute the mic, connect the voice session if it's asleep, then **greet with a snapshot**.
-- **grew:** greet the newcomers.
-- **While present:** a silent background frame every `BACKGROUND_FRAME_SECONDS` (default 30), skipped while it's talking. These updates are marked "reference only, don't greet again".
+- **grew:** greet the newcomers, unless a recheck greeted them in the last 20 s.
+- **While present:** a background frame every `BACKGROUND_FRAME_SECONDS` (default 30), skipped while it's talking. Background frames and gap rechecks are also **compared with the greeting photo**, leaning SAME: only someone clearly different counts as new, not the same person who took off a hat or turned around. That catches **swaps** the tracker can't see, such as one person leaving and another arriving within 8 s, or crossing in frame. Someone new gets a greeting and a snapshot in the log. Otherwise the update is "reference only, don't greet again".
+- **Nudge:** a greeting request that doesn't make the creature start a **new** utterance within 5 s gets one firmer instruction, worded for the case (visitors, newcomers to a group, or someone new). The tail of a reply already under way when the request went out doesn't count. That's how a newcomer's greeting got lost while the creature was mid-sentence.
 - **left:** mute the mic, so street noise doesn't get answers. After `IDLE_CLOSE_SECONDS` (default 180) of empty porch, **close the session** to stop the meter. Visitors reconnect it automatically, in about 1–2 s.
 - **Session drops mid-visit** (expired or network): it reconnects and catches up silently, without greeting again.
 - **Failed start** (bad key or no network): it backs off 15 s instead of retrying every second.

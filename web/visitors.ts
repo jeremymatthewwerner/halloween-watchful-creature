@@ -12,6 +12,11 @@ export interface VisitorOptions {
   dropoutMs: number;
   /** Nobody seen for this long means the group left. */
   leaveMs: number;
+  /**
+   * Someone reappearing after nobody was seen for at least this long (but under leaveMs) is
+   * reported as a "gap": one person may have stepped out and another in.
+   */
+  gapMs: number;
   /** A bigger group must be stable this long to count as "grew". */
   growMs: number;
   /** Minimum time between greetings for the same group. */
@@ -28,6 +33,7 @@ export const DEFAULT_VISITOR_OPTIONS: VisitorOptions = {
   arriveMs: 700,
   dropoutMs: 500,
   leaveMs: 8000,
+  gapMs: 2000,
   growMs: 2500,
   growCooldownMs: 30000,
   regreetAfterMs: 90000,
@@ -40,6 +46,8 @@ export type VisitorEvent =
   | { type: "grew"; count: number; from: number }
   /** The same group came back soon after leaving (e.g. detection flicker): don't greet again. */
   | { type: "returned"; count: number; awayMs: number }
+  /** Nobody was visible for a few seconds, under leaveMs: maybe a different person now. */
+  | { type: "gap"; count: number; awayMs: number }
   | { type: "left" };
 
 export interface PersonBox {
@@ -107,8 +115,10 @@ export class VisitorTracker {
 
       case "leaving":
         if (close > 0) {
-          // Same group came back into view (or a detection blip); no new greeting.
+          // Back in view: a detection blip, or (after a longer gap) maybe someone else.
           this.state = "present";
+          const awayMs = now - this.since;
+          if (awayMs >= this.opts.gapMs) events.push({ type: "gap", count: close, awayMs });
           this.trackGroupSize(close, now, events);
         } else if (now - this.since >= this.opts.leaveMs) {
           this.state = "empty";

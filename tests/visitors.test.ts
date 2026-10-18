@@ -56,6 +56,15 @@ describe("VisitorTracker", () => {
     expect(tracker.state).toBe("present");
   });
 
+  it("reports a gap when someone reappears after a few seconds, but not after a blip", () => {
+    const tracker = new VisitorTracker({ leaveMs: 8000, gapMs: 2000 });
+    run(tracker, [1, 1, 1, 1, 1]);
+    expect(run(tracker, [0, 0, 0, 1, 1], 1000)).toEqual([]); // 600 ms blip
+    const events = run(tracker, [...Array(15).fill(0), 1], 3000); // 3 s: maybe someone else
+    expect(events).toEqual([{ t: 6000, e: { type: "gap", count: 1, awayMs: 3000 } }]);
+    expect(tracker.state).toBe("present");
+  });
+
   it("emits grew when a bigger group is stable, respecting the cooldown", () => {
     const tracker = new VisitorTracker({ growMs: 400, growCooldownMs: 3000 });
     run(tracker, [1, 1, 1, 1, 1]); // arrived at t=800
@@ -82,9 +91,9 @@ describe("VisitorTracker", () => {
   it("uses conservative defaults so detection flicker doesn't trigger greetings", () => {
     const tracker = new VisitorTracker();
     run(tracker, [1, 1, 1, 1, 1]); // arrived
-    // 6 s of nothing (a long flicker) then back: still the same visit, no event at all.
+    // 6 s of nothing then back: still the same visit, no greeting; just a gap to check for a swap.
     const events = run(tracker, [...Array(30).fill(0), 1, 1, 1], 1000);
-    expect(events).toEqual([]);
+    expect(events).toEqual([{ t: 7000, e: { type: "gap", count: 1, awayMs: 6000 } }]);
     // A brief second box (2 s) doesn't count as a bigger group.
     expect(run(tracker, Array(10).fill(2), 20000)).toEqual([]);
   });

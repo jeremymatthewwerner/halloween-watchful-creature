@@ -11,6 +11,19 @@ const GREETING: Record<GreetReason, (seen: string) => string> = {
   returned: (seen) => `[CAMERA] New visitors just walked up to you. What you see: ${seen} Greet them now and compliment their costumes.`,
 };
 
+/** Firmer follow-ups when a greeting request didn't make the creature start talking. */
+const NUDGE = {
+  greet: "Visitors are standing in front of you right now. Greet them immediately and compliment their costumes.",
+  grew: "New visitors just joined the group and you haven't welcomed them yet. Welcome the newcomers now and compliment their costumes.",
+  newcomer: "Someone new is standing in front of you and you haven't greeted them yet. Greet them now and compliment their costumes.",
+};
+
+/** Speech after at least this much quiet counts as a new utterance. */
+const QUIET_MS = 700;
+
+/** A "grew" this soon after a same/new check greeted the newcomers isn't greeted again. */
+const NEWCOMER_GREETED_MS = 20_000;
+
 /** Same visitors back after at least this long get a quick "welcome back"; sooner, silence. */
 const WELCOME_BACK_AFTER_MS = 45_000;
 
@@ -26,11 +39,17 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   private onStarted: (() => void) | null = null;
   private onClosed: (() => void) | null = null;
   private lastObservation = "";
-  /** How the current/most recent group was described when greeted. */
+  /** How the current/most recent group was described when greeted, and the frame it was greeted from. */
   private lastGroup = "";
+  private lastGroupImage: string | undefined;
+  /** When a same/new check last found and greeted someone new. */
+  private lastNewcomerAt = -Infinity;
   private eventSeq = 0;
   private lastSpokeAt = 0;
+  /** When the creature's current (or latest) transcribed utterance began. */
+  private utteranceStartedAt = 0;
   private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  private nudgePoll: ReturnType<typeof setInterval> | null = null;
   /** If a greeting hasn't started this long after we asked, nudge with an instruction. */
   protected nudgeMs = 5000;
 
@@ -43,6 +62,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       case "session.started":
         this.lastObservation = "";
         this.lastGroup = "";
+        this.lastGroupImage = undefined;
         this.onStarted?.();
         this.onStarted = null;
         // Apply the director's mic gating to the new session as well as the local track.
@@ -60,10 +80,13 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         this.heardAt = performance.now();
         this.emit({ type: "transcript", who: "visitor", delta: String(event.delta ?? "") });
         break;
-      case "session.output_transcript.delta":
-        this.lastSpokeAt = Date.now();
+      case "session.output_transcript.delta": {
+        const now = Date.now();
+        if (now - this.lastSpokeAt >= QUIET_MS) this.utteranceStartedAt = now;
+        this.lastSpokeAt = now;
         this.emit({ type: "transcript", who: "creature", delta: String(event.delta ?? "") });
         break;
+      }
       case "session.delegation.created": {
         const delegation = event.delegation as { id?: string; target?: string } | undefined;
         if (delegation?.id && delegation.target !== "responses") void this.handleDelegation(delegation.id);
@@ -89,7 +112,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     if (image) {
       try {
         const previous = reason === "returned" && this.lastGroup ? this.lastGroup : undefined;
-        const result = await this.look(image, reason, { previous });
+        const result = await this.look(image, reason, { previous, previousImage: previous ? this.lastGroupImage : undefined });
         seen = result.text;
         sameGroup = Boolean(previous) && result.sameGroup === true;
         looked = true;
@@ -104,7 +127,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         // Keep lastGroup: the next return that gets a clear look still compares with them.
         this.emit({ type: "note", text: "couldn't check whether these are the same visitors (no clear look): asking them" });
         this.append("session.commentary.append", null, UNSURE_RETURN);
-        this.scheduleNudge();
+        this.scheduleNudge(NUDGE.greet);
         return;
       }
       if (sameGroup) {
@@ -118,43 +141,94 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       }
       this.emit({ type: "note", text: `new visitors (vision saw: ${seen})` });
     }
+    if (reason === "grew" && Date.now() - this.lastNewcomerAt < NEWCOMER_GREETED_MS) {
+      // A same/new check already greeted them: just keep the group's description current.
+      this.emit({ type: "note", text: "the newcomers were already greeted" });
+      this.lastGroup = seen;
+      if (image) this.lastGroupImage = image;
+      this.append("session.thinking.append", null, `[CAMERA] Background update, for reference only (don't greet again): ${seen}`);
+      return;
+    }
     if (reason !== "grew") this.lastGroup = seen;
     else this.lastGroup = `${this.lastGroup} ${seen}`.trim();
+    if (image) this.lastGroupImage = image;
     this.append("session.commentary.append", null, GREETING[reason](seen));
-    this.scheduleNudge();
+    this.scheduleNudge(reason === "grew" ? NUDGE.grew : NUDGE.greet);
   }
 
   /**
    * GPT-Live's docs say appended context "may" be spoken, not that it will be.
-   * If the creature stays silent after a greeting request, ask more firmly, once.
+   * If the creature doesn't start a new utterance after a greeting request, ask more firmly, once.
+   * The tail of a reply that was already under way when we asked doesn't count.
    */
-  private scheduleNudge(): void {
+  private scheduleNudge(instruction: string): void {
     const sentAt = Date.now();
-    const sentAtPerf = performance.now();
-    if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
+    this.clearNudge();
+    let quietSeen = !this.talking();
+    let startedNew = false;
+    this.nudgePoll = setInterval(() => {
+      if (!this.talking()) quietSeen = true;
+      else if (quietSeen) startedNew = true;
+    }, 150);
     this.nudgeTimer = setTimeout(() => {
-      this.nudgeTimer = null;
-      // Spoken = a transcript arrived or the voice was audible (transcripts can lag or be missing).
-      const spoke = this.lastSpokeAt >= sentAt || this.deps.lastVoiceAt() >= sentAtPerf;
-      if (this.status !== "open" || spoke) return;
+      this.clearNudge();
+      if (this.status !== "open" || startedNew || this.utteranceStartedAt > sentAt) return;
       this.emit({ type: "note", text: "greeting didn't start; nudging" });
-      this.append(
-        "session.instructions.append",
-        null,
-        "Visitors are standing in front of you right now. Greet them immediately and compliment their costumes.",
-      );
+      this.append("session.instructions.append", null, instruction);
     }, this.nudgeMs);
   }
 
-  protected teardown(reason: string): void {
+  /** Whether the creature is audible or its transcript is streaming (transcripts can lag or be missing). */
+  private talking(): boolean {
+    return performance.now() - this.deps.lastVoiceAt() < QUIET_MS || Date.now() - this.lastSpokeAt < QUIET_MS;
+  }
+
+  private clearNudge(): void {
     if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
-    this.nudgeTimer = null;
+    if (this.nudgePoll) clearInterval(this.nudgePoll);
+    this.nudgeTimer = this.nudgePoll = null;
+  }
+
+  protected teardown(reason: string): void {
+    this.clearNudge();
     super.teardown(reason);
   }
 
   async observe(image: string): Promise<void> {
+    await this.checkForNewcomers(image, "background");
+  }
+
+  async recheck(image: string): Promise<void> {
+    await this.checkForNewcomers(image, "recheck");
+  }
+
+  /**
+   * A look while visitors are present. With a greeted group to compare against, the vision model
+   * also says whether someone new has stepped in (a swap the tracker can't see); if so, greet them.
+   */
+  private async checkForNewcomers(image: string, reason: "background" | "recheck"): Promise<void> {
     try {
-      const seen = (await this.look(image, "background", { quiet: true })).text;
+      const previous = this.lastGroup || undefined;
+      const result = await this.look(image, reason, {
+        quiet: reason === "background",
+        previous,
+        previousImage: previous ? this.lastGroupImage : undefined,
+      });
+      const seen = result.text;
+      if (previous && result.sameGroup === false) {
+        this.emit({ type: "note", text: `someone new is here (vision saw: ${seen})` });
+        this.lastObservation = this.lastGroup = seen;
+        this.lastGroupImage = image;
+        this.lastNewcomerAt = Date.now();
+        this.append(
+          "session.commentary.append",
+          null,
+          `[CAMERA] Someone new is in front of you who you haven't greeted yet. What you see now: ${seen} Greet them now and compliment their costumes.`,
+        );
+        this.scheduleNudge(NUDGE.newcomer);
+        return;
+      }
+      if (reason === "recheck") this.emit({ type: "note", text: `no one new (vision saw: ${seen})` });
       if (seen === this.lastObservation) return;
       this.lastObservation = seen;
       this.append(

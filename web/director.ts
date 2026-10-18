@@ -6,6 +6,8 @@ export interface DirectorOptions {
   idleCloseMs: number;
   /** While visitors are present, refresh what the creature sees this often. */
   backgroundMs: number;
+  /** Check presence gaps for someone new at most this often. */
+  recheckCooldownMs: number;
 }
 
 export interface DirectorDeps {
@@ -27,6 +29,7 @@ export class Director {
   private present = false;
   private emptySince: number | null = null;
   private lastObserveAt = 0;
+  private lastRecheckAt = -Infinity;
   private connecting: Promise<void> | null = null;
   private retryAt = 0;
 
@@ -68,6 +71,19 @@ export class Director {
         // new visitors get a full greeting, the same ones get silence or a quick welcome back.
         log(`Someone's here after ${Math.round(event.awayMs / 1000)}s; checking whether they're new`);
         await this.greet("returned", { awayMs: event.awayMs });
+        break;
+      }
+      case "gap": {
+        const seconds = Math.round(event.awayMs / 1000);
+        if (!this.autopilot || engine.status !== "open") return;
+        if (this.deps.now() - this.lastRecheckAt < this.opts.recheckCooldownMs) {
+          log(`Nobody in view for ${seconds}s, then someone again (checked recently)`);
+          return;
+        }
+        log(`Nobody in view for ${seconds}s, then someone again: checking for someone new`);
+        this.lastRecheckAt = this.lastObserveAt = this.deps.now();
+        const frame = this.deps.capture();
+        if (frame) await engine.recheck(frame);
         break;
       }
       case "left":
