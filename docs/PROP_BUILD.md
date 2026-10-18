@@ -61,9 +61,13 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
 | `S idle` | orange flicker |
 | `S speaking` | speaking color |
 | `L 255` | bright |
+| `F sparkle` | about a second of spinning rainbow with white twinkles, then back to normal (plain LEDs: a quick left-right twinkle) |
+| `F gasp` | two quick blinks, then wide-eyed for a moment |
+| `F slowblink` | a slow, thoughtful blink |
 | (stop typing for 2 s) | eyes dim to "sleeping"; that's the fail-safe |
 
    State names are exact and lowercase (`S speaking`, not `S Speaking`), or the board answers `ERR state`.
+   The `F` flourishes play over whatever state the eyes are in (even after the fail-safe has dimmed them), and an unknown one answers `ERR flourish`. In the app, new visitors and costume changes get a sparkle, the same visitors back after a while get a gasp, and the eyes slow-blink when the creature starts thinking.
 6. Close Serial Monitor. The app can't open the port while it's open.
 7. In `.env`, keep `BODY_SERIAL_PORT=auto` and `BODY_MODES=eyes`. When the server starts it logs `[body] connected to /dev/tty.usbmodem…`.
 

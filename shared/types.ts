@@ -9,6 +9,14 @@ export const BODY_STATES: readonly BodyState[] = ["sleeping", "idle", "listening
 
 export type BodyMode = "eyes" | "jaw" | "relay";
 
+/**
+ * One-shot eye animations played over the current state, then back to normal:
+ * a rainbow burst for a greeting, a quick double-blink gasp, a slow thoughtful blink.
+ */
+export type EyeFlourish = "sparkle" | "gasp" | "slowblink";
+
+export const EYE_FLOURISHES: readonly EyeFlourish[] = ["sparkle", "gasp", "slowblink"];
+
 export type Rgb = [number, number, number];
 
 export type EyePalette = Record<BodyState, Rgb>;
@@ -41,6 +49,7 @@ export interface ClientConfig {
 export type BodyMessage =
   | { type: "state"; state: BodyState }
   | { type: "level"; level: number }
+  | { type: "flourish"; effect: EyeFlourish }
   | { type: "palette"; eyes: EyePalette; eyeStyle: CharacterInfo["eyeStyle"] };
 
 /** Why the client is asking the vision backend to look. */

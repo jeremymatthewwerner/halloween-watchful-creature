@@ -4,8 +4,16 @@ export type EngineStatus = "closed" | "connecting" | "open" | "closing";
 
 export type GreetReason = "arrived" | "grew" | "returned" | "manual";
 
+/**
+ * What kind of greeting the creature was just asked to say: hello to new visitors, a remark on a
+ * costume change, or a welcome back to the same visitors. Drives the eyes' flourish.
+ */
+export type GreetingKind = "visitors" | "costume" | "welcome-back";
+
 export type EngineEvent =
   | { type: "status"; status: EngineStatus; detail?: string }
+  /** The creature was just asked to greet someone (fires once, at the greeting's first line). */
+  | { type: "greeting"; kind: GreetingKind }
   | { type: "transcript"; who: "visitor" | "creature"; delta: string }
   | { type: "note"; text: string }
   | { type: "usage"; voiceSeconds?: number; tokens?: number }

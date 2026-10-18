@@ -118,6 +118,7 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
 | `Y flicker\|glow\|blink` | idle eye style |
 | `S <state>` | current state |
 | `L 0-255` | voice loudness |
+| `F sparkle\|gasp\|slowblink` | one-shot eye flourish over the current state (~1 s): sparkle when a greeting starts, gasp for a welcome back, slow blink on starting to think |
 
 - **Fail-safe:** if no line arrives for 2 s, the firmware dims the eyes to "sleeping", opens the relay and closes the jaw.
 - **Modes:**
