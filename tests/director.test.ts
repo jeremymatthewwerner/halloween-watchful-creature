@@ -31,6 +31,7 @@ class FakeEngine implements Engine {
     this.calls.push(`recheck:${image}`);
   });
   say = vi.fn();
+  setStanding = vi.fn();
   setMicEnabled(enabled: boolean) {
     this.mic = enabled;
   }

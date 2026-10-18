@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveEngine } from "../web/engines/live.ts";
 import { RealtimeEngine } from "../web/engines/realtime.ts";
 import type { EngineDeps, EngineEvent } from "../web/engines/types.ts";
+import { MODES_CLEARED, modeInstructions, modeUpdate } from "../web/modes.ts";
 
 type Sent = Record<string, unknown>;
 
@@ -375,6 +376,34 @@ describe("LiveEngine", () => {
     expect(e.sent[0]).toMatchObject({ type: "session.instructions.append", delegation_id: null });
     expect(String(e.sent[0]!.content)).toContain("One piece each!");
   });
+
+  it("keeps operator modes as standing instructions and re-applies them to each new session", () => {
+    const e = new TestLive();
+    e.setStanding(modeInstructions(["toddler"]), modeUpdate(["toddler"]));
+    expect(e.sent).toEqual([expect.objectContaining({ type: "session.instructions.append", delegation_id: null })]);
+    expect(String(e.sent[0]!.content)).toContain("Very little kids are here");
+    // A new voice session starts without them: send them again.
+    e.sent = [];
+    e.server({ type: "session.started" });
+    const appended = e.sent.filter((s) => s.type === "session.instructions.append");
+    expect(appended.map((s) => String(s.content))).toEqual([modeInstructions(["toddler"])]);
+    // Turned off: the open session hears so, and new sessions get nothing.
+    e.sent = [];
+    e.setStanding(modeInstructions([]), modeUpdate([]));
+    expect(String(e.sent[0]!.content)).toBe(MODES_CLEARED);
+    e.sent = [];
+    e.server({ type: "session.started" });
+    expect(e.sent.filter((s) => s.type === "session.instructions.append")).toEqual([]);
+  });
+
+  it("only stores operator modes while asleep, for the next session", () => {
+    const e = new TestLive();
+    e.status = "closed";
+    e.setStanding(modeInstructions(["candyOut"]), modeUpdate(["candyOut"]));
+    expect(e.sent).toEqual([]);
+    e.server({ type: "session.started" });
+    expect(e.sent.some((s) => s.type === "session.instructions.append" && String(s.content).includes("candy is all gone"))).toBe(true);
+  });
 });
 
 describe("RealtimeEngine", () => {
@@ -415,5 +444,15 @@ describe("RealtimeEngine", () => {
     const e = new TestRealtime();
     await e.observe("img");
     expect(e.sent.map((s) => s.type)).toEqual(["conversation.item.create"]);
+  });
+
+  it("adds operator modes as a system note without a response, and again on a new session", () => {
+    const e = new TestRealtime();
+    e.setStanding(modeInstructions(["lastCall"]), modeUpdate(["lastCall"]));
+    expect(e.sent).toEqual([{ type: "conversation.item.create", item: expect.objectContaining({ role: "system" }) }]);
+    e.sent = [];
+    e.server({ type: "session.created" });
+    expect(e.sent.map((s) => s.type)).toEqual(["conversation.item.create"]);
+    expect(JSON.stringify(e.sent[0])).toContain("almost over");
   });
 });

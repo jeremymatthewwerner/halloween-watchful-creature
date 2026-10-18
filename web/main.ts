@@ -3,6 +3,7 @@ import { BodyLink } from "./bodyLink.ts";
 import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from "./devices.ts";
 import { Director } from "./director.ts";
 import { followServerLog } from "./serverLog.ts";
+import { ModePanel } from "./modePanel.ts";
 import { LiveEngine } from "./engines/live.ts";
 import { RealtimeEngine } from "./engines/realtime.ts";
 import type { Engine, EngineDeps } from "./engines/types.ts";
@@ -60,6 +61,7 @@ const ui = {
   serverLog: $<HTMLOListElement>("server-log"),
   serverLogStatus: $<HTMLSpanElement>("server-log-status"),
   sessionLogLink: $<HTMLAnchorElement>("session-log-link"),
+  galleryLink: $<HTMLAnchorElement>("gallery-link"),
   voice: $<HTMLAudioElement>("voice"),
 };
 
@@ -127,6 +129,8 @@ async function main(): Promise<void> {
   ui.keyWarning.hidden = cfg.hasApiKey;
   ui.sessionLogLink.hidden = !cfg.sessionLogUrl;
   if (cfg.sessionLogUrl) ui.sessionLogLink.href = cfg.sessionLogUrl;
+  ui.galleryLink.hidden = !cfg.sessionLogUrl;
+  if (cfg.sessionLogUrl) ui.galleryLink.href = cfg.sessionLogUrl.replace(/log\.html$/, "gallery.html");
   for (const c of cfg.characters) ui.characterSelect.add(new Option(c.name, c.id, false, c.id === cfg.character.id));
   ui.characterSelect.addEventListener("change", () => {
     prefs.set("character", ui.characterSelect.value);
@@ -142,12 +146,13 @@ async function main(): Promise<void> {
   body.connect();
   renderEyes(cfg, "sleeping", 0, 0);
 
-  ui.start.addEventListener("click", () => void wake(cfg, body, minArea), { once: true });
+  const modes = new ModePanel($("modes"), log);
+  ui.start.addEventListener("click", () => void wake(cfg, body, minArea, modes), { once: true });
   // Kiosk mode (Pi): start without a click; needs Chromium's --autoplay-policy=no-user-gesture-required.
   if (new URLSearchParams(location.search).has("autowake")) ui.start.click();
 }
 
-async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise<void> {
+async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: ModePanel): Promise<void> {
   ui.start.disabled = true;
   ui.startHint.textContent = "Waking up…";
 
@@ -186,6 +191,7 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number): Promise
     lastVoiceAt: () => meter.lastLoudTime,
   };
   const engine: Engine = cfg.engine === "live" ? new LiveEngine(deps) : new RealtimeEngine(deps);
+  modes.attach(engine);
   const meter = new VoiceMeter(audioCtx);
   const director = new Director(
     { engine, capture: () => camera.capture(), isSpeaking: () => meter.speaking(performance.now()), now: () => performance.now(), log },

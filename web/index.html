@@ -42,6 +42,12 @@
           <button id="sleep" disabled>🛑 Sleep (kill switch)</button>
         </div>
 
+        <div class="modes-head">
+          <h2>Quick modes</h2>
+          <span class="hint">Tap to turn on or off. They stay on tonight until you tap again.</span>
+        </div>
+        <div id="modes" class="modes" role="group" aria-label="Quick modes"></div>
+
         <form id="say-form" class="say">
           <input id="say-input" placeholder="Make it say… (e.g. 'Only one piece each, please!')" autocomplete="off" disabled />
           <button type="submit" disabled id="say-button">Say</button>
@@ -69,6 +75,7 @@
           <h2>Server log <span id="server-log-status" class="log-status">connecting…</span></h2>
           <div class="log-links">
             <a id="session-log-link" target="_blank" hidden>📜 Today's log (with snapshots)</a>
+            <a id="gallery-link" target="_blank" hidden>🖼️ Costume gallery</a>
             <a href="/api/session-logs" target="_blank">All logs</a>
           </div>
         </div>

@@ -36,6 +36,11 @@ export interface Engine {
   recheck(image: string): Promise<void>;
   /** Operator puppeteering: have the creature say this line, in character. */
   say(text: string): void;
+  /**
+   * Operator modes: standing instructions kept until changed. `standing` ("" for none) is re-sent
+   * to every new voice session; `change`, if given, is sent now to an open session.
+   */
+  setStanding(standing: string, change?: string): void;
   setMicEnabled(enabled: boolean): void;
   /** True while waiting on vision or a model response. */
   isThinking(): boolean;

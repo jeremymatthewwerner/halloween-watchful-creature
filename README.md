@@ -55,9 +55,17 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**.
 - **Eye preview:** an on-screen copy of what the LED eyes are doing, so you can test without the Arduino.
 - **👋 Greet now:** forces a greeting.
 - **🛑 Sleep (kill switch):** ends the voice session and ignores visitors until you press Wake.
+- **Quick modes:** one-tap buttons that change how the creature acts until you tap them again. A lit button (marked **ON**) is on. They're remembered for the evening, even if you reload the page, and are sent again each time a new voice session starts.
+  - **🍬 Candy's low:** asks everyone to take just one piece.
+  - **🚫 Candy's out:** says sorry, kindly, that the candy is gone, and still compliments costumes.
+  - **🧸 Toddler mode:** extra gentle, nothing spooky, very short lines.
+  - **⏳ Back in 5:** tells visitors the candy helpers will be back in a few minutes.
+  - **🌙 Last call:** greets as usual, then says a warm goodnight.
+
+  Each tap is noted in the Conversation panel and today's log.
 - **Make it say…:** type a line and the creature says it in character.
 - **Conversation:** live transcript plus system notes.
-- **Server log:** the server's terminal output, live. Its links open **today's log** and **all logs**.
+- **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery** and **all logs**.
 
 ## Logs on disk
 Each day gets a folder in `logs/` (for example `logs/2026-10-31/`). Server restarts append to the same day.
@@ -65,7 +73,9 @@ Each day gets a folder in `logs/` (for example `logs/2026-10-31/`). Server resta
 - `log.txt`: the same as plain text, for `grep`.
 - `snapshots/`: the camera frame of each greeting.
 
-This keeps photos and speech of visitors (often children) on your computer. Set `LOG_SNAPSHOTS=false` to skip the photos, or `LOG_DIR=none` to keep no logs at all. Delete old days by deleting their folders.
+The **costume gallery** (`/api/session-logs/<day>/gallery.html`, linked from the dashboard and from **All logs**) turns a day into a grid of greetings: each snapshot with what the camera saw and the creature's best line from that moment. Click a costume, or **▶️ Slideshow**, to see them big (arrow keys move, Esc closes). It's built from the day's `log.txt` each time you open it, so there's nothing extra to save. It's for the family only: it shows other people's kids, so it has no share or upload buttons.
+
+This keeps photos and speech of visitors (often children) on your computer. Set `LOG_SNAPSHOTS=false` to skip the photos (the gallery then shows words only), or `LOG_DIR=none` to keep no logs at all (no gallery either). Delete old days by deleting their folders.
 
 ## How it saves money
 The voice session only runs while someone is at the porch.
