@@ -10,7 +10,7 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**: a dapper pumpkin i
 - **Doesn't repeat itself:** remembers what it said tonight across voice sessions, varies its openings and verdicts, and keeps running gags ("visitor number 50!", "the fourth dinosaur tonight!").
 - **Plays:** an occasional riddle for "trick", a roar contest, or "guess what I am".
 - **Lets you steer:** quick modes (Candy's low/out, Toddler mode, Back in 5, Last call), a spookiness dial, a voice picker, a kill switch and "make it say…", from the dashboard or **your phone**.
-- **Looks after itself:** a watchdog recovers a stuck camera or page, and alerts can **push to your phone**.
+- **Looks after itself:** a watchdog recovers a stuck camera or page, and alerts can **push to your phone**. If Wi-Fi or OpenAI goes down, it greets visitors with **recorded greetings** and switches back to its live voice by itself.
 - **Keeps a record:** a daily log with a snapshot of each greeting, and a **costume gallery** for the family.
 - **Rehearsal mode:** test greetings with sample photos, without walking in and out of frame.
 
@@ -93,6 +93,14 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**. F
   - **Spooky sounds:** every 20–60 s on an empty porch, a quiet creaky door, owl, distant thunder, wind, cackle, wolf howl or church bell, synthesized in the browser (no audio files).
   - **Call out to people walking by (lure mode):** when someone is in view but too far to count as a visitor (a grey box), the pumpkin plays one of 14 recorded call-outs ("Psst! Over here! Come get your costume reviewed!"), never the same one twice in a row, at most once per **Seconds between call-outs** (default 45, plus up to 15 s at random). It waits 30 s after visitors leave or the creature talks, so it doesn't call back kids who just left.
   - Both stop the instant someone comes close or the creature speaks, stay silent while the kill switch is on, and play through the selected **Speaker**.
+  - **Eyes:** during a call-out the eyes (and jaw) pulse with the recording, as they do with the live voice. Ambience only gets a slow blink.
+- **Recorded clips in the creature's voice:** call-outs and offline greetings are read by OpenAI text-to-speech (`gpt-4o-mini-tts`), whose voices aren't GPT-Live's. When the dashboard wakes, and whenever you pick a voice, the server makes the clips in the closest TTS voice (about a cent, once per voice), caches them in `clip-cache/` (gitignored; `CLIP_CACHE_DIR`, `none` turns this off) and the dashboard switches to them. Until then, or if that isn't possible (no key, no network, a voice it knows nothing about), it uses the bundled clips (voice `cedar`). The mapping is in [docs/DESIGN.md](docs/DESIGN.md) ("Recorded clips in the session voice"): for example `ripple` is read by `cedar` with a light Australian accent. Making clips is dashboard-only: the phone remote can't trigger it.
+
+### Offline mode (Wi-Fi or OpenAI down)
+If the voice session can't start (an error, no network, or no connection within 5 s of a visitor arriving), or it drops mid-visit and won't come back, the pumpkin plays one of 16 short **recorded greetings** ("Happy Halloween! Ooh, what a great costume!") instead of going silent, with its eyes pulsing to the recording.
+- Never the same greeting twice in a row, and at most one every 20 s (a group stepping out and back doesn't get a string of them).
+- It keeps trying the live voice in the background, after 5 s, then 10, 20, 40 and every 60 s, and switches back the moment it works: visitors who only heard a recording then get a proper live greeting. With the porch empty, a successful check closes the session again right away.
+- The status pill shows **offline: recorded greetings**. Going offline and coming back are logged in the Conversation panel and the server log, and raise a **Voice offline** alert (pushed to your phone at most once per 15 minutes, however often it flaps). While offline, the watchdog's separate "voice session failing" alert is held back.
 
 ## Phone remote and alerts
 Watch and steer the creature from the couch, and get a push on your phone when something breaks. The dashboard on the creature's computer stays the brain: the phone's buttons go through the server to the dashboard, and its status comes back the same way.
@@ -135,7 +143,7 @@ open -na "Google Chrome" --args --autoplay-policy=no-user-gesture-required "http
 The Pi kiosk already uses this flag. The setting only lasts while that Chrome window runs, so quit Chrome fully first.
 
 ### Alerts
-Alerts show on the dashboard and the remote: camera lost, person detector failed, Arduino disconnected, vision errors piling up, voice session failing, daily cost cap reached, the watchdog reloading the page, the dashboard needing a tap, and the dashboard not checking in. Repeats of a problem that's still going are counted, not listed again, and they're marked when they clear up by themselves.
+Alerts show on the dashboard and the remote: camera lost, person detector failed, Arduino disconnected, vision errors piling up, voice session failing, voice offline (playing recorded greetings), daily cost cap reached, the watchdog reloading the page, the dashboard needing a tap, and the dashboard not checking in. Repeats of a problem that's still going are counted, not listed again, and they're marked when they clear up by themselves.
 
 **Push to your phone (optional), with [ntfy](https://ntfy.sh):**
 1. Install the **ntfy** app (iOS or Android).
@@ -201,6 +209,7 @@ GPT-Live costs about **$0.05 per minute** of voice, plus small vision-model call
 | `NTFY_SERVER` / `NTFY_TOKEN` | `https://ntfy.sh` / (none) | Self-hosted ntfy server, or a token for a protected topic |
 | `LOG_DIR` | `logs` | Folder for the daily logs and snapshots; `none` keeps no logs (and no gallery) |
 | `LOG_SNAPSHOTS` | `true` | `false` keeps the logs but saves no photos |
+| `CLIP_CACHE_DIR` | `clip-cache` | Where call-outs and offline greetings in the picked voice are cached; `none` uses only the bundled clips |
 
 Set `BODY_DEBUG=1` to log the commands sent to the Arduino.
 
@@ -221,7 +230,7 @@ npm run build
 - `prompts/`: the shared rules plus one file per character.
 - `firmware/`: the Arduino sketch.
 - `tests/`: unit tests.
-- `scripts/make-lure-clips.ts`: one-time generator for the lure call-outs (`npx tsx scripts/make-lure-clips.ts pumpkin`). It uses OpenAI text-to-speech (`gpt-4o-mini-tts`, voice `cedar`) and writes MP3s plus `manifest.json` to `web/public/lure/<character>/`. The clips are committed, so the app doesn't need the script. Re-running only regenerates new or edited lines (`--force` redoes all). All 14 pumpkin clips (about a minute of audio) cost under 2 cents. Characters without clips just skip lure mode.
+- `scripts/make-lure-clips.ts`: one-time generator for the bundled recorded clips (`npx tsx scripts/make-lure-clips.ts pumpkin`, `--kind lure|greeting` for one kind). It uses OpenAI text-to-speech (`gpt-4o-mini-tts`, voice `cedar`) and writes MP3s plus `manifest.json` to `web/public/lure/<character>/` (call-outs) and `web/public/greeting/<character>/` (offline greetings). The lines live in `server/clips.ts`, which the server also uses to make the per-voice sets. The clips are committed, so the app doesn't need the script. Re-running only regenerates new or edited lines (`--force` redoes all). All 30 pumpkin clips cost about 2 cents. Characters without clips skip lure mode and stay quiet in offline mode.
 
 ### Add a character
 Copy `prompts/characters/pumpkin.md` to `prompts/characters/<id>.md` and edit:
@@ -242,7 +251,8 @@ It appears in the dashboard's character picker.
 - **The voice sounds flat or wrong:** try another voice in the dashboard's **Voice** picker (see the notes there). The persona's delivery rules ask for big, bouncy energy, but some voices carry it better than others.
 - **It greets people on the sidewalk:** raise "How close counts as a visitor".
 - **It doesn't notice people at night:** add light on the visitors.
-- **"Could not start voice session":**
+- **"Could not start voice session"** (and **offline: recorded greetings**): visitors still get recorded greetings, and it retries by itself; to fix the cause:
+  - check the internet connection;
   - check `OPENAI_API_KEY`;
   - check that your project has GPT-Live access;
   - read the server log for OpenAI's error detail;

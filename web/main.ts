@@ -376,8 +376,57 @@ async function wake(
   const engine: Engine = cfg.engine === "live" ? new LiveEngine(deps) : new RealtimeEngine(deps);
   modes.attach(engine);
   const meter = new VoiceMeter(audioCtx);
+  // Spooky ambience, lure call-outs and offline greetings: local audio only, never the voice session.
+  const porchSounds = startPorchSounds({
+    audioCtx,
+    character: cfg.character.id,
+    sinkId: speakerDevice?.deviceId,
+    status: () => ({
+      porchEmpty: tracker.state === "empty",
+      talking: meter.speaking(performance.now()) || engine.isThinking(),
+      autopilot: director.autopilot,
+    }),
+    prefs,
+    log,
+    // Ambience only stirs the eyes (a slow blink), it doesn't pulse them like a voice.
+    onAmbience: () => {
+      if (!body.activeFlourish(performance.now())) body.flourish("slowblink");
+    },
+  });
+  // The recorded clips drive the eyes the way the live voice does.
+  const clipMeter = new VoiceMeter(audioCtx);
+  clipMeter.attachNode(porchSounds.voiceTap);
+  // Clips in the voice picked here (made and cached by the server), else the bundled ones.
+  void porchSounds.useVoice(voices.pickedVoice);
+  voices.onPick((picked) => void porchSounds.useVoice(picked));
+
+  const renderStatusPill = (status: Engine["status"]) => {
+    const offline = director.offline && status !== "open";
+    ui.statusPill.textContent = offline ? "offline: recorded greetings" : status === "open" ? "awake" : status === "closed" ? "asleep" : status;
+    ui.statusPill.className = `pill ${offline ? "bad" : status === "open" ? "on" : status === "closed" ? "" : "busy"}`;
+  };
   const director = new Director(
-    { engine, capture, isSpeaking: () => meter.speaking(performance.now()), now: () => performance.now(), log },
+    {
+      engine,
+      capture,
+      isSpeaking: () => meter.speaking(performance.now()) || clipMeter.speaking(performance.now()),
+      now: () => performance.now(),
+      log,
+      recorded: {
+        ...porchSounds.greetings,
+        play: (index) => {
+          const text = porchSounds.greetings.play(index);
+          if (text) body.flourish(GREETING_FLOURISH.visitors);
+          return text;
+        },
+      },
+      onOffline: (offline, detail) => {
+        // The server logs both (and pushes the alert, at most once per 15 min).
+        if (offline) void remote.alert("voice-offline", detail);
+        else void remote.resolve("voice-offline", detail);
+        renderStatusPill(engine.status);
+      },
+    },
     { idleCloseMs: cfg.idleCloseSeconds * 1000, backgroundMs: cfg.backgroundFrameSeconds * 1000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000 },
   );
   voices.attach(engine, () => director.visitorsPresent);
@@ -397,8 +446,7 @@ async function wake(
   engine.on((e) => {
     switch (e.type) {
       case "status":
-        ui.statusPill.textContent = e.status === "open" ? "awake" : e.status === "closed" ? "asleep" : e.status;
-        ui.statusPill.className = `pill ${e.status === "open" ? "on" : e.status === "closed" ? "" : "busy"}`;
+        renderStatusPill(e.status);
         if (e.status === "closed") {
           pastVoiceSeconds += sessionVoiceSeconds;
           sessionVoiceSeconds = 0;
@@ -436,19 +484,6 @@ async function wake(
     prefs.set("minArea", String(value));
     ui.minAreaValue.textContent = `${Math.round(value * 100)}% of frame`;
     tracker.setMinArea(value);
-  });
-  // Spooky ambience and lure call-outs between visitors: local audio only, never the voice session.
-  const porchSounds = startPorchSounds({
-    audioCtx,
-    character: cfg.character.id,
-    sinkId: speakerDevice?.deviceId,
-    status: () => ({
-      porchEmpty: tracker.state === "empty",
-      talking: meter.speaking(performance.now()) || engine.isThinking(),
-      autopilot: director.autopilot,
-    }),
-    prefs,
-    log,
   });
   let detector: PersonDetector | null = null;
   detectorState = "loading";
@@ -518,12 +553,18 @@ async function wake(
       }
       meter.attach(attached);
     }
-    const level = meter.sample(t);
+    const voiceLevel = meter.sample(t);
+    const clipLevel = clipMeter.sample(t);
+    const live = engine.status === "open";
+    // A recorded clip (call-out or offline greeting) speaks too: the eyes and jaw follow it like the live voice.
+    const liveSpeaking = live && meter.speaking(t);
+    const clipSpeaking = !liveSpeaking && porchSounds.clipPlaying() && clipMeter.speaking(t);
+    const level = liveSpeaking ? voiceLevel : clipLevel;
     const state: BodyState =
-      engine.status !== "open"
-        ? "sleeping"
-        : meter.speaking(t)
-          ? "speaking"
+      liveSpeaking || clipSpeaking
+        ? "speaking"
+        : !live
+          ? "sleeping"
           : engine.isThinking()
             ? "thinking"
             : t - engine.lastHeardAt() < 1500
@@ -612,6 +653,8 @@ async function wake(
             .catch((err) => log(`Camera restart failed: ${describeError(err)}`));
           break;
         case "alert":
+          // Offline mode has its own alert (one push): failed starts while offline are expected.
+          if (action.kind === "voice-errors" && director.offline) break;
           void remote.alert(action.kind, action.detail);
           break;
         case "resolve":

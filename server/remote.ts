@@ -214,8 +214,9 @@ export class Remote {
       const req = (await c.req.json().catch(() => null)) as { kind?: unknown; detail?: unknown; resolve?: unknown } | null;
       const kind = req?.kind as AlertKind;
       if (!DASHBOARD_ALERT_KINDS.includes(kind)) return c.json({ error: "unknown alert kind" }, 400);
-      if (req?.resolve === true) this.alerts.resolve(kind);
-      else this.alerts.raise(kind, typeof req?.detail === "string" ? req.detail : "");
+      const detail = typeof req?.detail === "string" ? req.detail : "";
+      if (req?.resolve === true) this.alerts.resolve(kind, detail);
+      else this.alerts.raise(kind, detail);
       return c.body(null, 204);
     });
 

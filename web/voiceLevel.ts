@@ -1,8 +1,11 @@
-/** Measures how loud the creature's voice is, for the eyes/jaw and "is speaking". */
+/**
+ * Measures how loud the creature's voice is, for the eyes/jaw and "is speaking": the live voice
+ * (a MediaStream), or the recorded clips (a Web Audio node, see PorchSoundPlayer.voiceTap).
+ */
 export class VoiceMeter {
   level = 0;
   private analyser: AnalyserNode | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
+  private source: AudioNode | null = null;
   private data = new Float32Array(1024);
   private lastLoudAt = -Infinity;
 
@@ -13,12 +16,23 @@ export class VoiceMeter {
   ) {}
 
   attach(stream: MediaStream | null): void {
-    this.source?.disconnect();
+    this.attachNode(stream && stream.getAudioTracks().length > 0 ? this.ctx.createMediaStreamSource(stream) : null);
+  }
+
+  /** Follows an audio node already in this context (null: stop measuring). */
+  attachNode(node: AudioNode | null): void {
+    if (this.source && this.analyser) {
+      try {
+        this.source.disconnect(this.analyser);
+      } catch {
+        /* wasn't connected */
+      }
+    }
     this.source = null;
     this.level = 0;
-    if (!stream || stream.getAudioTracks().length === 0) return;
+    if (!node) return;
     this.analyser ??= Object.assign(this.ctx.createAnalyser(), { fftSize: 1024 });
-    this.source = this.ctx.createMediaStreamSource(stream);
+    this.source = node;
     this.source.connect(this.analyser);
   }
 

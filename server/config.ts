@@ -60,6 +60,8 @@ export const config = {
   rehearsalImageCostUsd: num("REHEARSAL_IMAGE_COST_USD", 0.01),
   /** Where generated rehearsal visitors are cached (gitignored); "none" turns generating off. */
   rehearsalCacheDir: str("REHEARSAL_CACHE_DIR", "rehearsal-cache"),
+  /** Where lure and offline-greeting clips in the session voice are cached (gitignored); "none" uses only the bundled ones. */
+  clipCacheDir: str("CLIP_CACHE_DIR", "clip-cache"),
   port: num("PORT", 8787),
   /** Turns on the phone remote: the server listens on the LAN and asks other devices for this PIN. */
   remotePin,

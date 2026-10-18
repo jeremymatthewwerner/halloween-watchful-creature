@@ -5,3 +5,4 @@ dist/
 *.log
 logs/
 rehearsal-cache/
+clip-cache/

@@ -39,8 +39,9 @@ export class RemoteLink {
     return this.post("/api/remote/alert", { kind, detail });
   }
 
-  resolve(kind: AlertKind): Promise<void> {
-    return this.post("/api/remote/alert", { kind, resolve: true });
+  /** The problem cleared up; `detail` goes in the server log. */
+  resolve(kind: AlertKind, detail = ""): Promise<void> {
+    return this.post("/api/remote/alert", { kind, resolve: true, detail });
   }
 
   /** Sends the status now (after something changed). */

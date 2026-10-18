@@ -155,3 +155,55 @@ export function describeSource(source: VoiceSource, characterName: string): stri
       return `${characterName}'s default`;
   }
 }
+
+// --- text-to-speech (the recorded lure and offline clips) -------------------------------------------
+
+/**
+ * The voices gpt-4o-mini-tts takes, from OpenAI's text-to-speech guide (checked 2026-10-18). The
+ * docs recommend marin or cedar for best quality and don't describe the voices. Of GPT-Live's
+ * voices only marin is here; every gpt-realtime voice is.
+ */
+export const TTS_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar"] as const;
+export type TtsVoice = (typeof TTS_VOICES)[number];
+export const TTS_DOCS_URL = "https://developers.openai.com/api/docs/guides/text-to-speech";
+
+export interface TtsRendition {
+  /** The TTS voice that reads the clips. */
+  voice: TtsVoice;
+  /** An accent asked for in the TTS instructions ("Australian"), or null for plain American English. */
+  accent: string | null;
+  /** True when the session voice is itself a TTS voice. */
+  exact: boolean;
+}
+
+export const isTtsVoice = (id: unknown): id is TtsVoice => typeof id === "string" && (TTS_VOICES as readonly string[]).includes(id);
+
+/**
+ * The closest TTS reading of a session voice, for the recorded clips. A voice TTS also has is used
+ * as is. A GPT-Live-only voice gets one of OpenAI's two recommended TTS voices by presentation
+ * (masculine: cedar, feminine: marin; the TTS docs don't describe voices, so that pairing is by ear)
+ * plus its accent in the TTS instructions, which gpt-4o-mini-tts follows: the region for English
+ * voices ("North American" is the plain default, so no accent), the language for the others.
+ * Null when we know nothing about the voice (a VOICE in .env that isn't on the list, say).
+ */
+export function ttsVoiceFor(engine: EngineKind, id: string): TtsRendition | null {
+  if (isTtsVoice(id)) return { voice: id, accent: null, exact: true };
+  const info = findVoice(engine, id);
+  if (!info?.presentation) return null;
+  const accent = info.language === "English" ? (info.region && info.region !== "North American" ? info.region : null) : (info.language ?? null);
+  return { voice: info.presentation === "feminine" ? "marin" : "cedar", accent, exact: false };
+}
+
+/** A folder-safe name for a rendition: "cedar", "cedar-australian", "marin-southern-u-s". */
+export function renditionKey(r: Pick<TtsRendition, "voice" | "accent">): string {
+  const accent = r.accent
+    ?.toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return accent ? `${r.voice}-${accent}` : r.voice;
+}
+
+/** "cedar", or "cedar with a light Australian accent". */
+export function describeRendition(r: Pick<TtsRendition, "voice" | "accent">): string {
+  return r.accent ? `${r.voice} with a light ${r.accent} accent` : r.voice;
+}

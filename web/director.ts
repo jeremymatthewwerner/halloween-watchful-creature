@@ -1,4 +1,5 @@
 import type { Engine, GreetReason } from "./engines/types.ts";
+import { OfflineFallback, type OfflineOptions } from "./offline.ts";
 import type { VisitorEvent } from "./visitors.ts";
 
 export interface DirectorOptions {
@@ -10,6 +11,19 @@ export interface DirectorOptions {
   recheckCooldownMs: number;
   /** A session woken early for a sighting closes after this long if nobody actually arrives. */
   sightingGraceMs: number;
+  /** Offline mode's timings (web/offline.ts); the defaults if left out. */
+  offline?: Partial<OfflineOptions>;
+}
+
+/** Recorded greetings (local audio), for when the live voice can't start. */
+export interface RecordedGreetings {
+  /** How many are loaded (0: none, so offline mode stays silent). */
+  count(): number;
+  /** Plays one; returns its text, or undefined if it couldn't. */
+  play(index: number): string | undefined;
+  /** Whether a recorded clip is playing now. */
+  playing(): boolean;
+  stop(): void;
 }
 
 export interface DirectorDeps {
@@ -19,32 +33,55 @@ export interface DirectorDeps {
   isSpeaking(): boolean;
   now(): number;
   log(message: string): void;
+  recorded?: RecordedGreetings;
+  /** Going offline (true) and back to the live voice (false), for the alert and the server log. */
+  onOffline?(offline: boolean, detail: string): void;
+  /** Resolves after `ms` (default: a timer); tests pass their own. */
+  wait?(ms: number): Promise<void>;
+  random?(): number;
+}
+
+/** A greeting a recorded clip stood in for, which the live voice gives once it's back. */
+interface Owed {
+  reason: GreetReason;
+  awayMs?: number;
 }
 
 /**
  * The behavior brain: reacts to visitors arriving and leaving, keeps the creature's
  * view fresh, gates the mic, and sleeps the (billed) voice session when nobody's around.
+ * When the voice session can't start, it plays recorded greetings and keeps retrying (offline mode).
  */
 export class Director {
   /** When false (kill switch), the director never connects or greets on its own. */
   autopilot = true;
+  readonly fallback: OfflineFallback;
   private present = false;
   /** While nobody's present: when to sleep the voice session (null: not scheduled). */
   private idleCloseAt: number | null = null;
   private lastObserveAt = 0;
   private lastRecheckAt = -Infinity;
-  private connecting: Promise<void> | null = null;
-  private retryAt = 0;
+  private connecting: Promise<boolean> | null = null;
+  private owed: Owed | null = null;
+  /** The session dropped mid-visit: once it's back, catch up silently (they were greeted already). */
+  private catchUp = false;
+  private warnedNoClips = false;
 
   constructor(
     private readonly deps: DirectorDeps,
     private readonly opts: DirectorOptions,
   ) {
     deps.engine.setMicEnabled(false);
+    this.fallback = new OfflineFallback(opts.offline, deps.random);
   }
 
   get visitorsPresent(): boolean {
     return this.present;
+  }
+
+  /** The live voice isn't working: recorded greetings, retrying in the background. */
+  get offline(): boolean {
+    return this.fallback.offline;
   }
 
   async onVisitorEvent(event: VisitorEvent): Promise<void> {
@@ -54,7 +91,8 @@ export class Director {
         // Someone just came into view: start waking the voice session now, so it's (nearly)
         // ready by the time they count as arrived. If they don't, it goes back to sleep soon.
         if (!this.autopilot || this.present || engine.status !== "closed") return;
-        log("Someone's coming into view: waking the voice session");
+        if (this.offline && !this.fallback.retryDue(this.deps.now())) return;
+        log(this.offline ? "Someone's coming into view: trying the live voice again" : "Someone's coming into view: waking the voice session");
         this.idleCloseAt = this.deps.now() + this.opts.sightingGraceMs;
         void this.ensureOpen();
         break;
@@ -64,11 +102,17 @@ export class Director {
         if (!this.autopilot) return;
         log(`Visitors arrived (${event.count})`);
         engine.setMicEnabled(true);
-        // The engine starts looking right away, while the session finishes connecting.
-        await this.greet("arrived", {}, this.ensureOpen());
+        await this.greetOrRecord({ reason: "arrived" });
         break;
       case "grew":
-        if (!this.autopilot || engine.status !== "open") return;
+        if (!this.autopilot) return;
+        if (engine.status !== "open") {
+          if (this.offline) {
+            log(`More visitors (${event.from} → ${event.count}), but the live voice is offline`);
+            this.playRecorded("more visitors", { reason: "grew" });
+          }
+          return;
+        }
         log(`More visitors (${event.from} → ${event.count})`);
         await this.greet("grew");
         break;
@@ -80,7 +124,7 @@ export class Director {
         // Same people or the next group? The engine compares a fresh look with the last group:
         // new visitors get a full greeting, the same ones get silence or a quick welcome back.
         log(`Someone's here after ${Math.round(event.awayMs / 1000)}s; checking whether they're new`);
-        await this.greet("returned", { awayMs: event.awayMs }, this.ensureOpen());
+        await this.greetOrRecord({ reason: "returned", awayMs: event.awayMs });
         break;
       }
       case "gap": {
@@ -99,6 +143,9 @@ export class Director {
       case "left":
         this.present = false;
         this.idleCloseAt = this.deps.now() + this.opts.idleCloseMs;
+        // Nobody to greet or catch up with any more.
+        this.owed = null;
+        this.catchUp = false;
         log("Visitors left");
         if (this.autopilot) engine.setMicEnabled(false);
         break;
@@ -107,15 +154,24 @@ export class Director {
 
   /** Call about once a second. */
   async tick(): Promise<void> {
-    const { engine, now } = this.deps;
+    const { engine, now, log } = this.deps;
     if (!this.autopilot) return;
     const t = now();
     if (this.present) {
       if (engine.status === "closed") {
-        // The session expired or dropped mid-visit: reconnect and catch up silently.
-        this.deps.log("Reconnecting voice session");
+        // The session expired, dropped mid-visit or never started: reconnect (on the retry schedule).
+        if (this.connecting || !this.fallback.retryDue(t)) return;
+        log(this.offline ? "Offline: trying the live voice again" : "Reconnecting voice session");
         engine.setMicEnabled(true);
-        if (await this.ensureOpen()) await this.observe();
+        const wasOffline = this.offline;
+        if (!this.owed) this.catchUp = true;
+        if (await this.within(this.ensureOpen())) await this.resumeLive();
+        // A drop mid-visit gets one recorded line instead of silence (not every retry after it).
+        else if (!wasOffline && this.present) this.playRecorded("the voice session dropped", null);
+        return;
+      }
+      if (engine.status === "open" && (this.owed || this.catchUp)) {
+        await this.resumeLive();
         return;
       }
       if (engine.status === "open" && t - this.lastObserveAt >= this.opts.backgroundMs && !this.busy()) {
@@ -125,18 +181,28 @@ export class Director {
       this.deps.log("Porch is empty: sleeping the voice session");
       this.idleCloseAt = null;
       await engine.close();
+    } else if (this.offline && engine.status === "closed" && !this.connecting && this.fallback.retryDue(t)) {
+      // Nobody's here: check now whether the live voice works again, so the next visitor gets it.
+      log("Offline: checking whether the live voice works again");
+      if ((await this.ensureOpen()) && !this.present) {
+        log("The live voice works again: sleeping it until visitors arrive");
+        await engine.close();
+      }
     }
   }
 
   /** Operator button: greet whoever is there now (connecting if needed). */
   async greetNow(): Promise<void> {
     this.deps.engine.setMicEnabled(true);
-    await this.greet("manual", {}, this.ensureOpen(true));
+    await this.greetOrRecord({ reason: "manual" }, true);
   }
 
   /** Kill switch: stop talking, close the session and stay asleep until re-enabled. */
   async sleep(): Promise<void> {
     this.autopilot = false;
+    this.owed = null;
+    this.catchUp = false;
+    this.deps.recorded?.stop();
     this.deps.engine.setMicEnabled(false);
     await this.deps.engine.close();
   }
@@ -148,6 +214,24 @@ export class Director {
 
   private busy(): boolean {
     return this.deps.isSpeaking() || this.deps.engine.isThinking();
+  }
+
+  /**
+   * Greets live if the session opens within connectTimeoutMs (the engine starts looking meanwhile),
+   * else plays a recorded greeting and owes the live one. Known to be offline: records right away.
+   */
+  private async greetOrRecord(want: Owed, force = false): Promise<void> {
+    const { engine } = this.deps;
+    this.lastObserveAt = this.deps.now();
+    if (this.offline && !force && engine.status !== "open") {
+      this.playRecorded("offline", want);
+      void this.ensureOpen(); // a retry, if one is due; tick() greets live once it works
+      return;
+    }
+    const ready = this.within(this.ensureOpen(force));
+    const greeting = engine.greet(this.deps.capture(), want.reason, { awayMs: want.awayMs, ready });
+    if (!(await ready)) this.playRecorded(this.offline ? "offline" : "the live voice is slow to connect", want, force);
+    await greeting;
   }
 
   /** `ready`: the session connecting; the engine looks meanwhile and greets once it's open. */
@@ -162,21 +246,92 @@ export class Director {
     if (frame) await this.deps.engine.observe(frame);
   }
 
-  private async ensureOpen(force = false): Promise<boolean> {
+  /** The live voice is back mid-visit: give the greeting a recording stood in for, or catch up silently. */
+  private async resumeLive(): Promise<void> {
+    // Let a recorded line (or anything else) finish first; the next tick tries again.
+    if (this.deps.recorded?.playing() || this.busy()) return;
+    const owed = this.owed;
+    this.owed = null;
+    this.catchUp = false;
+    if (owed) {
+      this.deps.log("The live voice is back: greeting the visitors properly");
+      await this.greet(owed.reason, { awayMs: owed.awayMs });
+    } else {
+      await this.observe();
+    }
+  }
+
+  /** Plays a recorded greeting (never the last one again, at most one per cooldown), noting what the live voice owes. */
+  private playRecorded(why: string, owed: Owed | null, force = false): void {
+    // The first owed greeting wins: an arrival's full greeting covers a group that grew meanwhile.
+    if (owed && !this.owed) this.owed = owed;
+    const recorded = this.deps.recorded;
+    const count = recorded?.count() ?? 0;
+    if (!recorded || !count) {
+      if (!this.warnedNoClips) this.deps.log("No recorded greetings loaded: staying quiet until the live voice works");
+      this.warnedNoClips = true;
+      return;
+    }
+    if (recorded.playing() || this.deps.isSpeaking()) return;
+    const clip = this.fallback.pickClip(count, this.deps.now(), force);
+    if (clip === null) return;
+    const text = recorded.play(clip);
+    if (text) this.deps.log(`Recorded greeting (${why}): "${text}"`);
+  }
+
+  /** `ready`, or false if it hasn't resolved within connectTimeoutMs (the connection carries on). */
+  private within(ready: Promise<boolean>): Promise<boolean> {
+    const ms = this.fallback.opts.connectTimeoutMs;
+    if (this.deps.wait) return Promise.race([ready, this.deps.wait(ms).then(() => false)]);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), ms);
+      void ready.then((ok) => {
+        clearTimeout(timer);
+        resolve(ok);
+      });
+    });
+  }
+
+  private ensureOpen(force = false): Promise<boolean> {
     const { engine, now } = this.deps;
-    if (engine.status === "open") return true;
-    // After a failed start (bad key, no network), don't hammer the API every tick.
-    if (!force && !this.connecting && now() < this.retryAt) return false;
+    if (engine.status === "open") return Promise.resolve(true);
+    // After a failed start (bad key, no network), retry on the backoff schedule, not on every event.
+    if (!force && !this.connecting && !this.fallback.retryDue(now())) return Promise.resolve(false);
+    this.connecting ??= this.attempt().finally(() => (this.connecting = null));
+    return this.connecting;
+  }
+
+  /** One start; everyone waiting on it shares the outcome, so a failure is counted once. */
+  private async attempt(): Promise<boolean> {
+    const { engine, now, log } = this.deps;
     try {
-      this.connecting ??= engine.connect().finally(() => (this.connecting = null));
-      await this.connecting;
+      await engine.connect();
     } catch (err) {
-      this.retryAt = now() + 15_000;
-      this.deps.log(`Could not start voice session: ${(err as Error).message}`);
+      const message = (err as Error).message;
+      const wentOffline = this.fallback.failed(now());
+      const retry = `next try in ${Math.round(this.fallback.retryIn(now()) / 1000)} s`;
+      if (wentOffline) {
+        log(`Could not start voice session: ${message}. Offline mode: recorded greetings until the live voice works (${retry})`);
+        this.deps.onOffline?.(true, message);
+      } else {
+        log(`Could not start voice session: ${message} (still offline; ${retry})`);
+      }
       return false;
     }
-    // Re-read: connect() changed the status since the check above.
+    // Re-read: connect() changed the status since it was last checked.
     const status: string = engine.status;
-    return status === "open";
+    if (status !== "open") return false;
+    const offlineMs = this.fallback.recovered(now());
+    if (offlineMs !== null) {
+      const detail = `live voice back after ${duration(offlineMs)} offline`;
+      log(`Back online: ${detail}`);
+      this.deps.onOffline?.(false, detail);
+    }
+    return true;
   }
+}
+
+function duration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return s < 120 ? `${s} s` : `${Math.round(s / 60)} min`;
 }

@@ -20,6 +20,8 @@ const DASHBOARD_ONLY = [
   "/api/vision",
   // Rehearsal: image generation is billed, and deleting cached images can't be undone.
   "/api/rehearsal",
+  // Recorded clips in the session voice: making a set calls (billed) text-to-speech.
+  "/api/clips",
   "/api/conversation",
   "/api/remote/state",
   "/api/remote/commands",
