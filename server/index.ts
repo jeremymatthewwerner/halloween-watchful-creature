@@ -146,10 +146,10 @@ app.post("/api/vision", async (c) => {
   }
   const started = Date.now();
   const result = await describeFrame(config, req);
-  const verdict = result.sameGroup === undefined ? undefined : result.sameGroup ? "SAME" : "NEW";
+  const verdict = result.verdict ?? (result.sameGroup === false ? "NEW" : undefined);
   console.log(`[vision] ${req.reason}${verdict ? ` (${verdict})` : ""} in ${Date.now() - started} ms: ${result.text}`);
-  // Greetings, and checks that found someone new, are worth a snapshot.
-  if (sessionLog && config.logSnapshots && (GREETING_LOOKS.has(req.reason) || verdict === "NEW")) {
+  // Greetings, and checks that found someone new or a costume change, are worth a snapshot.
+  if (sessionLog && config.logSnapshots && (GREETING_LOOKS.has(req.reason) || verdict === "NEW" || verdict === "CHANGED")) {
     try {
       sessionLog.snapshot(req.image, req.reason, result.text, verdict);
     } catch (err) {

@@ -131,9 +131,10 @@ export async function describeFrame(config: Config, req: VisionRequest): Promise
       req.reason === "returned"
         ? `Begin your reply with exactly "SAME:" only if these are clearly the same people ` +
           `(the same costumes, masks, hats and props). If anything about the costumes differs, or you are unsure, begin with "NEW:". `
-        : `Begin your reply with exactly "NEW:" only if someone here now is clearly a different person from everyone who was greeted ` +
-          `(not just the same person who took off a hat, mask or jacket, turned around, or moved). Otherwise, including when you are ` +
-          `unsure or fewer people are visible, begin with "SAME:". `;
+        : `Begin your reply with exactly one of: "NEW:" if someone here now is clearly a different person from everyone who was ` +
+          `greeted; "CHANGED:" if they're the same people but a costume piece clearly changed (a hat, mask, cape, wig or prop put ` +
+          `on, taken off or swapped); otherwise "SAME:", including when you are unsure, people just moved or turned, or fewer ` +
+          `people are visible. `;
     prompt =
       `The visitors greeted a little while ago were described as: "${req.previous!.slice(0, 600)}"\n\n` +
       photos +
@@ -172,15 +173,22 @@ export async function describeFrame(config: Config, req: VisionRequest): Promise
   const data = (await res.json()) as ResponsesResult;
   let text = extractOutputText(data) || "Too dark or blurry to make out any costumes.";
   let sameGroup: boolean | undefined;
+  let verdict: VisionResult["verdict"];
   if (comparing) {
-    const verdict = /^\s*(SAME|NEW)\s*:\s*/i.exec(text);
+    const match = /^\s*(SAME|NEW|CHANGED)\s*:\s*/i.exec(text);
+    if (match) {
+      verdict = match[1]!.toUpperCase() as NonNullable<VisionResult["verdict"]>;
+      // A return compares costumes, so a changed costume there is someone new to greet.
+      if (verdict === "CHANGED" && req.reason === "returned") verdict = "NEW";
+      text = text.slice(match[0].length);
+    }
     // No verdict: a return leans NEW (don't ignore a possible new visitor); a recheck leans SAME.
-    sameGroup = verdict ? verdict[1]!.toUpperCase() === "SAME" : req.reason === "returned" ? false : undefined;
-    if (verdict) text = text.slice(verdict[0].length);
+    sameGroup = verdict ? verdict !== "NEW" : req.reason === "returned" ? false : undefined;
   }
   return {
     text,
     sameGroup,
+    verdict,
     usage: data.usage ? { inputTokens: data.usage.input_tokens ?? 0, outputTokens: data.usage.output_tokens ?? 0 } : undefined,
   };
 }

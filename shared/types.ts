@@ -59,8 +59,13 @@ export interface VisionRequest {
 
 export interface VisionResult {
   text: string;
-  /** With `previous`: the vision model's SAME (true) or NEW (false) verdict; missing if it gave none. */
+  /** With `previous`: false only for new visitors; missing if the vision model gave no verdict. */
   sameGroup?: boolean;
+  /**
+   * With `previous`: the vision model's verdict. CHANGED (only from "background" and "recheck") means the
+   * same people with a clearly different costume piece, such as a new hat or mask.
+   */
+  verdict?: "SAME" | "NEW" | "CHANGED";
   usage?: { inputTokens: number; outputTokens: number };
 }
 

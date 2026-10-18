@@ -101,8 +101,20 @@ describe("OpenAI calls", () => {
     expect(result).toMatchObject({ sameGroup: false, text: "One visitor in a plain blue T-shirt." });
     const content = (requests.at(-1)!.body.input as { content: { type: string; text?: string; image_url?: string }[] }[])[0]!.content;
     expect(content.map((c) => c.image_url ?? c.type)).toEqual(["input_text", previousImage, image]);
-    expect(content[0]!.text).toContain("took off a hat, mask or jacket");
+    expect(content[0]!.text).toContain("people just moved or turned");
     expect(content[0]!.text).toContain("The first image is a photo from when they were greeted");
+
+    // Same person, new hat.
+    visionReply = "CHANGED: One visitor in a tan brimmed hat.";
+    expect(await describeFrame(config, { image, reason: "recheck", previous: "One visitor in a top hat.", previousImage })).toMatchObject({
+      verdict: "CHANGED",
+      sameGroup: true,
+      text: "One visitor in a tan brimmed hat.",
+    });
+    expect((requests.at(-1)!.body.input as { content: { text?: string }[] }[])[0]!.content[0]!.text).toContain('"CHANGED:"');
+    // On a return, a changed costume means new visitors to greet.
+    visionReply = "CHANGED: One visitor in a tan brimmed hat.";
+    expect(await describeFrame(config, { image, reason: "returned", previous: "One visitor in a top hat." })).toMatchObject({ verdict: "NEW", sameGroup: false });
 
     // No verdict on a background look: not treated as new.
     visionReply = "One visitor in a top hat.";

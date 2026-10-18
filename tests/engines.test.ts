@@ -20,6 +20,7 @@ class TestLive extends LiveEngine {
   looks: { reason: string; opts: unknown }[] = [];
   vision = "One visitor in a green dinosaur costume with a sparkly tail.";
   sameGroup: boolean | undefined = undefined;
+  verdict: "SAME" | "NEW" | "CHANGED" | undefined = undefined;
   visionError: Error | null = null;
   /** When set, looks wait for this before answering (a slow vision call). */
   lookGate: Promise<void> | null = null;
@@ -33,11 +34,11 @@ class TestLive extends LiveEngine {
     this.sent.push(event);
     return true;
   }
-  protected async look(_image: string, reason: string, opts?: unknown): Promise<{ text: string; sameGroup?: boolean }> {
+  protected async look(_image: string, reason: string, opts?: unknown): Promise<{ text: string; sameGroup?: boolean; verdict?: "SAME" | "NEW" | "CHANGED" }> {
     this.looks.push({ reason, opts });
     if (this.lookGate) await this.lookGate;
     if (this.visionError) throw this.visionError;
-    return { text: this.vision, sameGroup: this.sameGroup };
+    return { text: this.vision, sameGroup: this.sameGroup, verdict: this.verdict };
   }
   server(event: { type: string; [key: string]: unknown }) {
     this.onServerEvent(event);
@@ -256,6 +257,37 @@ describe("LiveEngine", () => {
     e.sameGroup = true;
     await e.recheck("later-frame");
     expect(e.looks.at(-1)).toMatchObject({ reason: "recheck", opts: { previousImage: "img" } });
+  });
+
+  it("remarks on a costume change at most once a minute, then compares with the new look", async () => {
+    const e = new TestLive();
+    await e.greet("greeting-frame", "arrived");
+    vi.advanceTimersByTime(6000); // past the greeting's nudge
+    e.sent = [];
+    e.sameGroup = true;
+    e.verdict = "CHANGED";
+    e.vision = "One visitor in a blue shirt and a tan brimmed hat.";
+    await e.recheck("hat-frame");
+    expect(e.sent).toHaveLength(1);
+    expect(e.sent[0]).toMatchObject({ type: "session.commentary.append" });
+    expect(String(e.sent[0]!.content)).toContain("just changed their look");
+    expect(String(e.sent[0]!.content)).toContain("tan brimmed hat");
+    expect(e.events).toContainEqual({ type: "note", text: "costume change (vision saw: One visitor in a blue shirt and a tan brimmed hat.)" });
+
+    // Another change soon after: noted, but not remarked on.
+    e.sent = [];
+    e.vision = "One visitor in a blue shirt, hat off.";
+    vi.advanceTimersByTime(30_000);
+    await e.observe("hat-off-frame");
+    expect(e.looks.at(-1)).toMatchObject({ opts: { previous: "One visitor in a blue shirt and a tan brimmed hat.", previousImage: "hat-frame" } });
+    expect(e.sent.map((s) => s.type)).toEqual(["session.thinking.append"]);
+
+    // After a minute, a change gets a remark again.
+    e.sent = [];
+    e.vision = "One visitor in a blue shirt and a witch hat.";
+    vi.advanceTimersByTime(31_000);
+    await e.observe("witch-frame");
+    expect(e.sent.map((s) => s.type)).toEqual(["session.commentary.append"]);
   });
 
   it("keeps quiet when a check finds the same visitors, or has no greeted group to compare", async () => {

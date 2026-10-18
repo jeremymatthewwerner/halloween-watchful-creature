@@ -48,6 +48,9 @@ const NUDGE = {
 /** Speech after at least this much quiet counts as a new utterance. */
 const QUIET_MS = 700;
 
+/** Remark on a costume change (a new hat, a mask off) at most this often. */
+const CHANGE_REMARK_EVERY_MS = 60_000;
+
 /** A "grew" this soon after a same/new check greeted the newcomers isn't greeted again. */
 const NEWCOMER_GREETED_MS = 20_000;
 
@@ -71,6 +74,8 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   private lastGroupImage: string | undefined;
   /** When a same/new check last found and greeted someone new. */
   private lastNewcomerAt = -Infinity;
+  /** When the creature last remarked on a costume change. */
+  private lastChangeRemarkAt = -Infinity;
   private eventSeq = 0;
   private lastSpokeAt = 0;
   /** When the creature's current (or latest) transcribed utterance began. */
@@ -274,6 +279,24 @@ export class LiveEngine extends WebRtcEngine implements Engine {
           `[CAMERA] Someone new is in front of you who you haven't greeted yet. What you see now: ${seen} Greet them now and compliment their costumes.`,
         );
         this.scheduleNudge(NUDGE.newcomer);
+        return;
+      }
+      if (previous && result.verdict === "CHANGED") {
+        // Same people, new look: compare with the new look from now on, so it's only remarked on once.
+        this.lastObservation = this.lastGroup = seen;
+        this.lastGroupImage = image;
+        if (Date.now() - this.lastChangeRemarkAt >= CHANGE_REMARK_EVERY_MS) {
+          this.lastChangeRemarkAt = Date.now();
+          this.emit({ type: "note", text: `costume change (vision saw: ${seen})` });
+          this.append(
+            "session.commentary.append",
+            null,
+            `[CAMERA] The visitors you're talking to just changed their look. What you see now: ${seen} Make one quick, playful remark about the change. Don't greet them again.`,
+          );
+        } else {
+          this.emit({ type: "note", text: `costume change, but remarked on one recently (vision saw: ${seen})` });
+          this.append("session.thinking.append", null, `[CAMERA] Background update, for reference only (don't respond to it or greet again): ${seen}`);
+        }
         return;
       }
       if (reason === "recheck") this.emit({ type: "note", text: `no one new (vision saw: ${seen})` });

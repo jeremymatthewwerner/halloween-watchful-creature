@@ -1,3 +1,4 @@
+import type { VisionResult } from "../../shared/types.ts";
 import type { EngineDeps, EngineEvent, EngineStatus } from "./types.ts";
 
 /** For a return we couldn't check against the last group: don't assume strangers, or the same people. */
@@ -136,7 +137,7 @@ export abstract class WebRtcEngine {
     image: string,
     reason: string,
     opts: { withTranscript?: boolean; quiet?: boolean; previous?: string; previousImage?: string } = {},
-  ): Promise<{ text: string; sameGroup?: boolean }> {
+  ): Promise<Pick<VisionResult, "text" | "sameGroup" | "verdict">> {
     // Quiet (background) looks don't show as "thinking" on the eyes.
     const counted = !opts.quiet;
     if (counted) this.pendingVision++;
@@ -155,12 +156,13 @@ export abstract class WebRtcEngine {
       const body = (await res.json()) as {
         text?: string;
         sameGroup?: boolean;
+        verdict?: VisionResult["verdict"];
         error?: string;
         usage?: { inputTokens: number; outputTokens: number };
       };
       if (!res.ok || !body.text) throw new Error(body.error ?? `vision failed (${res.status})`);
       if (body.usage) this.emit({ type: "usage", tokens: body.usage.inputTokens + body.usage.outputTokens });
-      return { text: body.text, sameGroup: body.sameGroup };
+      return { text: body.text, sameGroup: body.sameGroup, verdict: body.verdict };
     } finally {
       if (counted) this.pendingVision = Math.max(0, this.pendingVision - 1);
     }
