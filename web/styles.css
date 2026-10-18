@@ -77,6 +77,7 @@ button.big { font-size: 18px; padding: 12px 20px; background: #3b2160; border-co
 .settings summary { cursor: pointer; color: var(--muted); }
 .settings label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .settings select { max-width: 100%; background: #140c22; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px; }
+.settings input[type="number"] { width: 5em; background: #140c22; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px; }
 .hint { color: var(--muted); font-size: 13px; }
 .warn { color: var(--red); }
 .transcript { list-style: none; padding: 0; margin: 0; max-height: 46vh; overflow-y: auto; }

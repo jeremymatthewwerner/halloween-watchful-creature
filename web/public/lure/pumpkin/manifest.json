@@ -1,0 +1,62 @@
+{
+  "model": "gpt-4o-mini-tts",
+  "voice": "cedar",
+  "clips": [
+    {
+      "file": "01.mp3",
+      "text": "Psst! Over here! Come get your costume reviewed!"
+    },
+    {
+      "file": "02.mp3",
+      "text": "Ooh, is that a costume I see? Come closer!"
+    },
+    {
+      "file": "03.mp3",
+      "text": "Hey there! Yes, you! The talking pumpkin wants to see your costume!"
+    },
+    {
+      "file": "04.mp3",
+      "text": "Trick or treaters! Come show me your costume!"
+    },
+    {
+      "file": "05.mp3",
+      "text": "Wowza! I spy a costume! Come on over!"
+    },
+    {
+      "file": "06.mp3",
+      "text": "Over here! It's me, the pumpkin! Come say hi!"
+    },
+    {
+      "file": "07.mp3",
+      "text": "Psst! I'm a pumpkin costume judge, and I'd love to see yours!"
+    },
+    {
+      "file": "08.mp3",
+      "text": "Great gourds, is that a costume? Come closer so I can see!"
+    },
+    {
+      "file": "09.mp3",
+      "text": "Hello out there! Bring that costume over here!"
+    },
+    {
+      "file": "10.mp3",
+      "text": "Yoo-hoo! Spooky friends! Come visit the pumpkin!"
+    },
+    {
+      "file": "11.mp3",
+      "text": "Don't be shy! I'm a friendly pumpkin! Come on up!"
+    },
+    {
+      "file": "12.mp3",
+      "text": "Jumping jack-o'-lanterns! I think I see a costume! Come here!"
+    },
+    {
+      "file": "13.mp3",
+      "text": "Ahem! The costume judge is open! Come on up to the porch!"
+    },
+    {
+      "file": "14.mp3",
+      "text": "Hey, you with the awesome costume! Come closer!"
+    }
+  ]
+}

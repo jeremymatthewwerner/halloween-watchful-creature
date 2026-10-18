@@ -78,6 +78,12 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
 - **Failed start** (bad key or no network): it backs off 15 s instead of retrying every second.
 - **Kill switch:** closes the session and ignores visitors until you press Wake.
 
+### Between visitors: ambience and lure mode (`web/ambience.ts`, `web/porchSounds.ts`)
+Local audio only: neither ever opens the (billed) voice session. `AmbienceScheduler` (pure logic, unit tested with fake time) runs every 200 ms on the tracker state, the far-away people count, whether the creature is talking (voice audible or the engine thinking), the kill switch and the two Settings toggles. `PorchSoundPlayer` plays its decisions through a `MediaStreamAudioDestinationNode` and an `<audio>` element, so `setSinkId` sends them to the same USB speaker as the voice.
+- **Silence first:** anyone close (tracker not `empty`), the creature talking, or the kill switch stops whatever is playing at once (50 ms fade) and plays nothing.
+- **Ambience:** synthesized with Web Audio (creak, owl, thunder, wind, cackle, howl, bell), at low volume with per-sound levels evened out. It plays every 20–60 s at random, never the same sound twice in a row, and waits a fresh delay after each visit.
+- **Lure:** someone in view but below `minArea` for 1 s (detection gaps under 1 s tolerated) gets a recorded call-out from `web/public/lure/<character>/`. It never repeats a clip twice in a row, has a 45 s cooldown plus up to 15 s of jitter (configurable in Settings), and waits 30 s after visitors were close or the creature talked. A call-out interrupts ambience. Clips come from `scripts/make-lure-clips.ts` (OpenAI TTS, generated once and committed).
+
 ## Characters (`prompts/`)
 
 - `base.md` holds the shared rules, so every character is kid-safe:
