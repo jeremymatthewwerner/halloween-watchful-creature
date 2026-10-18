@@ -64,6 +64,10 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**.
 
   Each tap is noted in the Conversation panel and today's log.
 - **Make it say…:** type a line and the creature says it in character.
+- **Voice:** a picker listing every voice the current engine can use. Each shows what OpenAI's docs say about it (for GPT-Live: language, regional influence, presentation and source; the docs don't describe tone) and our own notes from testing. English voices come first; the other-language voices carry their language's accent.
+  - The voice in effect is marked **current**, with where it comes from. Order: your pick here (remembered in this browser, per engine) > `VOICE` in `.env` > the character's default. **Use default** forgets your pick.
+  - A new voice starts with the next voice session. While a session is running with another voice, **🔄 Restart voice session now** ends it; if visitors are there it reconnects right away with the new voice.
+  - The server only accepts voices on its list (`shared/voices.ts`); anything else is ignored and logged.
 - **Conversation:** live transcript plus system notes.
 - **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery** and **all logs**.
 
@@ -94,7 +98,7 @@ GPT-Live costs about **$0.05 per minute** of voice, plus small vision-model call
 | `ENGINE` | `live` | `live` = GPT-Live; `realtime` = gpt-realtime-2.1 (fallback with native image input) |
 | `VISION_MODEL` | `gpt-6-luna` | Vision-capable Responses model that describes costumes for GPT-Live |
 | `VISION_REASONING_EFFORT` | `low` | Leave empty for non-reasoning models |
-| `VOICE` | (character's) | Override the voice, e.g. `vesper`, `gleam`, `meridian` |
+| `VOICE` | (character's) | Fallback voice, e.g. `vesper`, `gleam`, `meridian`. Used when nothing is picked in the dashboard's **Voice** picker (which overrides it); beats the character's default |
 | `BODY_SERIAL_PORT` | `auto` | `auto` finds the Arduino; `none` disables it; or a device path |
 | `BODY_MODES` | `eyes` | Any of `eyes,jaw,relay` |
 | `IDLE_CLOSE_SECONDS` | `180` | Close the voice session after the porch has been empty this long |

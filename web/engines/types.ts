@@ -69,4 +69,6 @@ export interface EngineDeps {
   lastVoiceAt(): number;
   /** What it said and saw earlier tonight, kept across sessions (optional). */
   evening?: EveningMemory;
+  /** The voice picked on the dashboard, read as each session starts (null: the server's default). */
+  voice?: () => string | null;
 }

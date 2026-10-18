@@ -2,7 +2,8 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { config } from "../server/config.ts";
-import { createLiveSession, describeFrame } from "../server/openai.ts";
+import { loadCharacter } from "../server/characters.ts";
+import { createLiveSession, describeFrame, sessionVoice, voiceFor } from "../server/openai.ts";
 
 /** A fake OpenAI API that records requests. */
 let server: Server;
@@ -132,5 +133,43 @@ describe("OpenAI calls", () => {
     const plain = await describeFrame(config, { image, reason: "background" });
     expect(plain).toMatchObject({ text: "NEW: whoever.", sameGroup: undefined });
     visionReply = "A witch.";
+  });
+});
+
+describe("session voice", () => {
+  const pumpkin = loadCharacter("pumpkin");
+  const live = { ...config, engine: "live" as const, voiceOverride: "" };
+  const realtime = { ...config, engine: "realtime" as const, voiceOverride: "" };
+
+  it("uses the dashboard pick, else VOICE in .env, else the character's voice for the engine", () => {
+    expect(sessionVoice(live, pumpkin, "gleam")).toEqual({ voice: "gleam", source: "dashboard", rejected: false });
+    expect(sessionVoice({ ...live, voiceOverride: "ripple" }, pumpkin, "gleam")).toMatchObject({ voice: "gleam", source: "dashboard" });
+    expect(sessionVoice({ ...live, voiceOverride: "ripple" }, pumpkin)).toEqual({ voice: "ripple", source: "env", rejected: false });
+    expect(sessionVoice(live, pumpkin)).toEqual({ voice: pumpkin.voice, source: "character", rejected: false });
+    expect(sessionVoice(realtime, pumpkin)).toEqual({ voice: pumpkin.realtimeVoice, source: "character", rejected: false });
+    // Without a pick, voiceFor keeps its old meaning (VOICE in .env, else the character's).
+    expect(voiceFor({ ...live, voiceOverride: "ripple" }, pumpkin)).toBe("ripple");
+    expect(voiceFor(live, pumpkin)).toBe(pumpkin.voice);
+  });
+
+  it("never passes a voice that isn't on the engine's allowlist", () => {
+    for (const bad of ["evil", "MERIDIAN", "gleam; drop", 7, { voice: "gleam" }, ["gleam"], true]) {
+      const choice = sessionVoice({ ...live, voiceOverride: "ripple" }, pumpkin, bad);
+      expect(choice).toEqual({ voice: "ripple", source: "env", rejected: true });
+    }
+    // A GPT-Live voice isn't valid for gpt-realtime, and vice versa.
+    expect(sessionVoice(realtime, pumpkin, "ripple")).toEqual({ voice: pumpkin.realtimeVoice, source: "character", rejected: true });
+    expect(sessionVoice(live, pumpkin, "cedar")).toMatchObject({ voice: pumpkin.voice, rejected: true });
+    expect(sessionVoice(realtime, pumpkin, "cedar")).toMatchObject({ voice: "cedar", source: "dashboard", rejected: false });
+    // No pick at all isn't a rejection.
+    for (const none of [undefined, null, ""]) expect(sessionVoice(live, pumpkin, none).rejected).toBe(false);
+  });
+
+  it("sends the chosen voice to GPT-Live", async () => {
+    // The fake API's key and URL are set in beforeAll, after `live` was copied.
+    const { voice } = sessionVoice(live, pumpkin, "stone");
+    await createLiveSession({ ...config, engine: "live" }, { sdp: "v=0 offer", instructions: "Be a pumpkin.", voice });
+    const req = requests.filter((r) => r.url === "/v1/live/sessions").at(-1)!;
+    expect((req.body.session as { audio: unknown }).audio).toEqual({ output: { voice: "stone" } });
   });
 });

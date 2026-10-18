@@ -43,6 +43,8 @@ export interface ClientConfig {
   hasApiKey: boolean;
   /** Today's on-disk log (log.html), or null when disk logging is off. */
   sessionLogUrl: string | null;
+  /** The voice fallbacks under the dashboard's pick: VOICE in .env (null if unset), then the character's default. */
+  voice: { env: string | null; character: string };
 }
 
 /** Messages from the browser to the server over /ws/body. */

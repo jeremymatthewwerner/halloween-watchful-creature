@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildInstructions, listCharacterIds, loadCharacter, parseCharacterFile } from "../server/characters.ts";
 import { extractOutputText } from "../server/openai.ts";
 import { Transcript } from "../web/transcript.ts";
+import { isKnownVoice } from "../shared/voices.ts";
 
 describe("characters", () => {
   it("loads every character file", () => {
@@ -50,6 +51,14 @@ describe("characters", () => {
   it("validates frontmatter", () => {
     expect(() => parseCharacterFile("x", "no frontmatter")).toThrow(/frontmatter/);
     expect(() => parseCharacterFile("x", "---\nname: X\n---\nbody")).toThrow(/is missing/);
+  });
+
+  it("gives every character voices from the allowlists", () => {
+    for (const id of listCharacterIds()) {
+      const c = loadCharacter(id);
+      expect(isKnownVoice("live", c.voice), `${id} voice ${c.voice}`).toBe(true);
+      expect(isKnownVoice("realtime", c.realtimeVoice), `${id} realtime_voice ${c.realtimeVoice}`).toBe(true);
+    }
   });
 
   it("rejects path traversal in character ids", () => {

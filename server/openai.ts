@@ -1,6 +1,7 @@
 import type { Config } from "./config.ts";
 import type { Character } from "./characters.ts";
 import type { LookReason, VisionRequest, VisionResult } from "../shared/types.ts";
+import { isKnownVoice, resolveVoice, type VoiceChoice } from "../shared/voices.ts";
 
 export class OpenAIError extends Error {
   constructor(
@@ -210,7 +211,23 @@ export function extractOutputText(data: ResponsesResult): string {
   return parts.join("\n").trim();
 }
 
-export function voiceFor(config: Config, character: Character): string {
-  if (config.voiceOverride) return config.voiceOverride;
+/** The character's own voice for the configured engine (its frontmatter `voice` or `realtime_voice`). */
+export function characterVoice(config: Config, character: Character): string {
   return config.engine === "live" ? character.voice : character.realtimeVoice;
+}
+
+/** VOICE in .env, else the character's default. */
+export function voiceFor(config: Config, character: Character): string {
+  return sessionVoice(config, character).voice;
+}
+
+/**
+ * The voice for a new session: `requested` (the dashboard's pick) only if it's on this engine's
+ * allowlist, else VOICE in .env, else the character's default. Anything else that was asked for is
+ * never sent to OpenAI; `rejected` says it was ignored.
+ */
+export function sessionVoice(config: Config, character: Character, requested?: unknown): VoiceChoice & { rejected: boolean } {
+  const choice = resolveVoice(config.engine, { picked: requested, env: config.voiceOverride, character: characterVoice(config, character) });
+  const asked = requested !== undefined && requested !== null && requested !== "";
+  return { ...choice, rejected: asked && !isKnownVoice(config.engine, requested) };
 }
