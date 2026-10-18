@@ -36,6 +36,16 @@ describe("spookiness levels", () => {
     expect(teens).toMatch(/young child.*scared or says so, switch to gentle/s);
   });
 
+  it("can't push past the hard limits in base.md: scary restates them, and every level keeps the usual rules", () => {
+    const [teens] = spookyRules(3);
+    expect(teens).toMatch(/never gory, cruel or mean; no jump-scares/);
+    for (const level of [0, 2, 3] as const) {
+      // Every level starts the way base.md's "Never truly scary" rule refers to it.
+      expect(spookyRules(level)[0]).toMatch(/^Spookiness tonight: /);
+      expect(standingInstructions([], level)).toContain("Your usual rules still apply.");
+    }
+  });
+
   it("uses kid-first wording: short, simple, no French and no chef talk", () => {
     const all = SPOOKY_LEVELS.map((l) => l.rule).join(" ");
     expect(all).not.toMatch(/bonsoir|magnifique|mon ami|ooh la la|chef|kiss|cuisine|palate|recipe|scary voice|blood|gore\b|kill|die/i);

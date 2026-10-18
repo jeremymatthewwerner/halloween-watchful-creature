@@ -538,7 +538,117 @@ describe("LiveEngine: tonight's memory and running gags", () => {
   });
 });
 
+describe("LiveEngine: big groups", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const commentary = (e: TestLive) => e.sent.filter((s) => s.type === "session.commentary.append").map((s) => String(s.content));
+  const notes = (e: TestLive) => e.events.flatMap((ev) => (ev.type === "note" ? [ev.text] : []));
+
+  it("gives a big group one group welcome, a shout-out or two and a group moment, and logs it", async () => {
+    const e = new TestLive();
+    e.vision = "Five visitors: a witch, a dinosaur, a ghost, an astronaut and a bumblebee.";
+    await e.greet("img", "arrived", { count: 5 });
+    const [said] = commentary(e);
+    expect(said).toContain("A big group just walked up to you (about 5 people)");
+    expect(said).toContain("don't go costume by costume");
+    expect(said).toContain("shout out one or two standout costumes");
+    expect(said).toContain("Don't start a mini-game");
+    expect(said).not.toContain("praise each costume's standout detail");
+    expect(said).toMatch(/For variety this time: .+ Finish .+ Use your own words\./);
+    expect(notes(e)).toEqual(["big group (5)"]);
+    expect(e.events.filter((ev) => ev.type === "greeting")).toHaveLength(1);
+  });
+
+  it("greets a small group costume by costume, as before", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived", { count: 3 });
+    expect(commentary(e)[0]).toContain("New visitors just walked up");
+    expect(commentary(e)[0]).not.toContain("A big group");
+    expect(commentary(e)[0]).not.toContain("costume by costume");
+    expect(notes(e)).not.toContainEqual(expect.stringContaining("big group"));
+  });
+
+  it("counts a big group from the vision description when the tracker saw fewer", async () => {
+    const e = new TestLive();
+    e.vision = "Four visitors close to the decoration, bunched together: two ghosts, a pirate and a cat.";
+    await e.greet("img", "arrived", { count: 2 });
+    expect(commentary(e)[0]).toContain("about 4 people");
+    expect(notes(e)).toEqual(["big group (4)"]);
+  });
+
+  it("treats a group that keeps growing as a line forming", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived", { count: 2 });
+    await e.greet("img", "grew", { count: 3, grows: 2 });
+    const said = commentary(e).at(-1)!;
+    expect(said).toContain("it's a big group now (about 3 people)");
+    expect(said).toContain("give the newcomers one quick group welcome");
+    expect(notes(e)).toContain("big group (3): a line is forming");
+  });
+
+  it("makes the quick hello a group welcome, then shout-outs once vision answers", async () => {
+    const e = new TestLive();
+    let finishLook = () => {};
+    e.lookGate = new Promise<void>((resolve) => (finishLook = resolve));
+    const greeting = e.greet("img", "arrived", { count: 6 });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(commentary(e)).toEqual([expect.stringContaining("give the whole group one quick, warm welcome")]);
+    finishLook();
+    await greeting;
+    const followUp = commentary(e)[1]!;
+    expect(followUp).toContain("Your eyes have focused.");
+    expect(followUp).toContain("Now shout out one or two standout costumes, not costume by costume");
+    expect(followUp).toContain("Don't start a mini-game");
+    expect(notes(e)).toEqual(["big group (6)"]);
+  });
+
+  it("nudges a big group with group wording", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived", { count: 4 });
+    e.sent = [];
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(e.sent).toEqual([expect.objectContaining({ type: "session.instructions.append", content: expect.stringContaining("big group of visitors is waiting") })]);
+  });
+
+  it("varies the group moment and never repeats it twice in a row", async () => {
+    const e = new TestLive();
+    const finishes: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      e.sent = [];
+      await e.greet("img", "arrived", { count: 5 });
+      finishes.push(/Finish [^.!]*[.!"]+/.exec(commentary(e)[0]!)![0]);
+    }
+    for (let i = 1; i < finishes.length; i++) expect(finishes[i]).not.toBe(finishes[i - 1]);
+    expect(new Set(finishes).size).toBeGreaterThan(2);
+  });
+
+  it("still stays quiet for the same big group back soon", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived", { count: 5 });
+    e.sameGroup = true;
+    e.sent = [];
+    await e.greet("img", "returned", { awayMs: 20_000, count: 5 });
+    expect(e.sent.map((s) => s.type)).toEqual(["session.thinking.append"]);
+  });
+});
+
 describe("RealtimeEngine", () => {
+  it("gives a big group the same group greeting, and logs it", async () => {
+    const e = new TestRealtime();
+    const events: EngineEvent[] = [];
+    e.on((ev) => events.push(ev));
+    await e.greet("img", "arrived", { count: 4 });
+    const item = e.sent[0]!.item as { content: { type: string; text?: string }[] };
+    expect(item.content[1]!.text).toContain("A big group just walked up to you (about 4 people)");
+    expect(item.content[1]!.text).toContain("Don't start a mini-game");
+    expect(events).toContainEqual({ type: "note", text: "big group (4)" });
+    e.server({ type: "response.done", response: {} });
+    e.sent = [];
+    await e.greet("img", "arrived", { count: 2 });
+    expect((e.sent[0]!.item as { content: { text?: string }[] }).content[1]!.text).toContain("New visitors just walked up");
+  });
+
   it("greets with the image and asks for a response", async () => {
     const e = new TestRealtime();
     await e.greet("img", "arrived");

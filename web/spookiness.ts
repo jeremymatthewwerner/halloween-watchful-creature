@@ -45,8 +45,8 @@ export const SPOOKY_LEVELS: readonly SpookyInfo[] = [
     name: "scary",
     rule:
       "Spookiness tonight: scary, for teens. Be creepier and more dramatic: a low, eerie voice, long pauses, spooky " +
-      "sounds, a whispered ghost-story line. Still never gory, cruel or mean. If a young child walks up, or anyone " +
-      "seems scared or says so, switch to gentle and cheerful right away.",
+      "sounds, a whispered ghost-story line. Still never gory, cruel or mean; no jump-scares. If a young child " +
+      "walks up, or anyone seems scared or says so, switch to gentle and cheerful right away.",
   },
 ];
 

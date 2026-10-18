@@ -35,6 +35,9 @@ export class Director {
   private lastRecheckAt = -Infinity;
   private connecting: Promise<void> | null = null;
   private retryAt = 0;
+  /** The group in view (the tracker's count) and how many times it has grown this visit, for big-group mode. */
+  private count = 0;
+  private grows = 0;
 
   constructor(
     private readonly deps: DirectorDeps,
@@ -61,6 +64,8 @@ export class Director {
       case "arrived":
         this.present = true;
         this.idleCloseAt = null;
+        this.count = event.count;
+        this.grows = 0;
         if (!this.autopilot) return;
         log(`Visitors arrived (${event.count})`);
         engine.setMicEnabled(true);
@@ -68,6 +73,8 @@ export class Director {
         await this.greet("arrived", {}, this.ensureOpen());
         break;
       case "grew":
+        this.count = event.count;
+        this.grows++;
         if (!this.autopilot || engine.status !== "open") return;
         log(`More visitors (${event.from} → ${event.count})`);
         await this.greet("grew");
@@ -75,6 +82,8 @@ export class Director {
       case "returned": {
         this.present = true;
         this.idleCloseAt = null;
+        this.count = event.count;
+        this.grows = 0;
         if (!this.autopilot) return;
         engine.setMicEnabled(true);
         // Same people or the next group? The engine compares a fresh look with the last group:
@@ -84,6 +93,7 @@ export class Director {
         break;
       }
       case "gap": {
+        this.count = event.count;
         const seconds = Math.round(event.awayMs / 1000);
         if (!this.autopilot || engine.status !== "open") return;
         if (this.deps.now() - this.lastRecheckAt < this.opts.recheckCooldownMs) {
@@ -98,6 +108,7 @@ export class Director {
       }
       case "left":
         this.present = false;
+        this.count = this.grows = 0;
         this.idleCloseAt = this.deps.now() + this.opts.idleCloseMs;
         log("Visitors left");
         if (this.autopilot) engine.setMicEnabled(false);
@@ -150,10 +161,13 @@ export class Director {
     return this.deps.isSpeaking() || this.deps.engine.isThinking();
   }
 
-  /** `ready`: the session connecting; the engine looks meanwhile and greets once it's open. */
+  /**
+   * `ready`: the session connecting; the engine looks meanwhile and greets once it's open.
+   * The group's size goes along, so a big group gets one quick group greeting (web/bigGroup.ts).
+   */
   private async greet(reason: GreetReason, opts: { awayMs?: number } = {}, ready?: Promise<boolean>): Promise<void> {
     this.lastObserveAt = this.deps.now();
-    await this.deps.engine.greet(this.deps.capture(), reason, { ...opts, ready });
+    await this.deps.engine.greet(this.deps.capture(), reason, { ...opts, count: this.count, grows: this.grows, ready });
   }
 
   private async observe(): Promise<void> {

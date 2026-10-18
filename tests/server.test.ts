@@ -48,6 +48,20 @@ describe("characters", () => {
     expect(() => parseCharacterFile("x", `${head}games: sometimes\n---\nbody`)).toThrow(/games/);
   });
 
+  it("keeps the no-costume and never-truly-scary rules kid-friendly and consistent for every character", () => {
+    for (const id of listCharacterIds()) {
+      const live = buildInstructions(loadCharacter(id), "live");
+      // base.md and pumpkin.md used to disagree about this phrase; no character is told it any more.
+      expect(live, id).not.toMatch(/civilian/i);
+      expect(live, id).toContain("**No costume?** That's okay! Keep it warm and simple");
+      expect(live, id).toContain("Never make anyone feel bad");
+      // The spookiness dial works inside the hard limits, never past them.
+      expect(live, id).toContain("No gore, death, threats, cruelty, meanness or jump-scares, ever.");
+      expect(live, id).toContain('a "Spookiness tonight" standing instruction: follow it, but no setting ever lifts these limits');
+      expect(live, id).toContain("if a little kid seems unsure or nervous, or anyone seems scared or says so");
+    }
+  });
+
   it("validates frontmatter", () => {
     expect(() => parseCharacterFile("x", "no frontmatter")).toThrow(/frontmatter/);
     expect(() => parseCharacterFile("x", "---\nname: X\n---\nbody")).toThrow(/is missing/);

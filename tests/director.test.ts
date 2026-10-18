@@ -19,7 +19,7 @@ class FakeEngine implements Engine {
     this.calls.push("close");
     this.status = "closed";
   });
-  greet = vi.fn(async (image: string | null, reason: string, opts?: { awayMs?: number; ready?: Promise<boolean> }) => {
+  greet = vi.fn(async (image: string | null, reason: string, opts?: { awayMs?: number; count?: number; grows?: number; ready?: Promise<boolean> }) => {
     // Like the real engines: only greet once the session is open.
     if (opts?.ready && !(await opts.ready)) return;
     this.calls.push(`greet:${reason}:${image}${opts?.awayMs ? `:${opts.awayMs}` : ""}`);
@@ -84,6 +84,20 @@ describe("Director", () => {
     await director.onVisitorEvent({ type: "arrived", count: 1 });
     await director.onVisitorEvent({ type: "grew", count: 3, from: 1 });
     expect(engine.calls.at(-1)).toBe("greet:grew:frame");
+  });
+
+  it("tells the engine the group's size and how often it grew this visit, for big-group mode", async () => {
+    const { engine, director } = setup();
+    const sizes = () => engine.greet.mock.calls.map(([, reason, opts]) => `${reason}:${opts?.count}:${opts?.grows}`);
+    await director.onVisitorEvent({ type: "arrived", count: 2 });
+    await director.onVisitorEvent({ type: "grew", count: 3, from: 2 });
+    await director.onVisitorEvent({ type: "grew", count: 5, from: 3 });
+    await director.greetNow();
+    expect(sizes()).toEqual(["arrived:2:0", "grew:3:1", "grew:5:2", "manual:5:2"]);
+    // A new visit starts counting again.
+    await director.onVisitorEvent({ type: "left" });
+    await director.onVisitorEvent({ type: "returned", count: 4, awayMs: 120_000 });
+    expect(sizes().at(-1)).toBe("returned:4:0");
   });
 
   it("sends background frames while visitors stay, but not while speaking", async () => {

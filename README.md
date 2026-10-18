@@ -6,6 +6,7 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**: a dapper pumpkin i
 
 **What it does**
 - **Greets fast:** starts waking the moment someone appears, says a quick hello while the camera's look is still being described, then praises each costume's **standout detail**.
+- **Keeps big groups moving:** for 4 or more visitors, or a group that keeps growing into a line, it gives one quick group welcome, a shout-out to one or two standout costumes and a group moment ("everybody say trick or treat!"), with no mini-game, instead of going costume by costume.
 - **Notices change:** new visitors, a second person joining, someone swapping in, and the same person back in a different hat (a playful remark), or back soon (silence) or after a while (a "welcome back").
 - **Doesn't repeat itself:** remembers what it said tonight across voice sessions, varies its openings and verdicts, and keeps running gags ("visitor number 50!", "the fourth dinosaur tonight!").
 - **Plays:** an occasional riddle for "trick", a roar contest, or "guess what I am".
