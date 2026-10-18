@@ -289,7 +289,9 @@ async function main(): Promise<void> {
 
   const modes = new ModePanel($("modes"), log);
   const voices = new VoicePanel($("voice-picker"), cfg, log);
-  void new RehearsalPanel(ui.rehearsal, ui.video.parentElement!, rehearsal, log).loadDays();
+  const rehearsalPanel = new RehearsalPanel(ui.rehearsal, ui.video.parentElement!, rehearsal, log);
+  void rehearsalPanel.loadDays();
+  void rehearsalPanel.loadGenerated();
   clientConfig = cfg;
   modePanel = modes;
   startWake = (gesture) => wake(cfg, body, minArea, modes, voices, gesture);

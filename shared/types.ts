@@ -104,3 +104,53 @@ export interface ConversationLogRequest {
     rehearsal?: boolean;
   }[];
 }
+
+/** Rehearsal mode: a made-up group of trick-or-treaters for one generated image. */
+export interface VisitorScenario {
+  /** How many people are in the picture (1–4): the rehearsal's simulated detection count. */
+  groupSize: number;
+  /** One costume id per person (see COSTUMES in server/rehearsalGen.ts). */
+  costumes: string[];
+  lighting: "bright" | "dim" | "backlit" | "lantern";
+  style: "animated" | "storybook" | "clay";
+}
+
+/** A generated rehearsal visitor image cached on disk, with the scenario it was drawn from. */
+export interface GeneratedVisitor extends VisitorScenario {
+  id: string;
+  /** ISO time it was generated. */
+  createdAt: string;
+  /** Human-readable costume names, one per person. */
+  costumeLabels: string[];
+  model: string;
+  quality: string;
+  size: string;
+  /** What it cost in US dollars: from the API's reported token usage, or the estimate if it reported none. */
+  costUsd: number;
+  costEstimated: boolean;
+}
+
+export interface GeneratedVisitorList {
+  items: GeneratedVisitor[];
+  /** Estimated cost of generating one more image, and how it'd be made. */
+  estimate: { perImageUsd: number; model: string; quality: string; size: string };
+  hasApiKey: boolean;
+  /** Most images one generate request may ask for. */
+  maxPerRequest: number;
+}
+
+export interface GenerateVisitorsRequest {
+  /** How many images (1 to maxPerRequest); default 1. */
+  count?: number;
+  /** Fix the group size (1–4) instead of picking one at random. */
+  groupSize?: number;
+  /** Fix the costumes (known costume ids); their number sets the group size. */
+  costumes?: string[];
+  lighting?: VisitorScenario["lighting"];
+}
+
+export interface GenerateVisitorsResult {
+  items: GeneratedVisitor[];
+  /** Images that failed (e.g. the API refused a prompt); the rest are still returned. */
+  errors: string[];
+}

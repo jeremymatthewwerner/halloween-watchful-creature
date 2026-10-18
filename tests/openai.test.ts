@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { config } from "../server/config.ts";
 import { loadCharacter } from "../server/characters.ts";
-import { createLiveSession, describeFrame, sessionVoice, voiceFor } from "../server/openai.ts";
+import { createLiveSession, describeFrame, generateImage, sessionVoice, voiceFor } from "../server/openai.ts";
 
 /** A fake OpenAI API that records requests. */
 let server: Server;
@@ -32,6 +32,14 @@ beforeAll(async () => {
         return;
       }
       res.end(JSON.stringify({ output: [{ type: "message", content: [{ type: "output_text", text: visionReply }] }], usage: { input_tokens: 90, output_tokens: 5 } }));
+    } else if (req.url === "/v1/images/generations") {
+      res.end(
+        JSON.stringify({
+          created: 1,
+          data: [{ b64_json: Buffer.from("fake-jpeg").toString("base64") }],
+          usage: { input_tokens: 310, output_tokens: 180, input_tokens_details: { text_tokens: 310, image_tokens: 0 } },
+        }),
+      );
     } else {
       res.statusCode = 404;
       res.end("{}");
@@ -133,6 +141,22 @@ describe("OpenAI calls", () => {
     const plain = await describeFrame(config, { image, reason: "background" });
     expect(plain).toMatchObject({ text: "NEW: whoever.", sameGroup: undefined });
     visionReply = "A witch.";
+  });
+
+  it("generates a rehearsal image as a JPEG from b64_json, with its token usage", async () => {
+    const result = await generateImage(config, { prompt: "A cartoon pirate.", model: "gpt-image-2.5-flare", size: "1536x1024", quality: "low" });
+    expect(result.image.toString()).toBe("fake-jpeg");
+    expect(result.usage).toEqual({ inputTokens: 310, textInputTokens: 310, outputTokens: 180 });
+    const req = requests.find((r) => r.url === "/v1/images/generations")!;
+    expect(req.body).toEqual({
+      model: "gpt-image-2.5-flare",
+      prompt: "A cartoon pirate.",
+      n: 1,
+      size: "1536x1024",
+      quality: "low",
+      output_format: "jpeg",
+      output_compression: 80,
+    });
   });
 });
 

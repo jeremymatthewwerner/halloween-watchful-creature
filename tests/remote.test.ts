@@ -153,7 +153,7 @@ describe("checkAccess", () => {
   it("keeps the phone out of the dashboard-only routes, even signed in", () => {
     const auth = new RemoteAuth({ pin: PIN });
     const cookie = `${SESSION_COOKIE}=${signIn(auth)}`;
-    for (const path of ["/api/session", "/api/vision", "/api/conversation", "/api/remote/state", "/api/remote/commands", "/api/remote/alert", "/ws/body"]) {
+    for (const path of ["/api/session", "/api/vision", "/api/rehearsal/generate", "/api/rehearsal/generated", "/api/conversation", "/api/remote/state", "/api/remote/commands", "/api/remote/alert", "/ws/body"]) {
       expect(checkAccess(req({ ...PHONE, path, method: "POST", cookie }), auth)).toMatchObject({ allow: false, status: 403 });
     }
     // The full dashboard (the brain) isn't for the phone either.

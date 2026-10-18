@@ -18,6 +18,8 @@ const PUBLIC = new Set(["GET /remote", "GET /remote.js", "POST /api/remote/login
 const DASHBOARD_ONLY = [
   "/api/session",
   "/api/vision",
+  // Rehearsal: image generation is billed, and deleting cached images can't be undone.
+  "/api/rehearsal",
   "/api/conversation",
   "/api/remote/state",
   "/api/remote/commands",
