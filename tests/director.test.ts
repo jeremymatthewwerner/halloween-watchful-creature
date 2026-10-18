@@ -231,6 +231,40 @@ describe("Director", () => {
     expect(engine.connect).toHaveBeenCalledTimes(2);
   });
 
+  it("greets visitors whose session failed to start once it reconnects, and is quiet during the back-off", async () => {
+    // Found while soak-testing with a flaky API: the reconnect only caught up silently, so the group was never greeted.
+    const { engine, director, logs, advance } = setup();
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 2 });
+    engine.failConnect = false;
+    const before = logs.length;
+    for (let i = 0; i < 10; i++) {
+      advance(1000);
+      await director.tick();
+    }
+    expect(logs.slice(before)).toEqual([]);
+    advance(6000);
+    await director.tick();
+    expect(engine.calls).toEqual(["connect", "connect", "greet:arrived:frame"]);
+    // Greeted once: the next drop only catches up silently.
+    engine.status = "closed";
+    await director.tick();
+    expect(engine.calls.slice(-2)).toEqual(["connect", "observe:frame"]);
+  });
+
+  it("doesn't owe a greeting to visitors who left before the session came back", async () => {
+    const { engine, director, advance } = setup();
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    engine.failConnect = false;
+    advance(16_000);
+    engine.calls = [];
+    await director.onVisitorEvent({ type: "returned", count: 1, awayMs: 20_000 });
+    await director.tick();
+    expect(engine.calls).toEqual(["connect", "greet:returned:frame:20000"]);
+  });
+
   it("kill switch closes the session and ignores visitors until woken", async () => {
     const { engine, director } = setup();
     await director.onVisitorEvent({ type: "arrived", count: 1 });
@@ -243,6 +277,28 @@ describe("Director", () => {
     expect(engine.connect).toHaveBeenCalledTimes(1);
     director.wake();
     expect(engine.mic).toBe(true);
+  });
+
+  it("greet now on an empty porch still sleeps the session after the idle timeout", async () => {
+    // Found by the soak test: nothing scheduled the close, so the session stayed open (billed) until visitors came and went.
+    const { engine, director, advance } = setup();
+    await director.greetNow();
+    expect(engine.status).toBe("open");
+    advance(30_000);
+    await director.tick();
+    expect(engine.close).not.toHaveBeenCalled();
+    advance(31_000);
+    await director.tick();
+    expect(engine.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("greet now while visitors are there leaves the session open", async () => {
+    const { engine, director, advance } = setup();
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.greetNow();
+    advance(120_000);
+    await director.tick();
+    expect(engine.close).not.toHaveBeenCalled();
   });
 
   it("greet now connects even during the failure backoff", async () => {

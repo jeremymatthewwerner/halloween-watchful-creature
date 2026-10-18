@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildInstructions, listCharacterIds, loadCharacter, parseCharacterFile } from "../server/characters.ts";
 import { extractOutputText } from "../server/openai.ts";
-import { Transcript } from "../web/transcript.ts";
+import { LineElements, Transcript } from "../web/transcript.ts";
 import { isKnownVoice } from "../shared/voices.ts";
 
 describe("characters", () => {
@@ -90,5 +90,24 @@ describe("Transcript", () => {
     t.add("creature", "Five pumpkins!", 5000);
     expect(t.lines.map((l) => l.text)).toEqual(["What do you think?", "Ooh", "note", "Five pumpkins!"]);
     expect(t.recent()).toBe("Visitor: What do you think?\nCreature: Ooh\nCreature: Five pumpkins!");
+  });
+
+  it("forgets the elements of lines that scrolled off the Conversation panel", () => {
+    // Found by the soak test: every line ever shown (and its detached <li>) used to be kept all night.
+    const t = new Transcript(1000, 200);
+    const shown = new LineElements<string>(3);
+    const removed: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const line = t.add("system", `note ${i}`, i);
+      expect(shown.get(line)).toBeUndefined();
+      removed.push(...shown.add(line, `li ${i}`));
+      expect(shown.get(line)).toBe(`li ${i}`);
+    }
+    expect(removed).toEqual(["li 0", "li 1"]);
+    expect(shown.size).toBe(3);
+    // A line still streaming keeps its element.
+    const speech = t.add("creature", "Oh", 10);
+    shown.add(speech, "li speech");
+    expect(shown.get(t.add("creature", " my!", 11))).toBe("li speech");
   });
 });

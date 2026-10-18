@@ -23,6 +23,7 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**: a dapper pumpkin i
 | [docs/PROP_BUILD.md](docs/PROP_BUILD.md) | Building the pumpkin, wiring the eyes, porch checklist |
 | [docs/templates/pumpkin-carving-template.pdf](docs/templates/pumpkin-carving-template.pdf) | Printable, actual-size carving template |
 | [docs/PI_MODE.md](docs/PI_MODE.md) | Running on a Raspberry Pi 5 |
+| [docs/SOAK_TEST.md](docs/SOAK_TEST.md) | The soak test: a whole evening at high speed, against a mock OpenAI |
 
 ## Quick start (Mac)
 
@@ -209,7 +210,10 @@ Set `BODY_DEBUG=1` to log the commands sent to the Arduino.
 npm test          # unit tests (tracker, director, engines, vision prompts, logs, gallery, remote, watchdog, body protocol, …)
 npm run typecheck
 npm run build
+npm run soak      # soak test: a whole Halloween evening in about 75 minutes, against a mock OpenAI (free)
 ```
+
+**Soak test:** `npm run soak` runs the real server and the real dashboard (headless Chrome, fake camera and mic, rehearsal mode, faked WebRTC) against a local mock of OpenAI, plays about 140 visitor groups plus phone-remote presses, reconnecting streams and an outage, and checks memory, timers, streams, disk and stalls. No key needed and no real API calls. `--hours 0.5` for a quick run. Details and what it can't cover: [docs/SOAK_TEST.md](docs/SOAK_TEST.md).
 
 **Layout:**
 - `server/`: Node server that starts sessions, runs the vision backend and drives the Arduino.

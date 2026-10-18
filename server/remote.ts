@@ -223,6 +223,11 @@ export class Remote {
     app.get("/api/remote/heartbeat", (c) => c.text(String(this.lastStateAt === null ? -1 : Math.floor((this.now() - this.lastStateAt) / 1000))));
   }
 
+  /** Open streams: phones following the remote, and dashboards listening for its commands. */
+  streamCounts(): { phones: number; dashboards: number } {
+    return { phones: this.snapshotListeners.size, dashboards: this.commandListeners.size };
+  }
+
   /** Starts watching for a silent dashboard and an unplugged Arduino. */
   start(everyMs = 5_000): NodeJS.Timeout {
     const timer = setInterval(() => this.tick(), everyMs);

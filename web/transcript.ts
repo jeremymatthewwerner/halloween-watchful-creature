@@ -8,6 +8,37 @@ export interface TranscriptLine {
   at: number;
 }
 
+/**
+ * The on-screen element of each of the newest `max` lines, so streaming fragments update the right
+ * one. Adding past `max` forgets the oldest and hands back its element to remove from the page:
+ * keeping every line ever shown would hold all of them (and their detached elements) all night.
+ */
+export class LineElements<E> {
+  private readonly map = new Map<TranscriptLine, E>();
+
+  constructor(private readonly max = 200) {}
+
+  get(line: TranscriptLine): E | undefined {
+    return this.map.get(line);
+  }
+
+  /** Remembers `element` for `line`; returns the elements of lines that no longer fit. */
+  add(line: TranscriptLine, element: E): E[] {
+    this.map.set(line, element);
+    const evicted: E[] = [];
+    for (const [old, el] of this.map) {
+      if (this.map.size <= this.max) break;
+      this.map.delete(old);
+      evicted.push(el);
+    }
+    return evicted;
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+}
+
 /** Groups streaming transcript fragments into lines per speaker. */
 export class Transcript {
   readonly lines: TranscriptLine[] = [];

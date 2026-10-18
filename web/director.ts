@@ -35,6 +35,8 @@ export class Director {
   private lastRecheckAt = -Infinity;
   private connecting: Promise<void> | null = null;
   private retryAt = 0;
+  /** Visitors are here but weren't greeted (their session failed to start): greet them on reconnect. */
+  private owedGreeting = false;
 
   constructor(
     private readonly deps: DirectorDeps,
@@ -65,7 +67,7 @@ export class Director {
         log(`Visitors arrived (${event.count})`);
         engine.setMicEnabled(true);
         // The engine starts looking right away, while the session finishes connecting.
-        await this.greet("arrived", {}, this.ensureOpen());
+        await this.greetWhenOpen("arrived");
         break;
       case "grew":
         if (!this.autopilot || engine.status !== "open") return;
@@ -80,7 +82,7 @@ export class Director {
         // Same people or the next group? The engine compares a fresh look with the last group:
         // new visitors get a full greeting, the same ones get silence or a quick welcome back.
         log(`Someone's here after ${Math.round(event.awayMs / 1000)}s; checking whether they're new`);
-        await this.greet("returned", { awayMs: event.awayMs }, this.ensureOpen());
+        await this.greetWhenOpen("returned", { awayMs: event.awayMs });
         break;
       }
       case "gap": {
@@ -98,6 +100,7 @@ export class Director {
       }
       case "left":
         this.present = false;
+        this.owedGreeting = false;
         this.idleCloseAt = this.deps.now() + this.opts.idleCloseMs;
         log("Visitors left");
         if (this.autopilot) engine.setMicEnabled(false);
@@ -112,10 +115,20 @@ export class Director {
     const t = now();
     if (this.present) {
       if (engine.status === "closed") {
-        // The session expired or dropped mid-visit: reconnect and catch up silently.
+        // During the back-off after a failed start there's nothing to do (and nothing to log) yet.
+        if (!this.connecting && t < this.retryAt) return;
+        // The session expired or dropped mid-visit: reconnect and catch up silently. If it never
+        // started for these visitors, they haven't been greeted yet: greet them now.
         this.deps.log("Reconnecting voice session");
         engine.setMicEnabled(true);
-        if (await this.ensureOpen()) await this.observe();
+        if (!(await this.ensureOpen())) return;
+        if (this.owedGreeting) {
+          this.owedGreeting = false;
+          this.deps.log("Greeting the visitors the failed start missed");
+          await this.greet("arrived");
+        } else {
+          await this.observe();
+        }
         return;
       }
       if (engine.status === "open" && t - this.lastObserveAt >= this.opts.backgroundMs && !this.busy()) {
@@ -131,12 +144,16 @@ export class Director {
   /** Operator button: greet whoever is there now (connecting if needed). */
   async greetNow(): Promise<void> {
     this.deps.engine.setMicEnabled(true);
+    // On an empty porch (the owner checking it works, say), still sleep again if nobody comes:
+    // otherwise nothing schedules the close and the billed session stays open until visitors leave.
+    if (!this.present) this.idleCloseAt = this.deps.now() + this.opts.idleCloseMs;
     await this.greet("manual", {}, this.ensureOpen(true));
   }
 
   /** Kill switch: stop talking, close the session and stay asleep until re-enabled. */
   async sleep(): Promise<void> {
     this.autopilot = false;
+    this.owedGreeting = false;
     this.deps.engine.setMicEnabled(false);
     await this.deps.engine.close();
   }
@@ -148,6 +165,13 @@ export class Director {
 
   private busy(): boolean {
     return this.deps.isSpeaking() || this.deps.engine.isThinking();
+  }
+
+  /** Greets once the session is open (looking meanwhile); if it couldn't start, owes them the greeting. */
+  private async greetWhenOpen(reason: "arrived" | "returned", opts: { awayMs?: number } = {}): Promise<void> {
+    const ready = this.ensureOpen();
+    await this.greet(reason, opts, ready);
+    if (!(await ready) && this.present) this.owedGreeting = true;
   }
 
   /** `ready`: the session connecting; the engine looks meanwhile and greets once it's open. */
