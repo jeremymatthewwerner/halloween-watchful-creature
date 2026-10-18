@@ -12,7 +12,7 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**: a dapper pumpkin i
 - **Plays:** an occasional riddle for "trick", a roar contest, or "guess what I am".
 - **Lets you steer:** quick modes (Candy's low/out, Toddler mode, Back in 5, Last call), a spookiness dial, a voice picker, a kill switch and "make it say…", from the dashboard or **your phone**.
 - **Looks after itself:** a watchdog recovers a stuck camera or page, and alerts can **push to your phone**.
-- **Keeps a record:** a daily log with a snapshot of each greeting, and a **costume gallery** for the family.
+- **Keeps a record:** a daily log with a snapshot of each greeting, a **costume gallery** for the family, and a **night recap** (groups, busiest half hour, top costumes, best lines), with one push to your phone when the night is over.
 - **Rehearsal mode:** test greetings with sample photos, without walking in and out of frame.
 
 | Doc | What's in it |
@@ -88,7 +88,7 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**. F
   - A new voice starts with the next voice session. While a session is running with another voice, **🔄 Restart voice session now** ends it; if visitors are there it reconnects right away with the new voice.
   - The server only accepts voices on its list (`shared/voices.ts`); anything else is ignored and logged.
 - **Conversation:** live transcript plus system notes.
-- **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery** and **all logs**. Under them: whether snapshots are on and how long they're kept, and **🗑️ Delete all snapshots now** (see **Privacy** below).
+- **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery**, the **night recap** and **all logs**. Under them: whether snapshots are on and how long they're kept, and **🗑️ Delete all snapshots now** (see **Privacy** below).
 - **Alerts:** health problems (see below), shown only when there are any.
 - **Between visitors** (both free: local audio only, they never open the voice session), each with a toggle in **Settings** that's remembered:
   - **Spooky sounds:** every 20–60 s on an empty porch, a quiet creaky door, owl, distant thunder, wind, cackle, wolf howl or church bell, synthesized in the browser (no audio files).
@@ -109,11 +109,11 @@ Watch and steer the creature from the couch, and get a push on your phone when s
    - This works the same in development (`npm run dev`) and on Halloween night (`npm start`): the phone always talks to the server on port 8787, never to the Vite dev server on 5173 (that one only serves this computer, since it hands out project files without a PIN).
    - macOS may ask whether to allow incoming connections for `node`: allow it.
 
-The remote shows whether the creature is awake, asleep (kill switch) or waiting for a tap, visitors at the door, the voice session, the Arduino, today's awake minutes and estimated cost, and the latest alerts. Its buttons: **🛑 Sleep / ▶️ Wake** (the kill switch), **👋 Greet now**, **Make it say…**, the **quick modes**, and links to today's log, the costume gallery and all logs.
+The remote shows whether the creature is awake, asleep (kill switch) or waiting for a tap, visitors at the door, the voice session, the Arduino, today's awake minutes and estimated cost, and the latest alerts. Its buttons: **🛑 Sleep / ▶️ Wake** (the kill switch), **👋 Greet now**, **Make it say…**, the **quick modes**, and links to today's log, the costume gallery, the night recap and all logs.
 
 **Security:**
 - LAN access is off unless `REMOTE_PIN` is set. Setting `HOST=0.0.0.0` without a PIN is ignored (the server stays on 127.0.0.1 and says so). `HOST` can still pick a specific address when a PIN is set.
-- Every request from another device needs a signed-in session: all `/api` routes (including logs, snapshots and galleries) and the `/ws` socket. Only the PIN page and the PIN check itself are open. The dashboard on the creature's computer (loopback, addressed as `localhost`) needs no PIN.
+- Every request from another device needs a signed-in session: all `/api` routes (including logs, snapshots and galleries), the `/recap` pages and the `/ws` socket. Only the PIN page and the PIN check itself are open; a page opened without a session (like the recap link in a push) goes to the PIN page first. The dashboard on the creature's computer (loopback, addressed as `localhost`) needs no PIN.
 - The PIN is sent once, in the body of a POST, and swapped for an `HttpOnly`, `SameSite=Strict` session cookie (24 hours; restarting the server signs phones out). It's compared in constant time and never logged or put in a URL.
 - Wrong PINs: 5 per phone per 15 minutes, and 20 from all devices together, then sign-in locks for the rest of the 15 minutes.
 - Even signed in, the phone can't use the dashboard-only routes: it can't start voice sessions, call the vision model, drive the Arduino or delete snapshots. The existing origin check still applies.
@@ -144,7 +144,9 @@ Alerts show on the dashboard and the remote: camera lost, person detector failed
 3. In the app, tap **+** and subscribe to that topic (server `ntfy.sh`).
 4. In `.env`, set `NTFY_TOPIC=jacques-<that>` and restart the server.
 
-Pushes are short fixed messages (like "Camera stopped. Check the USB cable…"): never photos, transcripts or anything about visitors. Each kind of problem is pushed at most once per 15 minutes, and at most 6 pushes per hour in total. `NTFY_SERVER` and `NTFY_TOKEN` are for a self-hosted ntfy server or a protected topic.
+Pushes are short fixed messages (like "Camera stopped. Check the USB cable…"): never photos, transcripts or anything about visitors. Each kind of problem is pushed at most once per 15 minutes, and at most 6 pushes per hour in total.
+
+**End-of-night push:** once per evening, a message with the headline stats ("Jacques met 43 groups tonight (about 97 people), busiest 7:00–7:30 pm (9 groups). Awake 1 h 42 min."). It goes out when the kill switch has been on for `RECAP_SLEEP_MINUTES` (default 15; use **Back in 5** for short breaks), or at `RECAP_AT` (e.g. `22:00`) if that comes first. Numbers and times only, never photos or costumes. With `REMOTE_PIN` set it adds a link to the recap at this computer's home-network address (or `REMOTE_URL`); tapping it asks for the PIN if the phone isn't signed in. Without a PIN there's no link, since the phone can't reach the server. Nights with no visitors send nothing, and a `recap-sent.txt` in the day's folder stops a restarted server from sending it twice. `NTFY_SERVER` and `NTFY_TOKEN` are for a self-hosted ntfy server or a protected topic.
 
 ### Rehearsal mode (testing without walking into frame)
 **Settings → 🎭 Rehearsal (developer)** pretends visitors walk up, using sample images instead of the camera. Wake the creature first, then tick **Rehearsal on**.
@@ -170,6 +172,14 @@ Each day gets a folder in `logs/` (for example `logs/2026-10-31/`). Server resta
 - `snapshots/`: the camera frame of each greeting, deleted after a week (see **Privacy** below).
 
 The **costume gallery** (`/api/session-logs/<day>/gallery.html`, linked from the dashboard and from **All logs**) turns a day into a grid of greetings: each snapshot with what the camera saw and the creature's best line from that moment. Click a costume, or **▶️ Slideshow**, to see them big (arrow keys move, Esc closes). It's built from the day's `log.txt` each time you open it, so there's nothing extra to save. It's for the family only: it shows other people's kids, so it has no share or upload buttons.
+
+The **night recap** (`/recap/<day>`, or `/recap` for the latest evening; linked from the dashboard, the remote and **All logs**) is the morning-after summary, also built from `log.txt` on request, with rehearsal lines left out:
+- **visitor groups** and **roughly how many people**: each greeting of new visitors (walking up, joining a group, or someone new found by a camera check) is a group, counted with the person detector's number, or the number the camera's description mentions; the page explains the method and its limits;
+- the **busiest half hour**, with a bar per half hour;
+- the **top costumes**: one snapshot per group, preferring new greetings with a vivid "standout:" detail, skipping the same group seen again (a snapshot deleted since shows a placeholder);
+- a few of the creature's **best lines**, and how long it was **awake** (voice session open) and **on duty**.
+
+It shows kids' photos, so it sits behind the same rules as the gallery: this computer only, or a phone signed in with the PIN.
 
 ### Privacy: photos of visitors
 The snapshots are photos of other people's kids, so they're kept on your computer only, and not for long:
@@ -212,12 +222,15 @@ GPT-Live costs about **$0.05 per minute** of voice, plus small vision-model call
 | `LOG_DIR` | `logs` | Folder for the daily logs and snapshots; `none` keeps no logs (and no gallery) |
 | `SNAPSHOTS` | `on` | `off` keeps the logs (with the vision captions) but writes no photos. The older `LOG_SNAPSHOTS=false` also turns them off |
 | `SNAPSHOT_RETENTION_DAYS` | `7` | Delete photos of days older than this (at start, then daily); `log.txt` is kept. `0` or `off` keeps them forever |
+| `RECAP_AT` | (off) | Local time (like `22:00`) to push the night recap's headline, if the kill switch hasn't already. Needs `NTFY_TOPIC` |
+| `RECAP_SLEEP_MINUTES` | `15` | Push the recap once the kill switch has been on this long; `off` to only use `RECAP_AT` |
+| `REMOTE_URL` | (guessed) | How the phone reaches this computer, e.g. `http://192.168.1.5:8787`, for the recap link. Only used with `REMOTE_PIN` |
 
 Set `BODY_DEBUG=1` to log the commands sent to the Arduino.
 
 ## Development
 ```bash
-npm test          # unit tests (tracker, director, engines, vision prompts, logs, gallery, remote, watchdog, body protocol, …)
+npm test          # unit tests (tracker, director, engines, vision prompts, logs, gallery, recap, remote, watchdog, body protocol, …)
 npm run typecheck
 npm run build
 ```

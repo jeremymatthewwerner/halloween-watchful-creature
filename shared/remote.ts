@@ -74,7 +74,8 @@ export interface RemoteSnapshot {
   dashboardSeenAgo: number | null;
   arduino: { enabled: boolean; connected: boolean; status: string };
   alerts: Alert[];
-  links: { todayLog: string | null; gallery: string | null; allLogs: string };
+  /** `recap`: the latest night's recap (absent on older servers). */
+  links: { todayLog: string | null; gallery: string | null; allLogs: string; recap?: string | null };
 }
 
 export const SAY_MAX_CHARS = 300;

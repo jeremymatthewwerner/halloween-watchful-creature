@@ -20,7 +20,8 @@ export const ALERT_KINDS: Record<AlertKind, KindInfo> = {
 };
 
 export interface Notifier {
-  send(message: { title: string; text: string; level: Alert["level"] }): Promise<void>;
+  /** `click`: a URL the phone opens when the notification is tapped (the night recap's). */
+  send(message: { title: string; text: string; level: Alert["level"]; click?: string }): Promise<void>;
 }
 
 export interface AlertCenterOptions {
@@ -140,12 +141,13 @@ export class NtfyNotifier implements Notifier {
     if (!NTFY_TOPIC.test(topic)) throw new Error("NTFY_TOPIC may only use letters, digits, - and _ (up to 64)");
   }
 
-  async send(message: { title: string; text: string; level: Alert["level"] }): Promise<void> {
+  async send(message: { title: string; text: string; level: Alert["level"]; click?: string }): Promise<void> {
     const headers: Record<string, string> = {
       Title: `Jacques: ${message.title}`.replace(/[^\x20-\x7e]/g, ""),
       Priority: message.level === "error" ? "high" : "default",
       Tags: "jack_o_lantern",
     };
+    if (message.click && /^https?:\/\/[\x21-\x7e]+$/.test(message.click)) headers.Click = message.click;
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
     const res = await this.post(`${this.server.replace(/\/+$/, "")}/${this.topic}`, {
       method: "POST",
