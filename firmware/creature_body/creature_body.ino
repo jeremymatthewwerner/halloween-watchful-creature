@@ -28,6 +28,9 @@ const uint8_t PLAIN_EYE_PINS[2] = {3, 5};  // PWM pins
 const uint8_t EYES_PIN = 6;
 const uint8_t EYE_PIXELS = 14;           // 2 x NeoPixel Jewel 7
 const float MAX_BRIGHTNESS = 0.45;       // keeps total current safe on USB power
+// Eyes see LED brightness on a curve, not linearly: without correction, 25% power looks about
+// half as bright as full, so sleeping and speaking look alike. 2.8 is the usual LED gamma.
+const float PLAIN_EYE_GAMMA = 2.8;
 const uint8_t RELAY_PIN = 7;
 const bool RELAY_ACTIVE_HIGH = true;     // most blue relay modules are active-high; flip if yours is inverted
 const unsigned long RELAY_PULSE_MS = 400;     // how long to "press" the prop's trigger
@@ -169,7 +172,8 @@ void renderEyes(unsigned long now) {
       }
   }
 #if !EYES_NEOPIXEL
-  for (uint8_t i = 0; i < 2; i++) analogWrite(PLAIN_EYE_PINS[i], (uint8_t)(255 * b));
+  uint8_t duty = (uint8_t)(255 * pow(constrain(b, 0.0, 1.0), PLAIN_EYE_GAMMA));
+  for (uint8_t i = 0; i < 2; i++) analogWrite(PLAIN_EYE_PINS[i], duty);
   return;
 #endif
   b *= MAX_BRIGHTNESS;
