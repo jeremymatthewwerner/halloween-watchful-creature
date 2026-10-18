@@ -59,3 +59,23 @@ Results go to the output folder: `samples.csv` (one row per sample), `summary.js
 - **Real sound output, the USB sound card and speaker selection** (Chrome runs muted).
 - **The phone over Wi-Fi with a PIN** (the soak's clients are on loopback), and **ntfy** pushes (off).
 - **Time compression:** per-hour leaks show up per wall hour; per-event leaks show up about 4× sooner than on the night (four hours of visits in one).
+
+## Results (Oct 18, Mac, default seed)
+A 4-hour evening in 73 minutes: 134 groups (129 new, 5 swap-ins, 16 returns), 277 vision calls, 22 voice sessions, 25 phone presses, 242 stream reconnects, one outage. Every check passed:
+
+| | Start → end (after warm-up) | Growth |
+|---|---|---|
+| Server heap (after GC) | 13.8 → 16.8 MB (mostly the 500-line log buffer filling) | 0.8 MB/h |
+| Server RSS | peak 54 MB | 8 MB/h |
+| Browser JS heap (after GC) | peak 4 MB | 0.3 MB/h |
+| Detached DOM nodes | about 490, flat | −7/h |
+| Web Audio nodes | 3 → 51 | 32/h (about 2 per voice session) |
+| Disk (logs + 184 snapshots) | 8 MB | about 8 MB per evening |
+
+Longest main-thread stall 12 ms, `/api/health` at most 2 ms, heartbeat never late, no stuck fetches, every new group greeted within 20 s, no session left open on an empty porch. Voice: 64 billed minutes in this compressed run; **on the real night (3-minute idle close) the same visits would be about 9 sessions and 214 minutes, about $10.70**, under the 240-minute daily cap.
+
+What it found and fixed:
+- **Conversation panel leak:** every line ever shown, with its `<li>`, was kept all night (DOM nodes grew about 4,400 an hour). Now only the 200 on screen are kept (`LineElements` in `web/transcript.ts`).
+- **Web Audio leak:** ambient sounds and call-outs that ended by themselves stayed wired to the output, so their nodes were never freed (`web/porchSounds.ts`). The compressed run plays few of them (ambience waits 20–60 s of real empty porch), so this one is pinned by a unit test.
+- **Greet now on an empty porch** left the billed session open until visitors came and went; it now sleeps after the idle timeout.
+- **A failed session start on arrival** meant that group was never greeted (the reconnect only caught up silently), and the 15 s back-off logged "Reconnecting" every second. Now the group is greeted when the session comes back.
