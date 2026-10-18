@@ -1,5 +1,5 @@
-import type { BodyMessage, BodyMode, BodyState, CharacterInfo, EyePalette } from "../../shared/types.ts";
-import { encodeEyeStyle, encodeLevel, encodeModes, encodePalette, encodeState } from "./protocol.ts";
+import type { BodyMessage, BodyMode, BodyState, CharacterInfo, EyeFlourish, EyePalette } from "../../shared/types.ts";
+import { encodeEyeStyle, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "./protocol.ts";
 
 /** Something that can carry protocol lines to the creature's body. */
 export interface LineSink {
@@ -162,12 +162,23 @@ export class BodyController {
       case "level":
         this.sink.write(encodeLevel(msg.level));
         break;
+      case "flourish":
+        this.flourish(msg.effect);
+        break;
       case "palette":
         this.palette = { eyes: msg.eyes, eyeStyle: msg.eyeStyle };
         this.sink.write(encodeEyeStyle(msg.eyeStyle));
         for (const line of encodePalette(msg.eyes)) this.sink.write(line);
         break;
     }
+  }
+
+  /**
+   * Plays a one-shot eye animation over the current state. Not remembered or replayed on
+   * reconnect: it's a moment, and stale by the time the Arduino comes back.
+   */
+  flourish(effect: EyeFlourish): void {
+    this.sink.write(encodeFlourish(effect));
   }
 
   /** Heartbeat only while a browser is talking to us, so the body fails safe if the page dies. */

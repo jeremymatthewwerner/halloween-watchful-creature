@@ -88,6 +88,7 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
       content.push({ type: "input_text", text: image ? GREETING[reason] : blindGreeting(reason) });
       this.send({ type: "conversation.item.create", item: { type: "message", role: "user", content } });
       this.createResponse();
+      this.emit({ type: "greeting", kind: "visitors" });
     });
   }
 

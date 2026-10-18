@@ -171,6 +171,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     let saidHello = false;
     if (looking && hello && !alreadyGreeted && !(await settlesWithin(looking, HELLO_AFTER_MS))) {
       this.append("session.commentary.append", null, hello + this.variety.opening());
+      this.emit({ type: "greeting", kind: "visitors" });
       this.scheduleNudge(reason === "grew" ? NUDGE.grew : NUDGE.greet);
       saidHello = true;
     }
@@ -195,6 +196,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         // Keep lastGroup: the next return that gets a clear look still compares with them.
         this.emit({ type: "note", text: "couldn't check whether these are the same visitors (no clear look): asking them" });
         this.append("session.commentary.append", null, UNSURE_RETURN);
+        this.emit({ type: "greeting", kind: "visitors" });
         this.scheduleNudge(NUDGE.greet);
         return;
       }
@@ -202,6 +204,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
         this.emit({ type: "note", text: `same visitors as before (vision saw: ${seen})` });
         if ((opts.awayMs ?? 0) >= WELCOME_BACK_AFTER_MS) {
           this.append("session.commentary.append", null, `[CAMERA] The same visitors you were talking to are back: ${seen} Give them a quick, fun "welcome back".`);
+          this.emit({ type: "greeting", kind: "welcome-back" });
         } else {
           this.append("session.thinking.append", null, `[CAMERA] Background update, for reference only (don't greet again): ${seen}`);
         }
@@ -228,6 +231,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       null,
       (saidHello && followUp ? followUp(seen) + this.variety.verdict() : GREETING[reason](seen) + this.variety.greeting()) + tonight,
     );
+    if (!saidHello) this.emit({ type: "greeting", kind: "visitors" });
     this.scheduleNudge(reason === "grew" ? NUDGE.grew : saidHello ? NUDGE.compliment : NUDGE.greet);
   }
 
@@ -324,6 +328,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
             this.variety.greeting() +
             tonight,
         );
+        this.emit({ type: "greeting", kind: "visitors" });
         this.scheduleNudge(NUDGE.newcomer);
         return;
       }
@@ -339,6 +344,7 @@ export class LiveEngine extends WebRtcEngine implements Engine {
             null,
             `[CAMERA] The visitors you're talking to just changed their look. What you see now: ${seen} Make one quick, playful remark about the change. Don't greet them again.`,
           );
+          this.emit({ type: "greeting", kind: "costume" });
         } else {
           this.emit({ type: "note", text: `costume change, but remarked on one recently (vision saw: ${seen})` });
           this.append("session.thinking.append", null, `[CAMERA] Background update, for reference only (don't respond to it or greet again): ${seen}`);

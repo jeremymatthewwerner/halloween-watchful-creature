@@ -560,3 +560,64 @@ describe("RealtimeEngine", () => {
     expect(JSON.stringify(e.sent[0])).toContain("almost over");
   });
 });
+
+describe("greeting events (they drive the eyes' flourishes)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const greetings = (e: TestLive) => e.events.filter((ev) => ev.type === "greeting");
+
+  it("fires once per greeting, at its first line, even with a quick hello first", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    expect(greetings(e)).toEqual([{ type: "greeting", kind: "visitors" }]);
+
+    const slow = new TestLive();
+    let finishLook = () => {};
+    slow.lookGate = new Promise<void>((resolve) => (finishLook = resolve));
+    const greeting = slow.greet("img", "arrived");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(greetings(slow)).toHaveLength(1); // with the quick hello
+    finishLook();
+    await greeting;
+    expect(greetings(slow)).toHaveLength(1); // not again for the costume follow-up
+  });
+
+  it("marks a welcome back, but not a silent same-group return", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    e.sameGroup = true;
+    e.events = [];
+    await e.greet("img", "returned", { awayMs: 20_000 });
+    expect(greetings(e)).toEqual([]);
+    await e.greet("img", "returned", { awayMs: 60_000 });
+    expect(greetings(e)).toEqual([{ type: "greeting", kind: "welcome-back" }]);
+  });
+
+  it("fires for a costume-change remark and a newcomer, not for plain background looks", async () => {
+    const e = new TestLive();
+    await e.greet("img", "arrived");
+    e.events = [];
+    e.sameGroup = true;
+    e.vision = "Still the dinosaur, now waving.";
+    await e.observe("frame");
+    expect(greetings(e)).toEqual([]);
+    e.verdict = "CHANGED";
+    e.vision = "The dinosaur, now wearing a witch hat.";
+    await e.recheck("frame");
+    expect(greetings(e)).toEqual([{ type: "greeting", kind: "costume" }]);
+    e.events = [];
+    e.verdict = undefined;
+    e.sameGroup = false;
+    e.vision = "One visitor in a ghost sheet.";
+    await e.observe("frame");
+    expect(greetings(e)).toEqual([{ type: "greeting", kind: "visitors" }]);
+  });
+
+  it("fires for a realtime greeting too", async () => {
+    const e = new TestRealtime();
+    const events: EngineEvent[] = [];
+    e.on((ev) => events.push(ev));
+    await e.greet("img", "arrived");
+    expect(events).toContainEqual({ type: "greeting", kind: "visitors" });
+  });
+});

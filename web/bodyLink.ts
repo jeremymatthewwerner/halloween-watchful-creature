@@ -1,4 +1,8 @@
-import type { BodyMessage, BodyState, CharacterInfo } from "../shared/types.ts";
+import type { BodyMessage, BodyState, CharacterInfo, EyeFlourish } from "../shared/types.ts";
+import { FLOURISH_MS, type ActiveFlourish } from "./eyeFlourish.ts";
+
+/** At most one automatic thinking blink this often, so a flickery "thinking" state doesn't keep blinking. */
+const THINKING_BLINK_EVERY_MS = 5000;
 
 /** WebSocket to the local server, which forwards body commands to the Arduino. */
 export class BodyLink {
@@ -7,6 +11,8 @@ export class BodyLink {
   private palette: CharacterInfo | null = null;
   private lastLevelSentAt = 0;
   private lastLevel = 0;
+  private flourishing: ActiveFlourish | null = null;
+  private lastThinkingBlinkAt = -Infinity;
 
   connect(): void {
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/body`);
@@ -23,10 +29,27 @@ export class BodyLink {
     this.raw({ type: "palette", eyes: character.eyes, eyeStyle: character.eyeStyle });
   }
 
-  setState(state: BodyState): void {
+  /** Starting to think gets a slow blink, unless another flourish is playing. */
+  setState(state: BodyState, now = performance.now()): void {
     if (state === this.state) return;
     this.state = state;
     this.raw({ type: "state", state });
+    if (state === "thinking" && !this.activeFlourish(now) && now - this.lastThinkingBlinkAt >= THINKING_BLINK_EVERY_MS) {
+      this.lastThinkingBlinkAt = now;
+      this.flourish("slowblink", now);
+    }
+  }
+
+  /** Plays a one-shot eye animation on the body (and the dashboard preview). */
+  flourish(effect: EyeFlourish, now = performance.now()): void {
+    this.flourishing = { effect, at: now };
+    this.raw({ type: "flourish", effect });
+  }
+
+  /** The flourish playing at `now`, if any (for the eye preview). */
+  activeFlourish(now: number): ActiveFlourish | null {
+    const f = this.flourishing;
+    return f && now - f.at < FLOURISH_MS[f.effect] ? f : null;
   }
 
   /** Throttled to ~30 messages a second; repeats of silence are skipped. */

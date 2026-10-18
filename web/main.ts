@@ -3,6 +3,7 @@ import { BodyLink } from "./bodyLink.ts";
 import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from "./devices.ts";
 import { Director } from "./director.ts";
 import { EveningMemory, browserStorage } from "./evening.ts";
+import { eyeLook, GREETING_FLOURISH, type ActiveFlourish } from "./eyeFlourish.ts";
 import { followServerLog } from "./serverLog.ts";
 import { ModePanel } from "./modePanel.ts";
 import { LiveEngine } from "./engines/live.ts";
@@ -230,6 +231,9 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: M
       case "transcript":
         show(e.who, e.delta);
         break;
+      case "greeting":
+        body.flourish(GREETING_FLOURISH[e.kind]);
+        break;
       case "note":
         log(e.text);
         break;
@@ -306,9 +310,9 @@ async function wake(cfg: ClientConfig, body: BodyLink, minArea: number, modes: M
             : t - engine.lastHeardAt() < 1500
               ? "listening"
               : "idle";
-    body.setState(state);
+    body.setState(state, t);
     body.setLevel(state === "speaking" ? level : 0, t);
-    renderEyes(cfg, state, level, t);
+    renderEyes(cfg, state, level, t, body.activeFlourish(t));
     ui.statePill.textContent = state;
     requestAnimationFrame(frame);
   };
@@ -445,8 +449,7 @@ function drawOverlay(people: DetectedPerson[], minArea: number): void {
 }
 
 /** On-screen preview of what the Arduino eyes are doing. */
-function renderEyes(cfg: ClientConfig, state: BodyState, level: number, t: number): void {
-  const [r, g, b] = cfg.character.eyes[state];
+function renderEyes(cfg: ClientConfig, state: BodyState, level: number, t: number, flourish: ActiveFlourish | null = null): void {
   let brightness: number;
   switch (state) {
     case "speaking":
@@ -466,11 +469,12 @@ function renderEyes(cfg: ClientConfig, state: BodyState, level: number, t: numbe
             ? 0.05
             : 0.8;
   }
-  const color = `rgb(${Math.round(r * brightness)}, ${Math.round(g * brightness)}, ${Math.round(b * brightness)})`;
-  for (const eye of [ui.eyeLeft, ui.eyeRight]) {
+  [ui.eyeLeft, ui.eyeRight].forEach((eye, i) => {
+    const look = eyeLook(cfg.character.eyes[state], brightness, flourish, t, i);
+    const color = `rgb(${look.rgb.map(Math.round).join(", ")})`;
     eye.style.backgroundColor = color;
-    eye.style.boxShadow = `0 0 ${Math.round(10 + 30 * brightness)}px ${color}`;
-  }
+    eye.style.boxShadow = `0 0 ${Math.round(10 + 30 * look.brightness)}px ${color}`;
+  });
 }
 
 main().catch((err) => log(`Startup failed: ${(err as Error).message}`));
