@@ -87,7 +87,8 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
   - no personal questions;
   - reply in the visitor's language.
 - `characters/<id>.md` holds the persona and gimmick, with frontmatter for the voice, the realtime voice, and the eye colors and style.
-- The server builds the instructions from `base.md`, then the persona, then engine-specific notes on how sight works.
+- `games.md` holds optional trick-or-treat mini-games (a "trick" riddle, a roar or spooky-laugh contest, "guess what I am") and a small bank of riddles and jokes for 4–8-year-olds. A character opts in with `games: on` in its frontmatter (Jacques does). The rules: at most one game per visit, short, everyone wins, and candy never depends on a game.
+- The server builds the instructions from `base.md`, then the persona, then `games.md` if the character opted in, then engine-specific notes on how sight works.
 - To add a character, add a file. It then shows up in the dashboard's character picker.
 
 | id | Character | GPT-Live voice | Eyes |
@@ -130,7 +131,7 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
   - the prompt rules above;
   - OpenAI's built-in moderation;
   - the operator kill switch;
-  - the vision model is told to describe costumes only, never bodies.
+  - the vision model is told to describe costumes only, never bodies. For each costume it also names one **standout detail** ("standout: glow-in-the-dark bones"), and greeting requests ask the creature to praise that detail, so every compliment is specific.
 - **Privacy:** frames are sent to OpenAI only when someone is close. The day's log in `logs/` keeps the conversation and one snapshot per greeting on the local disk (`LOG_SNAPSHOTS=false` skips the photos, `LOG_DIR=none` keeps nothing). Consider a small sign saying the decoration is AI-powered and records.
 - **Cost controls:**
   - the voice session only runs while visitors are around (plus the idle timeout);

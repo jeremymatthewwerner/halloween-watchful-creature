@@ -93,24 +93,25 @@ const VISION_INSTRUCTIONS = `You are the eyes of a friendly talking Halloween de
 
 Report:
 - How many people are close to the decoration (ignore distant passers-by).
-- For each person: what their costume is (your best guess at the character or thing), its main colors, and one or two fun specific details (props, hats, capes, masks, wings, glitter, makeup that is part of the costume).
+- For each person: what their costume is (your best guess at the character or thing), its main colors, and its standout detail.
+- The standout detail is the single most delightful, specific thing about that costume, the one a kid would be proudest of, in a few plain words: "glow-in-the-dark bones", "a tail made of tinsel", "a light-up wand", "a cape with silver stars". Pick something you can really see (a prop, hat, cape, mask, wings, glitter, lights, makeup that is part of the costume), not just "a nice costume". Write it as "standout: <detail>".
 - Anything they are holding up to show the decoration.
 
 Rules:
 - Describe costumes, outfits and props only. Never describe bodies, faces, skin, hair (unless it's a costume wig), height, weight, age, gender, race or disability. Refer to people as "one visitor", "another visitor", "the visitor on the left".
 - If someone isn't in a costume, say "no costume visible" for them.
 - If the image is too dark or blurry to tell, say so plainly.
-- Plain facts only, no jokes, no character voice. Under 70 words.`;
+- Plain facts only, no jokes, no character voice. Under 80 words.`;
 
 const REASON_PROMPTS: Record<LookReason, string> = {
-  arrived: "Visitors just walked up. Describe their costumes.",
-  grew: "More visitors just joined the group. Describe everyone's costumes, noting who seems new if you can tell.",
-  returned: "Someone just walked up to the decoration. Describe who is there and their costumes.",
-  background: "Briefly describe who is in front of the decoration right now.",
-  recheck: "Someone just came back into view after a short gap. Describe who is there and their costumes.",
+  arrived: "Visitors just walked up. Describe their costumes, with each one's standout detail.",
+  grew: "More visitors just joined the group. Describe everyone's costumes with each one's standout detail, noting who seems new if you can tell.",
+  returned: "Someone just walked up to the decoration. Describe who is there and their costumes, with each one's standout detail.",
+  background: "Briefly describe who is in front of the decoration right now, with each costume's standout detail.",
+  recheck: "Someone just came back into view after a short gap. Describe who is there and their costumes, with each one's standout detail.",
   delegation:
-    "The character asked for a fresh look during a conversation. Using the recent conversation below, describe what the visitors are asking about (usually their costume or something they're holding up), plus anything else useful.",
-  manual: "Describe the visitors' costumes.",
+    "The character asked for a fresh look during a conversation. Using the recent conversation below, describe what the visitors are asking about (usually their costume or something they're holding up) and its standout detail, plus anything else useful.",
+  manual: "Describe the visitors' costumes, with each one's standout detail.",
 };
 
 /** Looks that compare who's there with the last greeted group (when one is given). */
@@ -139,7 +140,7 @@ export async function describeFrame(config: Config, req: VisionRequest): Promise
       `The visitors greeted a little while ago were described as: "${req.previous!.slice(0, 600)}"\n\n` +
       photos +
       verdict +
-      `Then describe who is there now and their costumes.`;
+      `Then describe who is there now and their costumes, with each one's standout detail.`;
   }
   if (req.transcript) prompt += `\n\nRecent conversation (oldest first, transcripts may have mistakes):\n${req.transcript.slice(-2000)}`;
   const body: Record<string, unknown> = {

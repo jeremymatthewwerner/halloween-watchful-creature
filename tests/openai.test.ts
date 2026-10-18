@@ -69,6 +69,13 @@ describe("OpenAI calls", () => {
     const content = (calls[1]!.body.input as { content: { type: string; text?: string }[] }[])[0]!.content;
     expect(content[1]).toMatchObject({ type: "input_image", detail: "low" });
     expect(content[0]!.text).toContain("Visitor: hi");
+    // Each costume's single standout detail, so compliments can be specific.
+    expect(content[0]!.text).toContain("standout detail");
+    const instructions = calls[1]!.body.instructions as string;
+    expect(instructions).toContain('"standout: <detail>"');
+    expect(instructions).toContain("glow-in-the-dark bones");
+    expect(instructions).toContain("Never describe bodies, faces");
+    expect(instructions).toContain("Under 80 words");
 
     // Remembered: the next call goes straight through without reasoning.
     await describeFrame(config, { image: "data:image/jpeg;base64,AAA", reason: "background" });
@@ -83,6 +90,7 @@ describe("OpenAI calls", () => {
     const prompt = (requests.at(-1)!.body.input as { content: { text?: string }[] }[])[0]!.content[0]!.text!;
     expect(prompt).toContain('"A dinosaur."');
     expect(prompt).toContain("If anything about the costumes differs, or you are unsure");
+    expect(prompt).toContain("Then describe who is there now and their costumes, with each one's standout detail.");
 
     visionReply = "SAME: The dinosaur is back.";
     expect(await describeFrame(config, { image, reason: "returned", previous: "A dinosaur." })).toMatchObject({ sameGroup: true, text: "The dinosaur is back." });
