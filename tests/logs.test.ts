@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { LogBuffer, SessionLog, captureConsole, logEventId } from "../server/logs.ts";
+import { LogBuffer, SessionLog, captureConsole, logEventId, wantsSnapshot } from "../server/logs.ts";
 import { Transcript } from "../web/transcript.ts";
 
 describe("LogBuffer", () => {
@@ -92,6 +92,33 @@ describe("SessionLog", () => {
     expect(html.match(/<!doctype html>/g)).toHaveLength(1);
     expect(html).toContain('<a href="snapshots/18-05-09-returned.png" target="_blank"><img src="snapshots/18-05-09-returned.png"');
     expect(html).toContain("[vision] slow &lt;b&gt;");
+  });
+});
+
+describe("rehearsal in the log", () => {
+  let dir = "";
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("marks rehearsal conversation lines", () => {
+    dir = mkdtempSync(join(tmpdir(), "creature-log-"));
+    const at = new Date(2026, 9, 31, 18, 5, 9);
+    const log = new SessionLog(dir, "Test", () => at);
+    log.conversation("creature", "Real hello!", at.getTime());
+    log.conversation("creature", "Pretend hello!", at.getTime(), true);
+    const txt = readFileSync(join(dir, "2026-10-31", "log.txt"), "utf8");
+    expect(txt).toContain("18:05:09 creature Real hello!");
+    expect(txt).toContain("18:05:09 creature [REHEARSAL] Pretend hello!");
+    const html = readFileSync(join(dir, "2026-10-31", "log.html"), "utf8");
+    expect(html).toContain('<div class="row creature rehearsal"><time>18:05:09</time><span class="text">[REHEARSAL] Pretend hello!</span>');
+  });
+
+  it("saves snapshots of greetings and new looks, never of rehearsal frames", () => {
+    expect(wantsSnapshot("arrived", undefined)).toBe(true);
+    expect(wantsSnapshot("background", "CHANGED")).toBe(true);
+    expect(wantsSnapshot("recheck", "NEW")).toBe(true);
+    expect(wantsSnapshot("background", "SAME")).toBe(false);
+    expect(wantsSnapshot("arrived", undefined, true)).toBe(false);
+    expect(wantsSnapshot("recheck", "NEW", true)).toBe(false);
   });
 });
 

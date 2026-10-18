@@ -89,6 +89,22 @@ const timeOf = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!);
 
+/** Conversation lines from rehearsal mode start with this in the log (the gallery skips them). */
+export const REHEARSAL_MARK = "[REHEARSAL] ";
+
+/** Looks that start a greeting: their camera frame is worth keeping in the log. */
+const GREETING_LOOKS = new Set(["arrived", "grew", "returned", "manual"]);
+
+/**
+ * Whether a vision look's frame is worth a snapshot: greetings, and checks that found someone new
+ * or a costume change. Never in rehearsal: those frames are sample images (uploads stay in the
+ * browser's memory, log snapshots are already saved), and they'd fill the costume gallery.
+ */
+export function wantsSnapshot(reason: string, verdict: string | undefined, rehearsal = false): boolean {
+  if (rehearsal) return false;
+  return GREETING_LOOKS.has(reason) || verdict === "NEW" || verdict === "CHANGED";
+}
+
 /** A day's log folder is named like 2026-10-31. */
 export const LOG_DAY = /^\d{4}-\d\d-\d\d$/;
 
@@ -110,6 +126,7 @@ h1 { font-size: 18px; margin: 0 0 12px; }
 .snapshot { background: #1e1330; border: 1px solid #3a2858; align-items: flex-start; padding: 8px; }
 .snapshot img { width: 240px; max-width: 45vw; border-radius: 6px; display: block; }
 .snapshot .verdict { color: #ff7a1a; font-weight: 600; }
+.rehearsal { opacity: .6; border-left: 3px dashed #b26bff; }
 </style></head><body>
 <h1>🎃 ${escapeHtml(title)} · ${day}</h1>
 `;
@@ -149,10 +166,16 @@ export class SessionLog {
     );
   }
 
-  conversation(who: ConversationSpeaker, text: string, atMs: number): void {
+  /** `rehearsal`: said during rehearsal mode (pretend visitors), so marked and kept out of the gallery. */
+  conversation(who: ConversationSpeaker, text: string, atMs: number, rehearsal = false): void {
     const at = new Date(atMs);
     const tag = who === "system" ? "note" : who;
-    this.write(at, `${tag.padEnd(8)} ${text}`, `<div class="row ${who}"><time>${timeOf(at)}</time><span class="text">${escapeHtml(text)}</span></div>`);
+    const mark = rehearsal ? REHEARSAL_MARK : "";
+    this.write(
+      at,
+      `${tag.padEnd(8)} ${mark}${text}`,
+      `<div class="row ${who}${rehearsal ? " rehearsal" : ""}"><time>${timeOf(at)}</time><span class="text">${escapeHtml(mark + text)}</span></div>`,
+    );
   }
 
   /**

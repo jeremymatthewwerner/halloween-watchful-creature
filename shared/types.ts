@@ -64,6 +64,8 @@ export interface VisionRequest {
   previous?: string;
   /** The frame those visitors were greeted from (data URL), so the comparison can use both photos. */
   previousImage?: string;
+  /** From rehearsal mode (a sample image, not the real camera): logged as such, and no snapshot is saved. */
+  rehearsal?: boolean;
 }
 
 export interface VisionResult {
@@ -91,5 +93,12 @@ export interface ServerLogEntry {
 
 /** Finished Conversation-panel lines the dashboard sends for the on-disk log. */
 export interface ConversationLogRequest {
-  lines: { who: "visitor" | "creature" | "system"; text: string; /** Epoch milliseconds. */ at: number }[];
+  lines: {
+    who: "visitor" | "creature" | "system";
+    text: string;
+    /** Epoch milliseconds. */
+    at: number;
+    /** Said during rehearsal mode: marked as such in the log and left out of the costume gallery. */
+    rehearsal?: boolean;
+  }[];
 }

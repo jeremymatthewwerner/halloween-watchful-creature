@@ -69,4 +69,6 @@ export interface EngineDeps {
   lastVoiceAt(): number;
   /** What it said and saw earlier tonight, kept across sessions (optional). */
   evening?: EveningMemory;
+  /** True while rehearsal mode feeds sample images instead of the camera (optional). */
+  rehearsal?(): boolean;
 }
