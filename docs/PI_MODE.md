@@ -57,5 +57,5 @@ For the phone remote and push alerts, see **Phone remote and alerts** in the REA
 A Pi outside can be stolen, and its SD card holds everything in the project folder. About $225 of Pi hardware is the small part; protect what's on the card:
 - **OpenAI key:** create a **separate OpenAI project and key just for the Pi**, with a low monthly budget (say $20–30). If the Pi goes missing, revoke that key; the most anyone can spend is the cap.
 - **Wi-Fi:** put the Pi on a **guest network**, or be ready to change the Wi-Fi password.
-- **Photos of visitors:** set `LOG_SNAPSHOTS=false` (or `LOG_DIR=none`) on the Pi, so no photos of trick-or-treaters sit on a device outside.
+- **Photos of visitors:** set `SNAPSHOTS=off` (or `LOG_DIR=none`) on the Pi, so no photos of trick-or-treaters sit on a device outside. If you keep them on, lower `SNAPSHOT_RETENTION_DAYS` (say `1`) or use **🗑️ Delete all snapshots now** on the dashboard after the evening.
 - **Placement:** keep the Pi and hub out of sight behind the pumpkin, cables zip-tied, everything under the porch roof.

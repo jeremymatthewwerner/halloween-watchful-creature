@@ -1,3 +1,4 @@
+import { bigGroupNote, bigGroupPlan, isBigGroup } from "../bigGroup.ts";
 import { UNSURE_RETURN, WebRtcEngine } from "./base.ts";
 import type { Engine, GreetOptions, GreetReason } from "./types.ts";
 
@@ -11,12 +12,21 @@ const GREETING: Record<GreetReason, string> = {
     '[CAMERA] Someone just walked up after the porch was empty for a bit. Unless their costumes are clearly identical to the visitors you just greeted, treat them as NEW visitors: greet them and compliment their costumes. Only if clearly identical, give a quick "welcome back".',
 };
 
+/** Big groups (web/bigGroup.ts): one quick group welcome, a shout-out or two and a group moment. */
+const BIG_GREETING: Record<GreetReason, (size: number) => string> = {
+  arrived: (n) => `[CAMERA] A big group just walked up to you (about ${n} people). ${bigGroupPlan()}`,
+  grew: (n) => `[CAMERA] More visitors just joined, and it's a big group now (about ${n} people). ${bigGroupPlan(true)}`,
+  manual: (n) => `[CAMERA] A big group is in front of you (about ${n} people). ${bigGroupPlan()}`,
+  returned: (n) =>
+    `[CAMERA] A big group (about ${n} people) just walked up after the porch was empty for a bit. Unless their costumes are clearly identical to the visitors you just greeted, treat them as NEW visitors. ${bigGroupPlan()} Only if clearly identical, give a quick "welcome back".`,
+};
+
 /** Greeting without a camera frame: ask instead of guessing (a return may be the same people). */
-function blindGreeting(reason: GreetReason): string {
+function blindGreeting(text: string, reason: GreetReason): string {
   if (reason === "returned") {
     return UNSURE_RETURN;
   }
-  return `${GREETING[reason]} (Your eyes aren't working; ask what they're dressed as.)`;
+  return `${text} (Your eyes aren't working; ask what they're dressed as.)`;
 }
 
 interface OutputItem {
@@ -82,10 +92,15 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
 
   async greet(image: string | null, reason: GreetReason, opts: GreetOptions = {}): Promise<void> {
     if (opts.ready && !(await opts.ready)) return;
+    // The model sees the frame itself, so only the tracker's count decides a big group here.
+    const size = opts.count ?? 0;
+    const big = isBigGroup(size, opts.grows);
     this.whenIdle(() => {
+      const text = big ? BIG_GREETING[reason](size) : GREETING[reason];
+      if (big) this.emit({ type: "note", text: bigGroupNote(size, opts.grows) });
       const content: Record<string, string>[] = [];
       if (image) content.push({ type: "input_image", image_url: image });
-      content.push({ type: "input_text", text: image ? GREETING[reason] : blindGreeting(reason) });
+      content.push({ type: "input_text", text: image ? text : blindGreeting(text, reason) });
       this.send({ type: "conversation.item.create", item: { type: "message", role: "user", content } });
       this.createResponse();
       this.emit({ type: "greeting", kind: "visitors" });

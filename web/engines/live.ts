@@ -1,3 +1,4 @@
+import { bigGroupNote, bigGroupPlan, groupSize, isBigGroup } from "../bigGroup.ts";
 import { UNSURE_RETURN, WebRtcEngine, withTimeout } from "./base.ts";
 import type { Engine, GreetOptions, GreetReason } from "./types.ts";
 import { Variety } from "./variety.ts";
@@ -38,6 +39,33 @@ const FOLLOW_UP: Partial<Record<GreetReason, (seen: string) => string>> = {
   grew: (seen) => `[CAMERA] Your eyes have focused on the group. What you see now: ${seen} Now compliment the newcomers' costumes.${PRAISE_DETAIL}`,
 };
 
+/**
+ * Big groups (web/bigGroup.ts): one quick group welcome, a shout-out to one or two standout costumes and
+ * one fun group moment, instead of going costume by costume while kids wait for candy.
+ */
+const BIG_GREETING: Record<GreetReason, (seen: string, size: number) => string> = {
+  arrived: (seen, n) => `[CAMERA] A big group just walked up to you (about ${n} people). What you see: ${seen} ${bigGroupPlan()}`,
+  grew: (seen, n) => `[CAMERA] More visitors just joined, and it's a big group now (about ${n} people). What you see now: ${seen} ${bigGroupPlan(true)}`,
+  manual: (seen, n) => `[CAMERA] A big group is in front of you (about ${n} people). What you see right now: ${seen} ${bigGroupPlan()}`,
+  returned: (seen, n) => `[CAMERA] A big group just walked up to you (about ${n} people). What you see: ${seen} ${bigGroupPlan()}`,
+};
+
+const BIG_QUICK_HELLO: Partial<Record<GreetReason, (size: number) => string>> = {
+  arrived: (n) =>
+    `[CAMERA] A big group just walked up to you (about ${n} people). Your eyes are still focusing on their costumes: right now, ` +
+    "give the whole group one quick, warm welcome in character (one short line). Don't describe or guess their costumes yet.",
+  manual: (n) =>
+    `[CAMERA] A big group is in front of you (about ${n} people). Your eyes are still focusing: right now, give the whole group ` +
+    "one quick, warm welcome in character (one short line). Don't describe or guess their costumes yet.",
+  grew: (n) =>
+    `[CAMERA] More visitors just joined, and it's a big group now (about ${n} people). Your eyes are still focusing on them: give ` +
+    "the newcomers one quick group hello in character (one short line). Don't describe or guess their costumes yet.",
+};
+
+const BIG_FOLLOW_UP = (seen: string, newcomers: boolean): string =>
+  `[CAMERA] Your eyes have focused. What you see: ${seen} Now shout out one or two standout costumes${newcomers ? " among the newcomers" : ""}, ` +
+  "not costume by costume, then one fun group moment. Don't start a mini-game with this group.";
+
 /** Wait this long for the vision model before saying a quick hello. */
 const HELLO_AFTER_MS = 250;
 
@@ -47,6 +75,7 @@ const NUDGE = {
   grew: "New visitors just joined the group and you haven't welcomed them yet. Welcome the newcomers now and compliment their costumes.",
   newcomer: "Someone new is standing in front of you and you haven't greeted them yet. Greet them now and compliment their costumes.",
   compliment: "You haven't complimented the visitors' costumes yet. Do it now.",
+  group: "A big group of visitors is waiting in front of you right now. Give them one quick group welcome now and shout out one or two standout costumes.",
 };
 
 /** Speech after at least this much quiet counts as a new utterance. */
@@ -166,13 +195,23 @@ export class LiveEngine extends WebRtcEngine implements Engine {
       : null;
     if (opts.ready && !(await opts.ready)) return;
 
+    // A big group (or a line forming) by the tracker's count; the vision description may raise it below.
+    const counted = opts.count ?? 0;
+    let notedBig = false;
+    const noteBig = (size: number) => {
+      if (!notedBig) this.emit({ type: "note", text: bigGroupNote(size, opts.grows) });
+      notedBig = true;
+    };
+
     // Vision takes a couple of seconds: say hello first instead of standing there silent.
-    const hello = QUICK_HELLO[reason];
+    const bigHello = isBigGroup(counted, opts.grows) ? BIG_QUICK_HELLO[reason] : undefined;
+    const hello = bigHello ? bigHello(counted) : QUICK_HELLO[reason];
     let saidHello = false;
     if (looking && hello && !alreadyGreeted && !(await settlesWithin(looking, HELLO_AFTER_MS))) {
-      this.append("session.commentary.append", null, hello + this.variety.opening());
+      if (bigHello) noteBig(counted);
+      this.append("session.commentary.append", null, hello + (bigHello ? this.variety.groupOpening() : this.variety.opening()));
       this.emit({ type: "greeting", kind: "visitors" });
-      this.scheduleNudge(reason === "grew" ? NUDGE.grew : NUDGE.greet);
+      this.scheduleNudge(bigHello ? NUDGE.group : reason === "grew" ? NUDGE.grew : NUDGE.greet);
       saidHello = true;
     }
 
@@ -226,6 +265,19 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     else this.lastGroup = `${this.lastGroup} ${seen}`.trim();
     if (image) this.lastGroupImage = image;
     const followUp = FOLLOW_UP[reason];
+    const size = groupSize(counted, looked ? seen : null);
+    if (isBigGroup(size, opts.grows)) {
+      noteBig(size);
+      this.append(
+        "session.commentary.append",
+        null,
+        (saidHello ? BIG_FOLLOW_UP(seen, reason === "grew") + this.variety.groupFinish() : BIG_GREETING[reason](seen, size) + this.variety.groupGreeting()) +
+          tonight,
+      );
+      if (!saidHello) this.emit({ type: "greeting", kind: "visitors" });
+      this.scheduleNudge(NUDGE.group);
+      return;
+    }
     this.append(
       "session.commentary.append",
       null,

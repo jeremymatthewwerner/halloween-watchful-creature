@@ -8,13 +8,14 @@ export type AlertKind =
   | "arduino-disconnected"
   | "vision-errors"
   | "voice-errors"
+  | "voice-offline"
   | "cost-cap"
   | "watchdog-reload"
   | "needs-wake"
   | "dashboard-offline";
 
 /** The kinds the dashboard itself may report (the server watches the others). */
-export const DASHBOARD_ALERT_KINDS: readonly AlertKind[] = ["camera-lost", "detector-failed", "voice-errors", "cost-cap", "watchdog-reload", "needs-wake"];
+export const DASHBOARD_ALERT_KINDS: readonly AlertKind[] = ["camera-lost", "detector-failed", "voice-errors", "voice-offline", "cost-cap", "watchdog-reload", "needs-wake"];
 
 export interface Alert {
   id: number;
@@ -74,7 +75,8 @@ export interface RemoteSnapshot {
   dashboardSeenAgo: number | null;
   arduino: { enabled: boolean; connected: boolean; status: string };
   alerts: Alert[];
-  links: { todayLog: string | null; gallery: string | null; allLogs: string };
+  /** `recap`: the latest night's recap (absent on older servers). */
+  links: { todayLog: string | null; gallery: string | null; allLogs: string; recap?: string | null };
 }
 
 export const SAY_MAX_CHARS = 300;

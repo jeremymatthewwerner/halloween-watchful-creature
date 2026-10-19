@@ -95,6 +95,24 @@ describe("SessionLog", () => {
   });
 });
 
+describe("SessionLog with snapshots off", () => {
+  let dir = "";
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("logs the caption of a look but writes no photo", () => {
+    dir = mkdtempSync(join(tmpdir(), "creature-log-"));
+    const log = new SessionLog(dir, "Test", () => new Date(2026, 9, 31, 18, 5, 9));
+    log.look("arrived", "One visitor in a <ninja> costume.", "NEW");
+    const day = join(dir, "2026-10-31");
+    expect(readdirSync(join(day, "snapshots"))).toEqual([]);
+    expect(readFileSync(join(day, "log.txt"), "utf8")).toContain("18:05:09 look     arrived [NEW] One visitor in a <ninja> costume.");
+    const html = readFileSync(join(day, "log.html"), "utf8");
+    expect(html).toContain("📷 snapshots off");
+    expect(html).toContain("One visitor in a &lt;ninja&gt; costume.");
+    expect(html).not.toContain("<img");
+  });
+});
+
 describe("rehearsal in the log", () => {
   let dir = "";
   afterEach(() => rmSync(dir, { recursive: true, force: true }));

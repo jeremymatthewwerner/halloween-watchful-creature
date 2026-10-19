@@ -1,40 +1,53 @@
 /**
- * Local porch sounds: synthesized spooky ambience and pre-recorded "lure" call-outs.
- * Everything plays from the browser through the selected speaker; nothing here touches the
- * (billed) voice session. `AmbienceScheduler` (web/ambience.ts) decides what plays when.
+ * Local porch sounds: synthesized spooky ambience and pre-recorded clips (lure call-outs, and the
+ * greetings offline mode plays when the live voice is down). Everything plays from the browser
+ * through the selected speaker; nothing here touches the (billed) voice session.
+ * `AmbienceScheduler` (web/ambience.ts) decides when ambience and call-outs play; the Director
+ * decides when a recorded greeting does.
  */
+import type { ClipKind, ClipManifest, VoiceClipsResult } from "../shared/types.ts";
 import { AmbienceScheduler, type AmbienceAction, type AmbientSound } from "./ambience.ts";
+import type { RecordedGreetings } from "./director.ts";
 import type { PersonBox } from "./visitors.ts";
 
 /** Ambience stays in the background; call-outs are a bit louder but still below the creature's voice. */
 const AMBIENCE_VOLUME = 0.18;
-const LURE_VOLUME = 0.55;
+const CLIP_VOLUME: Record<ClipKind, number> = { lure: 0.55, greeting: 0.8 };
 const FADE_S = 0.05;
 
-export interface LureManifest {
-  clips: { file: string; text: string }[];
-}
+type Kind = "ambience" | ClipKind;
 
 interface Playing {
-  kind: "ambience" | "lure";
+  kind: Kind;
   gain: GainNode;
   sources: AudioScheduledSourceNode[];
   endsAt: number;
 }
 
+interface Clip {
+  buffer: AudioBuffer;
+  text: string;
+}
+
 /** Plays sounds into one output that follows the dashboard's speaker choice (setSinkId). */
 export class PorchSoundPlayer {
+  /**
+   * Recorded clips also feed this, before their volume, so a VoiceMeter can drive the eyes from it
+   * the way it follows the live voice. Ambience doesn't: it isn't the creature talking.
+   */
+  readonly voiceTap: GainNode;
   private readonly out: GainNode;
   private readonly element = document.createElement("audio") as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
   private current: Playing | null = null;
   private noise: AudioBuffer | null = null;
-  clips: { buffer: AudioBuffer; text: string }[] = [];
+  readonly clips: Record<ClipKind, Clip[]> = { lure: [], greeting: [] };
 
   constructor(private readonly ctx: AudioContext) {
     // Route through an <audio> element so setSinkId can send it to the USB sound card, like the voice.
     const dest = ctx.createMediaStreamDestination();
     this.out = ctx.createGain();
     this.out.connect(dest);
+    this.voiceTap = ctx.createGain();
     this.element.srcObject = dest.stream;
     this.element.autoplay = true;
     void this.element.play().catch(() => undefined);
@@ -44,39 +57,52 @@ export class PorchSoundPlayer {
     await this.element.setSinkId?.(deviceId);
   }
 
-  get playing(): "ambience" | "lure" | null {
-    if (this.current && this.ctx.currentTime >= this.current.endsAt) this.current = null;
+  get playing(): Kind | null {
+    if (this.current && this.ctx.currentTime >= this.current.endsAt) {
+      // Finished by itself: unhook it. A chain still connected to the output is never freed, so
+      // every sound of the night (a dozen nodes each) would otherwise stay in memory.
+      this.current.gain.disconnect();
+      this.current = null;
+    }
     return this.current?.kind ?? null;
   }
 
-  /** Loads the character's call-out clips; returns how many (0 if it has none). */
-  async loadClips(character: string): Promise<number> {
-    const base = `/lure/${encodeURIComponent(character)}/`;
-    const res = await fetch(`${base}manifest.json`);
-    if (!res.ok) return 0;
-    const manifest = (await res.json()) as LureManifest;
+  /**
+   * Loads a clip set from `base` (its manifest.json, unless the clip list is given); returns how
+   * many loaded. Keeps the current set if nothing loads, so a broken set never silences the clips.
+   */
+  async loadClips(kind: ClipKind, base: string, list?: ClipManifest["clips"]): Promise<number> {
+    let clips = list;
+    if (!clips) {
+      const res = await fetch(`${base}manifest.json`);
+      if (!res.ok) return 0;
+      clips = ((await res.json()) as ClipManifest).clips;
+    }
     const loaded = await Promise.all(
-      manifest.clips.map(async (c) => {
+      clips.map(async (c) => {
         try {
-          const data = await (await fetch(base + c.file)).arrayBuffer();
-          return { buffer: await this.ctx.decodeAudioData(data), text: c.text };
+          const res = await fetch(base + c.file);
+          if (!res.ok) return null;
+          return { buffer: await this.ctx.decodeAudioData(await res.arrayBuffer()), text: c.text };
         } catch {
           return null;
         }
       }),
     );
-    this.clips = loaded.filter((c) => c !== null);
-    return this.clips.length;
+    const ok = loaded.filter((c) => c !== null);
+    if (ok.length) this.clips[kind] = ok;
+    return ok.length;
   }
 
-  playLure(index: number): string | undefined {
-    const clip = this.clips[index];
+  playClip(kind: ClipKind, index: number): string | undefined {
+    const clip = this.clips[kind][index];
     if (!clip) return undefined;
     void this.element.play().catch(() => undefined);
-    const voice = this.begin("lure", LURE_VOLUME);
+    const voice = this.begin(kind, CLIP_VOLUME[kind]);
     const src = this.ctx.createBufferSource();
     src.buffer = clip.buffer;
     src.connect(voice.gain);
+    src.connect(this.voiceTap);
     src.start();
     voice.sources.push(src);
     voice.endsAt = this.ctx.currentTime + clip.buffer.duration;
@@ -331,12 +357,25 @@ export interface PorchSoundDeps {
   status(): { porchEmpty: boolean; talking: boolean; autopilot: boolean };
   prefs: { get(key: string): string | null; set(key: string, value: string): void };
   log(message: string): void;
+  /** An ambient sound just started (for a subtle eye effect; it isn't the creature talking). */
+  onAmbience?(sound: AmbientSound): void;
 }
 
 export interface PorchSounds {
   /** Feed each frame's detections; people smaller than minArea are "far away". */
   see(people: readonly PersonBox[], minArea: number): void;
   setSink(deviceId: string): void;
+  /** Recorded clips (lure and greetings) play through this too, for the eyes' VoiceMeter. */
+  readonly voiceTap: AudioNode;
+  /** A recorded clip (not ambience) is playing. */
+  clipPlaying(): boolean;
+  /** The recorded greetings, for the Director's offline mode. */
+  readonly greetings: RecordedGreetings;
+  /**
+   * Switches the clips to the session voice: the dashboard's pick (null: the server's default).
+   * The server makes and caches that set if needed; on any failure the current clips stay.
+   */
+  useVoice(picked: string | null): Promise<void>;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null;
@@ -380,20 +419,38 @@ export function startPorchSounds(deps: PorchSoundDeps): PorchSounds {
     });
   }
 
-  let lureClips = 0;
-  player
-    .loadClips(deps.character)
-    .then((n) => {
-      lureClips = n;
-      if (!n) deps.log("Lure mode: this character has no call-out clips (see scripts/make-lure-clips.ts)");
-    })
-    .catch((err) => deps.log(`Lure clips failed to load: ${(err as Error).message}`));
+  // The bundled clips first (web/public/<kind>/<character>/, always there, even offline); useVoice()
+  // swaps in the set in the session voice when the server has or can make one.
+  const character = encodeURIComponent(deps.character);
+  const loadBundled = (quiet: boolean) =>
+    Promise.all([
+      player.loadClips("lure", `/lure/${character}/`).then((n) => {
+        if (!n && !quiet) deps.log("Lure mode: this character has no call-out clips (see scripts/make-lure-clips.ts)");
+      }),
+      player.loadClips("greeting", `/greeting/${character}/`).then((n) => {
+        if (!n && !quiet) deps.log("Offline mode: this character has no recorded greetings, so it stays quiet when the live voice is down");
+      }),
+    ]).catch((err) => deps.log(`Recorded clips failed to load: ${(err as Error).message}`));
+  const bundled = loadBundled(false);
+  /** The clips loaded now are a per-voice set (not the bundled ones). */
+  let matched = false;
 
   let farPeople = 0;
   setInterval(() => {
     const now = performance.now();
+    const playing = player.playing;
+    const status = deps.status();
     const actions: AmbienceAction[] = scheduler.update(
-      { ...deps.status(), farPeople, ambience: settings.ambience, lure: settings.lure, lureClips, playing: player.playing },
+      {
+        ...status,
+        // A recorded greeting is the creature talking: no ambience or call-outs over it, and it isn't the scheduler's to stop.
+        talking: status.talking || playing === "greeting",
+        farPeople,
+        ambience: settings.ambience,
+        lure: settings.lure,
+        lureClips: player.clips.lure.length,
+        playing: playing === "greeting" ? null : playing,
+      },
       now,
     );
     for (const action of actions) {
@@ -401,19 +458,63 @@ export function startPorchSounds(deps: PorchSoundDeps): PorchSounds {
       else if (action.type === "ambience") {
         console.log(`[creature] ambience: ${action.sound}`);
         player.playAmbience(action.sound);
+        deps.onAmbience?.(action.sound);
       } else {
-        const text = player.playLure(action.clip);
+        const text = player.playClip("lure", action.clip);
         if (text) deps.log(`Lure call-out (recorded, no voice session): "${text}"`);
       }
     }
   }, 200);
 
+  let voiceRequest = 0;
   return {
     see(people, minArea) {
       farPeople = people.filter((p) => p.area < minArea).length;
     },
     setSink(deviceId) {
       void player.setSink(deviceId).catch((err) => deps.log(`Porch sounds speaker selection failed: ${(err as Error).message}`));
+    },
+    voiceTap: player.voiceTap,
+    clipPlaying: () => {
+      const playing = player.playing;
+      return playing === "lure" || playing === "greeting";
+    },
+    greetings: {
+      count: () => player.clips.greeting.length,
+      play: (index) => player.playClip("greeting", index),
+      playing: () => player.playing === "greeting",
+      stop: () => {
+        if (player.playing === "greeting") player.stop();
+      },
+    },
+    async useVoice(picked) {
+      const mine = ++voiceRequest;
+      await bundled;
+      try {
+        const res = await fetch("/api/clips", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ character: deps.character, voice: picked }),
+        });
+        const body = (await res.json().catch(() => ({}))) as Partial<VoiceClipsResult> & { error?: string };
+        if (!res.ok || !body.sets) throw new Error(body.error ?? `HTTP ${res.status}`);
+        if (mine !== voiceRequest) return; // the pick changed meanwhile
+        const counts: string[] = [];
+        for (const [kind, set] of Object.entries(body.sets) as [ClipKind, NonNullable<VoiceClipsResult["sets"][ClipKind]>][]) {
+          const n = await player.loadClips(kind, set.base, set.clips);
+          if (mine !== voiceRequest) return;
+          counts.push(`${n} ${kind === "lure" ? "call-outs" : "greetings"}`);
+        }
+        matched = true;
+        const made = body.generated ? `, ${body.generated} just made` : "";
+        deps.log(`Recorded clips now match the ${body.voice} voice (read by ${body.rendition}${made}): ${counts.join(", ")}`);
+      } catch (err) {
+        if (mine !== voiceRequest) return;
+        // Don't leave clips in a voice that was picked before: go back to the bundled ones.
+        if (matched) await loadBundled(true);
+        matched = false;
+        deps.log(`Recorded clips use the bundled voice: ${(err as Error).message}`);
+      }
     },
   };
 }

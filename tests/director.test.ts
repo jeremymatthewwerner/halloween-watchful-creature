@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Director } from "../web/director.ts";
+import { Director, type RecordedGreetings } from "../web/director.ts";
 import type { Engine, EngineStatus } from "../web/engines/types.ts";
 
 class FakeEngine implements Engine {
@@ -19,7 +19,7 @@ class FakeEngine implements Engine {
     this.calls.push("close");
     this.status = "closed";
   });
-  greet = vi.fn(async (image: string | null, reason: string, opts?: { awayMs?: number; ready?: Promise<boolean> }) => {
+  greet = vi.fn(async (image: string | null, reason: string, opts?: { awayMs?: number; count?: number; grows?: number; ready?: Promise<boolean> }) => {
     // Like the real engines: only greet once the session is open.
     if (opts?.ready && !(await opts.ready)) return;
     this.calls.push(`greet:${reason}:${image}${opts?.awayMs ? `:${opts.awayMs}` : ""}`);
@@ -84,6 +84,20 @@ describe("Director", () => {
     await director.onVisitorEvent({ type: "arrived", count: 1 });
     await director.onVisitorEvent({ type: "grew", count: 3, from: 1 });
     expect(engine.calls.at(-1)).toBe("greet:grew:frame");
+  });
+
+  it("tells the engine the group's size and how often it grew this visit, for big-group mode", async () => {
+    const { engine, director } = setup();
+    const sizes = () => engine.greet.mock.calls.map(([, reason, opts]) => `${reason}:${opts?.count}:${opts?.grows}`);
+    await director.onVisitorEvent({ type: "arrived", count: 2 });
+    await director.onVisitorEvent({ type: "grew", count: 3, from: 2 });
+    await director.onVisitorEvent({ type: "grew", count: 5, from: 3 });
+    await director.greetNow();
+    expect(sizes()).toEqual(["arrived:2:0", "grew:3:1", "grew:5:2", "manual:5:2"]);
+    // A new visit starts counting again.
+    await director.onVisitorEvent({ type: "left" });
+    await director.onVisitorEvent({ type: "returned", count: 4, awayMs: 120_000 });
+    expect(sizes().at(-1)).toBe("returned:4:0");
   });
 
   it("sends background frames while visitors stay, but not while speaking", async () => {
@@ -231,6 +245,19 @@ describe("Director", () => {
     expect(engine.connect).toHaveBeenCalledTimes(2);
   });
 
+  it("doesn't owe a greeting to visitors who left before the session came back", async () => {
+    const { engine, director, advance } = setup();
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    engine.failConnect = false;
+    advance(16_000);
+    engine.calls = [];
+    await director.onVisitorEvent({ type: "returned", count: 1, awayMs: 20_000 });
+    await director.tick();
+    expect(engine.calls).toEqual(["connect", "greet:returned:frame:20000"]);
+  });
+
   it("kill switch closes the session and ignores visitors until woken", async () => {
     const { engine, director } = setup();
     await director.onVisitorEvent({ type: "arrived", count: 1 });
@@ -245,6 +272,28 @@ describe("Director", () => {
     expect(engine.mic).toBe(true);
   });
 
+  it("greet now on an empty porch still sleeps the session after the idle timeout", async () => {
+    // Found by the soak test: nothing scheduled the close, so the session stayed open (billed) until visitors came and went.
+    const { engine, director, advance } = setup();
+    await director.greetNow();
+    expect(engine.status).toBe("open");
+    advance(30_000);
+    await director.tick();
+    expect(engine.close).not.toHaveBeenCalled();
+    advance(31_000);
+    await director.tick();
+    expect(engine.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("greet now while visitors are there leaves the session open", async () => {
+    const { engine, director, advance } = setup();
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.greetNow();
+    advance(120_000);
+    await director.tick();
+    expect(engine.close).not.toHaveBeenCalled();
+  });
+
   it("greet now connects even during the failure backoff", async () => {
     const { engine, director } = setup();
     engine.failConnect = true;
@@ -252,5 +301,225 @@ describe("Director", () => {
     engine.failConnect = false;
     await director.greetNow();
     expect(engine.calls.at(-1)).toBe("greet:manual:frame");
+  });
+});
+
+class FakeRecorded implements RecordedGreetings {
+  played: number[] = [];
+  isPlaying = false;
+  constructor(public n = 16) {}
+  count() {
+    return this.n;
+  }
+  play(index: number) {
+    this.played.push(index);
+    this.isPlaying = true;
+    return `clip ${index}`;
+  }
+  playing() {
+    return this.isPlaying;
+  }
+  stop = vi.fn(() => {
+    this.isPlaying = false;
+  });
+}
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function setupOffline(clips = 16) {
+  let now = 0;
+  const engine = new FakeEngine();
+  const recorded = new FakeRecorded(clips);
+  const logs: string[] = [];
+  const offline: [boolean, string][] = [];
+  // The connect timeout fires only when a test says so.
+  let pending: (() => void)[] = [];
+  const director = new Director(
+    {
+      engine,
+      capture: () => "frame",
+      isSpeaking: () => false,
+      now: () => now,
+      log: (m) => logs.push(m),
+      recorded,
+      onOffline: (on, detail) => offline.push([on, detail]),
+      wait: () => new Promise<void>((resolve) => pending.push(resolve)),
+    },
+    { idleCloseMs: 60_000, backgroundMs: 10_000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000, offline: { clipCooldownMs: 20_000 } },
+  );
+  const timeout = () => {
+    const fire = pending;
+    pending = [];
+    for (const resolve of fire) resolve();
+  };
+  return { engine, recorded, director, logs, offline, timeout, advance: (ms: number) => (now += ms) };
+}
+
+describe("Director offline mode", () => {
+  it("plays a recorded greeting when the voice session can't start, and reports going offline once", async () => {
+    const { engine, recorded, director, logs, offline, advance } = setupOffline();
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 2 });
+    expect(recorded.played).toHaveLength(1);
+    expect(engine.calls).toEqual(["connect"]); // no live greeting
+    expect(director.offline).toBe(true);
+    expect(offline).toEqual([[true, "no key"]]);
+    expect(logs.some((l) => l.includes("Offline mode: recorded greetings"))).toBe(true);
+    expect(logs).toContain('Recorded greeting (offline): "clip ' + recorded.played[0] + '"');
+    advance(6000);
+    await director.tick(); // a retry fails too: still one report
+    expect(engine.connect).toHaveBeenCalledTimes(2);
+    expect(offline).toHaveLength(1);
+  });
+
+  it("once offline, greets with a recording right away (no vision look), at most once per cooldown, never the same twice running", async () => {
+    const { engine, recorded, director, advance } = setupOffline();
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    advance(10_000);
+    await director.onVisitorEvent({ type: "returned", count: 1, awayMs: 10_000 });
+    expect(recorded.played).toHaveLength(1); // too soon after the last one
+    await director.onVisitorEvent({ type: "left" });
+    recorded.isPlaying = false;
+    for (let i = 0; i < 6; i++) {
+      advance(25_000);
+      await director.onVisitorEvent({ type: "arrived", count: 1 });
+      await director.onVisitorEvent({ type: "left" });
+      recorded.isPlaying = false;
+    }
+    expect(recorded.played).toHaveLength(7);
+    for (let i = 1; i < recorded.played.length; i++) expect(recorded.played[i]).not.toBe(recorded.played[i - 1]);
+    // Only the first arrival (not yet known to be offline) asked the engine to greet, and so to look.
+    expect(engine.greet).toHaveBeenCalledTimes(1);
+  });
+
+  it("plays a recording when the live voice is slow to connect, then greets live once it's open and the clip is done", async () => {
+    const { engine, recorded, director, logs, offline, timeout } = setupOffline();
+    let finishConnect = () => {};
+    engine.connect.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishConnect = () => {
+            engine.status = "open";
+            resolve();
+          };
+        }),
+    );
+    const arriving = director.onVisitorEvent({ type: "arrived", count: 1 });
+    await flush();
+    timeout();
+    await arriving;
+    expect(recorded.played).toHaveLength(1);
+    expect(logs.some((l) => l.includes("slow to connect"))).toBe(true);
+    expect(engine.calls).toEqual([]);
+    finishConnect();
+    await flush();
+    await director.tick();
+    expect(engine.calls).toEqual([]); // the clip is still playing
+    recorded.isPlaying = false;
+    await director.tick();
+    expect(engine.calls).toEqual(["greet:arrived:frame"]);
+    expect(offline).toEqual([]); // it was only slow, never offline
+  });
+
+  it("keeps retrying with backoff while the porch is empty, and switches back as soon as it works", async () => {
+    const { engine, director, offline, logs, advance } = setupOffline();
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 1 }); // t=0: fails, next try at 5 s
+    await director.onVisitorEvent({ type: "left" });
+    advance(1000);
+    await director.tick();
+    expect(engine.connect).toHaveBeenCalledTimes(1);
+    advance(5000); // 6 s
+    await director.tick();
+    expect(engine.connect).toHaveBeenCalledTimes(2); // fails: next at 16 s
+    advance(5000);
+    await director.tick();
+    expect(engine.connect).toHaveBeenCalledTimes(2);
+    advance(6000); // 17 s
+    await director.tick();
+    expect(engine.connect).toHaveBeenCalledTimes(3); // fails: next at 37 s
+    engine.failConnect = false;
+    advance(19_000);
+    await director.tick();
+    expect(engine.connect).toHaveBeenCalledTimes(3);
+    advance(1000); // 37 s
+    await director.tick();
+    expect(engine.connect).toHaveBeenCalledTimes(4);
+    expect(director.offline).toBe(false);
+    expect(offline).toEqual([
+      [true, "no key"],
+      [false, "live voice back after 37 s offline"],
+    ]);
+    // Nobody's there, so the working session isn't kept open (billed).
+    expect(engine.calls.at(-1)).toBe("close");
+    expect(logs).toContain("Back online: live voice back after 37 s offline");
+  });
+
+  it("gives a visitor greeted by a recording the live greeting once the voice is back", async () => {
+    const { engine, recorded, director, offline, advance } = setupOffline();
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    engine.failConnect = false;
+    recorded.isPlaying = false;
+    advance(6000);
+    await director.tick();
+    expect(engine.calls).toEqual(["connect", "connect", "greet:arrived:frame"]);
+    expect(offline.map(([on]) => on)).toEqual([true, false]);
+    advance(1000);
+    await director.tick(); // and only once
+    expect(engine.greet).toHaveBeenCalledTimes(2);
+  });
+
+  it("a session that drops mid-visit and won't come back gets one recorded line (not one per retry), then catches up silently", async () => {
+    const { engine, recorded, director, advance } = setupOffline();
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    expect(engine.calls).toEqual(["connect", "greet:arrived:frame"]);
+    engine.status = "closed";
+    engine.failConnect = true;
+    await director.tick();
+    expect(recorded.played).toHaveLength(1);
+    advance(30_000);
+    await director.tick();
+    expect(engine.connect).toHaveBeenCalledTimes(3);
+    expect(recorded.played).toHaveLength(1);
+    engine.failConnect = false;
+    recorded.isPlaying = false;
+    advance(30_000);
+    await director.tick();
+    expect(engine.calls.slice(-2)).toEqual(["connect", "observe:frame"]);
+    expect(engine.greet).toHaveBeenCalledTimes(1); // they were greeted live before the drop
+  });
+
+  it("forgets the owed greeting when the visitors leave", async () => {
+    const { engine, recorded, director, advance } = setupOffline();
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    engine.failConnect = false;
+    recorded.isPlaying = false;
+    advance(6000);
+    await director.tick(); // the background retry works; nobody to greet
+    expect(engine.calls).toEqual(["connect", "connect", "close"]);
+  });
+
+  it("the kill switch stops a recorded greeting", async () => {
+    const { engine, recorded, director } = setupOffline();
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.sleep();
+    expect(recorded.stop).toHaveBeenCalled();
+    expect(recorded.isPlaying).toBe(false);
+  });
+
+  it("stays quiet without recorded greetings, and says so once", async () => {
+    const { engine, director, logs, advance } = setupOffline(0);
+    engine.failConnect = true;
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    advance(30_000);
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    expect(logs.filter((l) => l.startsWith("No recorded greetings"))).toHaveLength(1);
   });
 });

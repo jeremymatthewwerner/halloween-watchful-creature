@@ -24,6 +24,10 @@ export interface RemoteOptions {
   production: boolean;
   bodyStatus: () => string;
   todayLogUrl: () => string | null;
+  /** The night recap's page, or null when there are no logs. */
+  recapUrl?: () => string | null;
+  /** Each dashboard check-in (the night recap watches the kill switch). */
+  onDashboardStatus?: (status: DashboardStatus) => void;
   now?: () => number;
   fetch?: typeof fetch;
 }
@@ -214,13 +218,19 @@ export class Remote {
       const req = (await c.req.json().catch(() => null)) as { kind?: unknown; detail?: unknown; resolve?: unknown } | null;
       const kind = req?.kind as AlertKind;
       if (!DASHBOARD_ALERT_KINDS.includes(kind)) return c.json({ error: "unknown alert kind" }, 400);
-      if (req?.resolve === true) this.alerts.resolve(kind);
-      else this.alerts.raise(kind, typeof req?.detail === "string" ? req.detail : "");
+      const detail = typeof req?.detail === "string" ? req.detail : "";
+      if (req?.resolve === true) this.alerts.resolve(kind, detail);
+      else this.alerts.raise(kind, detail);
       return c.body(null, 204);
     });
 
     /** Seconds since the dashboard last checked in, or -1 (for the Pi kiosk's watchdog script). */
     app.get("/api/remote/heartbeat", (c) => c.text(String(this.lastStateAt === null ? -1 : Math.floor((this.now() - this.lastStateAt) / 1000))));
+  }
+
+  /** Open streams: phones following the remote, and dashboards listening for its commands. */
+  streamCounts(): { phones: number; dashboards: number } {
+    return { phones: this.snapshotListeners.size, dashboards: this.commandListeners.size };
   }
 
   /** Starts watching for a silent dashboard and an unplugged Arduino. */
@@ -259,6 +269,7 @@ export class Remote {
     this.dashboard = status;
     this.lastStateAt = this.now();
     this.alerts.resolve("dashboard-offline");
+    this.opts.onDashboardStatus?.(status);
     if (changed) this.snapshotChanged();
   }
 
@@ -271,7 +282,7 @@ export class Remote {
       dashboardSeenAgo: this.lastStateAt === null ? null : Math.round((t - this.lastStateAt) / 1000),
       arduino: { enabled: this.opts.arduinoEnabled, connected: this.arduinoConnected, status: this.opts.bodyStatus() },
       alerts: this.alerts.alerts.slice(0, 15),
-      links: { todayLog: today, gallery: today ? today.replace(/log\.html$/, "gallery.html") : null, allLogs: "/api/session-logs" },
+      links: { todayLog: today, gallery: today ? today.replace(/log\.html$/, "gallery.html") : null, allLogs: "/api/session-logs", recap: this.opts.recapUrl?.() ?? null },
     };
   }
 

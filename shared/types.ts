@@ -43,6 +43,8 @@ export interface ClientConfig {
   hasApiKey: boolean;
   /** Today's on-disk log (log.html), or null when disk logging is off. */
   sessionLogUrl: string | null;
+  /** Whether greeting photos are saved (SNAPSHOTS) and kept how many days (0: until deleted); null when disk logging is off. */
+  snapshots: { enabled: boolean; retentionDays: number } | null;
   /** The voice fallbacks under the dashboard's pick: VOICE in .env (null if unset), then the character's default. */
   voice: { env: string | null; character: string };
 }
@@ -105,6 +107,18 @@ export interface ConversationLogRequest {
   }[];
 }
 
+/** POST /api/snapshots/delete-all needs this body, so a stray request can't wipe the photos. */
+export interface DeleteSnapshotsRequest {
+  confirm: true;
+}
+
+/** What "Delete all snapshots now" removed. */
+export interface DeleteSnapshotsResult {
+  /** Day folders that had photos, oldest first. */
+  days: string[];
+  files: number;
+}
+
 /** Rehearsal mode: a made-up group of trick-or-treaters for one generated image. */
 export interface VisitorScenario {
   /** How many people are in the picture (1–4): the rehearsal's simulated detection count. */
@@ -153,4 +167,38 @@ export interface GenerateVisitorsResult {
   items: GeneratedVisitor[];
   /** Images that failed (e.g. the API refused a prompt); the rest are still returned. */
   errors: string[];
+}
+
+/** Recorded clips: call-outs for people walking by, and greetings for when the live voice is down. */
+export type ClipKind = "lure" | "greeting";
+
+export const CLIP_KINDS: readonly ClipKind[] = ["lure", "greeting"];
+
+/** One recorded clip set, as written next to its MP3s (manifest.json). */
+export interface ClipManifest {
+  model: string;
+  /** The TTS voice that read them. */
+  voice: string;
+  /** The TTS instructions they were read with (older manifests have none). */
+  instructions?: string;
+  clips: { file: string; text: string }[];
+}
+
+/** POST /api/clips: the clip sets in the session voice (the dashboard's pick, or the server's default). */
+export interface VoiceClipsRequest {
+  character?: string;
+  /** The dashboard's voice pick, as sent with /api/session (null: the server's default). */
+  voice?: string | null;
+}
+
+export interface VoiceClipsResult {
+  /** The session voice these clips stand in for. */
+  voice: string;
+  /** How TTS reads it: "cedar with a light Australian accent". */
+  rendition: string;
+  exact: boolean;
+  /** Where each kind's files are (base + file); a kind the character has no lines for is left out. */
+  sets: Partial<Record<ClipKind, { base: string; clips: { file: string; text: string }[] }>>;
+  /** Clips made by this request (0: they were all cached). */
+  generated: number;
 }

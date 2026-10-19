@@ -53,6 +53,32 @@ export const SPOOKY_VERDICTS: Record<SpookyLevel, readonly string[]> = {
   ],
 };
 
+/**
+ * For big groups (web/bigGroup.ts): openings for the whole group rather than one costume, and finishes that
+ * are one fun group moment, not a verdict per costume. The dial's spooky openings mix in as usual.
+ */
+export const GROUP_OPENINGS = [
+  "Open with a big gasp at how many of you there are.",
+  "Open by announcing the group like a parade marching in.",
+  "Open by pretending to count everyone and happily losing track.",
+  "Open with a fun sound effect.",
+  "Open by welcoming them like a whole team arriving.",
+] as const;
+
+export const GROUP_FINISHES = [
+  'Finish by getting everybody to shout "trick or treat!" together.',
+  "Finish with one quick Halloween joke for the whole group.",
+  'Finish with a quick countdown for everyone: "three, two, one, candy time!"',
+  "Finish with a tiny made-up cheer for the whole group.",
+] as const;
+
+export const SPOOKY_GROUP_FINISHES: Record<SpookyLevel, readonly string[]> = {
+  0: ["Finish with a sweet, happy cheer for the whole group."],
+  1: [],
+  2: ["Finish with one quick spooky joke for the whole group."],
+  3: ['Finish by getting everybody to shout "trick or treat!" in their spookiest voices.'],
+};
+
 export class Variety {
   /** The twist each kind last gave, so the next one is different. */
   private readonly last = new Map<string, string>();
@@ -76,6 +102,29 @@ export class Variety {
   /** For the compliments after a quick hello. */
   verdict(): string {
     return ` For variety this time: ${this.finisher()}`;
+  }
+
+  /** For a big group's greeting: a group opening and a group moment to finish. */
+  groupGreeting(): string {
+    return ` For variety this time: ${this.groupOpener()} ${this.groupFinisher()} Use your own words.`;
+  }
+
+  /** For a big group's quick hello. */
+  groupOpening(): string {
+    return ` For variety this time: ${this.groupOpener()}`;
+  }
+
+  /** For a big group's shout-outs after a quick hello. */
+  groupFinish(): string {
+    return ` For variety this time: ${this.groupFinisher()}`;
+  }
+
+  private groupOpener(): string {
+    return this.pick("group-opening", [...GROUP_OPENINGS, ...SPOOKY_OPENINGS[this.spookiness()]]);
+  }
+
+  private groupFinisher(): string {
+    return this.pick("group-finish", [...GROUP_FINISHES, ...SPOOKY_GROUP_FINISHES[this.spookiness()]]);
   }
 
   private opener(): string {

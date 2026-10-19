@@ -81,6 +81,8 @@ export abstract class WebRtcEngine {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sdp: pc.localDescription?.sdp, character: this.deps.character, voice: this.deps.voice?.() ?? undefined }),
+        // The server gives up on OpenAI after 12 s; this catches a server that doesn't answer at all.
+        signal: AbortSignal.timeout(20_000),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };

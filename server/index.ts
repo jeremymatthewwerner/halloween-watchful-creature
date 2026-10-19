@@ -4,24 +4,34 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { WebSocketServer } from "ws";
 import { readFile, readdir } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import type {
   BodyMessage,
   ClientConfig,
   ConversationLogRequest,
+  DeleteSnapshotsRequest,
+  DeleteSnapshotsResult,
   GenerateVisitorsRequest,
   GenerateVisitorsResult,
   GeneratedVisitorList,
   ServerLogEntry,
   VisionRequest,
+  VoiceClipsRequest,
+  VoiceClipsResult,
 } from "../shared/types.ts";
 import { BodyController, NullSink, SerialSink } from "./body/driver.ts";
 import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "./characters.ts";
+import { VoiceClips, openaiSpeaker } from "./clips.ts";
 import { config } from "./config.ts";
 import { buildGallery } from "./gallery.ts";
 import { LOG_DAY, LogBuffer, SessionLog, captureConsole, logEventId, wantsSnapshot } from "./logs.ts";
+import { deleteAllSnapshots, startRetention } from "./snapshots.ts";
+import { isExpired, plural, snapshotPolicy } from "../shared/snapshots.ts";
 import { OpenAIError, characterVoice, createLiveSession, createRealtimeCall, describeFrame, generateImage, sessionVoice } from "./openai.ts";
+import { NtfyNotifier } from "./alerts.ts";
 import { listenHost } from "./auth.ts";
+import { NightRecapPush, installRecap, phoneBaseUrl, shortName } from "./recap.ts";
 import { Remote } from "./remote.ts";
 import { MAX_PER_REQUEST, VisitorCache, checkRequest, generateVisitors } from "./rehearsalGen.ts";
 
@@ -31,11 +41,33 @@ const logs = new LogBuffer();
 captureConsole(logs);
 const sessionLog = config.logDir === "none" ? null : new SessionLog(config.logDir, "Watchful Creature log");
 if (sessionLog) {
-  sessionLog.start(`engine ${config.engine}, character ${config.character}`);
+  sessionLog.start(`engine ${config.engine}, character ${config.character}, ${snapshotPolicy(config.snapshots, config.snapshotRetentionDays)}`);
   logs.subscribe((entry) => sessionLog.server(entry));
+  // Photos of visitors (mostly kids) older than SNAPSHOT_RETENTION_DAYS go now, then daily.
+  startRetention(config.logDir, config.snapshotRetentionDays);
 }
 
 const app = new Hono();
+
+// The night recap (server/recap.ts), and one push of its headline when the night is over.
+const recapName = shortName(loadCharacter(config.character).name);
+const recapPush =
+  sessionLog && config.ntfyTopic && (config.recapAt !== null || config.recapSleepMinutes !== null)
+    ? new NightRecapPush({
+        logDir: config.logDir,
+        notifier: new NtfyNotifier(config.ntfyTopic, config.ntfyServer, config.ntfyToken),
+        atMinutes: config.recapAt,
+        sleepMs: config.recapSleepMinutes === null ? null : config.recapSleepMinutes * 60_000,
+        baseUrl: phoneBaseUrl({
+          pinSet: Boolean(config.remotePin),
+          remoteUrl: config.remoteUrl,
+          host: listenHost({ HOST: process.env.HOST, pinSet: Boolean(config.remotePin) }).host,
+          port: config.port,
+          interfaces: networkInterfaces(),
+        }),
+        name: recapName,
+      })
+    : null;
 
 // Only the dashboard itself may call the API (origin check), so other web pages open in the same
 // browser can't start (billed) sessions against this local server. Other devices (the phone remote)
@@ -45,6 +77,8 @@ const remote = new Remote({
   arduinoEnabled: config.bodySerialPort !== "none",
   bodyStatus: () => body.status,
   todayLogUrl: () => (sessionLog ? `/api/session-logs/${sessionLog.currentDay}/log.html` : null),
+  recapUrl: () => (sessionLog ? "/recap" : null),
+  onDashboardStatus: (status) => recapPush?.dashboardStatus(status),
 });
 remote.install(app);
 
@@ -74,12 +108,18 @@ app.get("/api/config", (c) => {
     maxVoiceMinutesPerDay: config.maxVoiceMinutesPerDay,
     hasApiKey: Boolean(config.apiKey),
     sessionLogUrl: sessionLog ? `/api/session-logs/${sessionLog.currentDay}/log.html` : null,
+    snapshots: sessionLog ? { enabled: config.snapshots, retentionDays: config.snapshotRetentionDays } : null,
     voice: { env: config.voiceOverride || null, character: characterVoice(config, character) },
   };
   return c.json(body);
 });
 
-app.get("/api/health", (c) => c.json({ ok: true, engine: config.engine, body: body.status, hasApiKey: Boolean(config.apiKey) }));
+/** Open log streams (the dashboard's Server log panel, plus anyone else following /api/logs). */
+let logStreams = 0;
+
+app.get("/api/health", (c) =>
+  c.json({ ok: true, engine: config.engine, body: body.status, hasApiKey: Boolean(config.apiKey), streams: { logs: logStreams, ...remote.streamCounts() } }),
+);
 
 /** Exchanges the browser's WebRTC offer for an answer from GPT-Live or gpt-realtime. */
 app.post("/api/session", async (c) => {
@@ -104,6 +144,7 @@ app.post("/api/session", async (c) => {
 /** Streams server log lines (Server-Sent Events): the backlog first, then new lines as they happen. */
 app.get("/api/logs", (c) =>
   streamSSE(c, async (stream) => {
+    logStreams++;
     let sending = Promise.resolve();
     const send = (entry: ServerLogEntry) => {
       sending = sending.then(() => stream.writeSSE({ id: logEventId(entry), data: JSON.stringify(entry) })).catch(() => undefined);
@@ -115,6 +156,7 @@ app.get("/api/logs", (c) =>
     await new Promise<void>((resolve) => stream.onAbort(resolve));
     clearInterval(ping);
     unsubscribe();
+    logStreams--;
   }),
 );
 
@@ -132,7 +174,7 @@ app.post("/api/conversation", async (c) => {
 /** Past days' logs, newest first. */
 app.get("/api/session-logs", async (c) => {
   const days = sessionLog ? (await readdir(config.logDir).catch(() => [])).filter((d) => LOG_DAY.test(d)).sort().reverse() : [];
-  const items = days.map((d) => `<li><a href="/api/session-logs/${d}/log.html">${d}</a> · <a href="/api/session-logs/${d}/log.txt">text</a> · <a href="/api/session-logs/${d}/gallery.html">🖼️ costume gallery</a></li>`);
+  const items = days.map((d) => `<li><a href="/api/session-logs/${d}/log.html">${d}</a> · <a href="/api/session-logs/${d}/log.txt">text</a> · <a href="/api/session-logs/${d}/gallery.html">🖼️ costume gallery</a> · <a href="/recap/${d}">🌙 night recap</a></li>`);
   return c.html(
     `<!doctype html><meta charset="utf-8"><title>Creature logs</title><style>body{background:#120a1c;color:#f3eaff;font:15px system-ui;padding:16px}a{color:#ff7a1a}</style>` +
       `<h1>🎃 Creature logs</h1><ul>${items.join("") || "<li>No logs yet.</li>"}</ul>`,
@@ -145,11 +187,30 @@ app.get("/api/session-logs/:day/gallery.html", async (c) => {
   if (!sessionLog || !LOG_DAY.test(day)) return c.notFound();
   const logText = await readFile(join(config.logDir, day, "log.txt"), "utf8").catch(() => null);
   if (logText === null) return c.notFound();
-  const snapshots = config.logSnapshots
+  const snapshots = config.snapshots
     ? new Set((await readdir(join(config.logDir, day, "snapshots")).catch(() => [])).map((f) => `snapshots/${f}`))
     : null;
-  return c.html(buildGallery({ day, logText, snapshots }), 200, { "cache-control": "no-store" });
+  const retentionDays = config.snapshotRetentionDays;
+  const expired = isExpired(day, retentionDays, new Date());
+  return c.html(buildGallery({ day, logText, snapshots, retentionDays, expired }), 200, { "cache-control": "no-store" });
 });
+
+/**
+ * The dashboard's "Delete all snapshots now": every photo in every day's log, today's included.
+ * log.txt stays, and log.html shows a placeholder. Dashboard-only (server/auth.ts), so a phone
+ * signed in with the PIN can't use it, and it needs {"confirm": true} so a stray request can't either.
+ */
+app.post("/api/snapshots/delete-all", async (c) => {
+  if (!sessionLog) return c.json({ error: "Disk logging is off (LOG_DIR=none), so there are no snapshots" }, 404);
+  const req = await c.req.json<Partial<DeleteSnapshotsRequest>>().catch(() => null);
+  if (req?.confirm !== true) return c.json({ error: 'Send {"confirm": true} to delete every snapshot' }, 400);
+  const result: DeleteSnapshotsResult = deleteAllSnapshots(config.logDir);
+  console.log(`[privacy] deleted all snapshots: ${plural(result.files, "photo")} from ${plural(result.days.length, "day")}`);
+  return c.json(result);
+});
+
+/** The morning-after recap: GET /recap/<day> and /recap (the latest evening). Behind the same guard. */
+if (sessionLog) installRecap(app, { logDir: config.logDir, logSnapshots: config.snapshots, name: recapName });
 
 const LOG_FILES: Record<string, string> = { html: "text/html; charset=utf-8", txt: "text/plain; charset=utf-8", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
@@ -177,9 +238,11 @@ app.post("/api/vision", async (c) => {
   const verdict = result.verdict ?? (result.sameGroup === false ? "NEW" : undefined);
   const rehearsal = req.rehearsal === true;
   console.log(`[vision]${rehearsal ? " [REHEARSAL]" : ""} ${req.reason}${verdict ? ` (${verdict})` : ""} in ${Date.now() - started} ms: ${result.text}`);
-  if (sessionLog && config.logSnapshots && wantsSnapshot(req.reason, verdict, rehearsal)) {
+  if (sessionLog && wantsSnapshot(req.reason, verdict, rehearsal)) {
     try {
-      sessionLog.snapshot(req.image, req.reason, result.text, verdict);
+      // SNAPSHOTS=off: nothing goes to disk but the caption, so the gallery can still tell the story.
+      if (config.snapshots) sessionLog.snapshot(req.image, req.reason, result.text, verdict);
+      else sessionLog.look(req.reason, result.text, verdict);
     } catch (err) {
       console.warn(`[log] couldn't save snapshot: ${(err as Error).message}`);
     }
@@ -241,6 +304,37 @@ app.post("/api/rehearsal/generate", async (c) => {
   }
 });
 
+// --- recorded clips in the session voice (billed text-to-speech, cached on disk) ---
+const voiceClips =
+  config.clipCacheDir === "none"
+    ? null
+    : new VoiceClips({ dir: config.clipCacheDir, engine: config.engine, speak: config.apiKey ? openaiSpeaker(config) : null, log: console.log });
+
+/**
+ * The lure and offline-greeting clips in the voice the next session will use (made and cached the
+ * first time). On an error the dashboard keeps the bundled clips (web/public/<kind>/<character>/).
+ */
+app.post("/api/clips", async (c) => {
+  if (!voiceClips) return c.json({ error: "Per-voice clips are off (CLIP_CACHE_DIR=none)" }, 503);
+  const req = await c.req.json<VoiceClipsRequest>().catch(() => ({}) as VoiceClipsRequest);
+  const character = characterFrom(req.character);
+  const { voice } = sessionVoice(config, character, req.voice ?? undefined);
+  try {
+    const result: VoiceClipsResult = await voiceClips.ensure(character.id, voice);
+    return c.json(result, 200, { "cache-control": "no-store" });
+  } catch (err) {
+    console.warn(`[clips] ${character.name} in ${voice}: ${(err as Error).message}; the dashboard keeps the bundled clips`);
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
+
+app.get("/api/clips/:character/:rendition/:kind/:file", async (c) => {
+  const { character, rendition, kind, file } = c.req.param();
+  const data = await voiceClips?.file(character, rendition, kind, file);
+  if (!data) return c.notFound();
+  return c.body(data, 200, { "content-type": "audio/mpeg", "cache-control": "no-cache" });
+});
+
 if (config.production) {
   app.use("/*", serveStatic({ root: "./dist" }));
 }
@@ -260,6 +354,7 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: listen.hos
   console.log(`Creature server on http://localhost:${info.port} (engine: ${config.engine}, character: ${config.character})`);
   if (config.remotePin) console.log(`Phone remote on: open http://<this computer's address>:${info.port}/remote on your phone`);
   remote.start();
+  recapPush?.start();
   if (!config.apiKey) console.warn("OPENAI_API_KEY is not set: copy .env.example to .env and add your key.");
   if (!config.production) console.log("Open the dashboard at http://localhost:5173");
 });

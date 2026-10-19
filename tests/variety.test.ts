@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { OPENINGS, SPOOKY_OPENINGS, SPOOKY_VERDICTS, VERDICTS, Variety } from "../web/engines/variety.ts";
+import {
+  GROUP_FINISHES,
+  GROUP_OPENINGS,
+  OPENINGS,
+  SPOOKY_GROUP_FINISHES,
+  SPOOKY_OPENINGS,
+  SPOOKY_VERDICTS,
+  VERDICTS,
+  Variety,
+} from "../web/engines/variety.ts";
 
 describe("Variety", () => {
   it("never gives the same twist twice in a row, even if the dice say so", () => {
@@ -37,5 +46,27 @@ describe("Variety", () => {
     for (let i = 0; i < 500; i++) seen.add(v.greeting());
     for (const o of OPENINGS) expect([...seen].some((g) => g.includes(o))).toBe(true);
     for (const f of VERDICTS) expect([...seen].some((g) => g.includes(f))).toBe(true);
+  });
+
+  it("has group twists for big groups, covering the list, spooky ones only at their level, never twice in a row", () => {
+    let level: 0 | 1 | 2 | 3 = 1;
+    const v = new Variety(Math.random, () => level);
+    const seen = new Set<string>();
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      const finish = v.groupFinish();
+      expect(finish).not.toBe(last);
+      last = finish;
+    }
+    for (let i = 0; i < 500; i++) seen.add(v.groupGreeting());
+    const all = [...seen].join("\n");
+    for (const twist of [...GROUP_OPENINGS, ...GROUP_FINISHES]) expect(all).toContain(twist);
+    for (const twist of Object.values(SPOOKY_GROUP_FINISHES).flat()) expect(all).not.toContain(twist);
+    // Group moments are for everyone at once: no per-costume verdicts.
+    for (const twist of VERDICTS) expect(all).not.toContain(twist);
+    level = 3;
+    const scary = new Set<string>();
+    for (let i = 0; i < 200; i++) scary.add(v.groupGreeting());
+    expect([...scary].join("\n")).toContain(SPOOKY_GROUP_FINISHES[3][0]);
   });
 });

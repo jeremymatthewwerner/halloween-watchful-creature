@@ -108,6 +108,19 @@ export function wantsSnapshot(reason: string, verdict: string | undefined, rehea
 /** A day's log folder is named like 2026-10-31. */
 export const LOG_DAY = /^\d{4}-\d\d-\d\d$/;
 
+/** A file in a day's snapshots/ folder, as `snapshot()` names it: 18-05-09-arrived.jpg. */
+export const SNAPSHOT_FILE = /^\d\d-\d\d-\d\d-[\w-]*\.(?:jpg|png|webp)$/;
+
+/** A snapshot's picture in log.html, as `snapshot()` writes it; group 1 is its path (snapshots/…). */
+export const SNAPSHOT_IMAGE_HTML = /<a href="(snapshots\/[\w-]+\.(?:jpg|png|webp))" target="_blank"><img src="\1"[^>]*><\/a>/g;
+
+/**
+ * Stands in for a snapshot's picture in log.html: photos turned off, or removed later. Styled
+ * inline, so log.html files written before it existed show it right too.
+ */
+export const photoPlaceholder = (text: string) =>
+  `<span class="nophoto" style="display:inline-block;flex:none;width:240px;max-width:45vw;padding:24px 8px;box-sizing:border-box;border:1px dashed #3a2858;border-radius:6px;color:#a99bc0;text-align:center">📷 ${escapeHtml(text)}</span>`;
+
 const HTML_HEAD = (day: string, title: string) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)} · ${day}</title>
@@ -198,6 +211,21 @@ export class SessionLog {
         `<span><strong>${escapeHtml(label)}</strong> ${verdict ? `<span class="verdict">${escapeHtml(verdict)}</span> ` : ""}${escapeHtml(caption)}</span></div>`,
     );
     return name;
+  }
+
+  /**
+   * Logs what the camera saw at a greeting without saving the frame (SNAPSHOTS=off), so the
+   * captions stay in the log and the gallery can still show them in words.
+   */
+  look(label: string, caption: string, verdict?: string): void {
+    const at = this.now();
+    const verdictText = verdict ? `[${verdict}] ` : "";
+    this.write(
+      at,
+      `look     ${label.replace(/[^\w-]/g, "") || "look"} ${verdictText}${caption}`,
+      `<div class="row snapshot"><time>${timeOf(at)}</time>${photoPlaceholder("snapshots off")}` +
+        `<span><strong>${escapeHtml(label)}</strong> ${verdict ? `<span class="verdict">${escapeHtml(verdict)}</span> ` : ""}${escapeHtml(caption)}</span></div>`,
+    );
   }
 
   private ensureFolder(at: Date): void {

@@ -39,7 +39,7 @@ Halloween is 2026-10-31. We buy off-the-shelf parts wherever possible and write 
 
 ## Safety and privacy
 - Persona rules: compliment **costumes only**, never bodies or appearance. Kid-safe, never truly scary (the spookiness dial stays within that), no personal questions.
-- Camera snapshots go to OpenAI to generate replies. The day's log keeps the conversation and a snapshot per greeting **on the local disk** (`LOG_SNAPSHOTS=false` / `LOG_DIR=none` turn that off); the gallery is family-only.
+- Camera snapshots go to OpenAI to generate replies. The day's log keeps the conversation and a snapshot per greeting **on the local disk** (`SNAPSHOTS=off` / `LOG_DIR=none` turn that off), and photos are deleted after 7 days (`SNAPSHOT_RETENTION_DAYS`); the gallery is family-only.
 - The phone remote is off unless `REMOTE_PIN` is set; ntfy alerts carry no visitor data.
 - Consider a small sign: "This pumpkin talks back (it's AI!)".
 - Set a **monthly spend limit** on the OpenAI project. The dashboard shows a live cost estimate.

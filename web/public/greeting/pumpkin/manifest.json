@@ -1,0 +1,71 @@
+{
+  "model": "gpt-4o-mini-tts",
+  "voice": "cedar",
+  "instructions": "You are Jacques O'Lantern, a big, bouncy, friendly talking pumpkin, like a favorite children's TV host. Greet trick-or-treaters who just walked up to the porch: delighted, warm and bursting with excitement, smiling the whole time. Never scary. Plain American English, no accent.",
+  "clips": [
+    {
+      "file": "01.mp3",
+      "text": "Happy Halloween! Ooh, what a great costume!"
+    },
+    {
+      "file": "02.mp3",
+      "text": "Well, hello there! Wow, look at you! Happy Halloween!"
+    },
+    {
+      "file": "03.mp3",
+      "text": "Trick or treat! Ooh, I love that costume!"
+    },
+    {
+      "file": "04.mp3",
+      "text": "Great gourds! What an amazing costume! Happy Halloween!"
+    },
+    {
+      "file": "05.mp3",
+      "text": "Hello, hello! The pumpkin judge says: gold medal costume!"
+    },
+    {
+      "file": "06.mp3",
+      "text": "Wowza! That costume gets three thumbs up, and I don't even have thumbs!"
+    },
+    {
+      "file": "07.mp3",
+      "text": "Happy Halloween! You look fantastic tonight!"
+    },
+    {
+      "file": "08.mp3",
+      "text": "Ooh! A costume this good deserves a big round of applause!"
+    },
+    {
+      "file": "09.mp3",
+      "text": "Jumping jack-o'-lanterns! What a spectacular costume!"
+    },
+    {
+      "file": "10.mp3",
+      "text": "Hi there! I'm Jacques the pumpkin, and I love your costume!"
+    },
+    {
+      "file": "11.mp3",
+      "text": "Look who's here! Happy Halloween! What a super cool costume!"
+    },
+    {
+      "file": "12.mp3",
+      "text": "Hooray, trick-or-treaters! Happy Halloween!"
+    },
+    {
+      "file": "13.mp3",
+      "text": "Oh my gourd! That is one terrific costume!"
+    },
+    {
+      "file": "14.mp3",
+      "text": "Happy Halloween! Thanks for visiting the pumpkin! Enjoy your treats!"
+    },
+    {
+      "file": "15.mp3",
+      "text": "Ten out of ten! That costume is a real treat! Happy Halloween!"
+    },
+    {
+      "file": "16.mp3",
+      "text": "Whoa, fancy! I can tell you worked hard on that costume! Happy Halloween!"
+    }
+  ]
+}

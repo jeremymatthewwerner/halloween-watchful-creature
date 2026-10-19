@@ -1,8 +1,12 @@
 import { Hono } from "hono";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { AlertCenter, NtfyNotifier, type Notifier } from "../server/alerts.ts";
 import { RemoteAuth, SESSION_COOKIE, checkAccess, clientAddress, isLoopback, listenHost, parseCookies, type RequestFacts } from "../server/auth.ts";
 import { Remote, parseCommand } from "../server/remote.ts";
+import { deleteAllSnapshots } from "../server/snapshots.ts";
 import type { DashboardStatus } from "../shared/remote.ts";
 
 const PIN = "271828";
@@ -153,11 +157,21 @@ describe("checkAccess", () => {
   it("keeps the phone out of the dashboard-only routes, even signed in", () => {
     const auth = new RemoteAuth({ pin: PIN });
     const cookie = `${SESSION_COOKIE}=${signIn(auth)}`;
-    for (const path of ["/api/session", "/api/vision", "/api/rehearsal/generate", "/api/rehearsal/generated", "/api/conversation", "/api/remote/state", "/api/remote/commands", "/api/remote/alert", "/ws/body"]) {
+    for (const path of ["/api/session", "/api/vision", "/api/rehearsal/generate", "/api/rehearsal/generated", "/api/snapshots/delete-all", "/api/conversation", "/api/remote/state", "/api/remote/commands", "/api/remote/alert", "/ws/body"]) {
       expect(checkAccess(req({ ...PHONE, path, method: "POST", cookie }), auth)).toMatchObject({ allow: false, status: 403 });
     }
     // The full dashboard (the brain) isn't for the phone either.
     expect(checkAccess(req({ ...PHONE, path: "/", cookie }), auth)).toMatchObject({ allow: false, redirect: "/remote" });
+  });
+
+  it("keeps the phone away from the per-voice clips (making them is billed text-to-speech), even signed in", () => {
+    const auth = new RemoteAuth({ pin: PIN });
+    const cookie = `${SESSION_COOKIE}=${signIn(auth)}`;
+    expect(checkAccess(req({ ...PHONE, path: "/api/clips", method: "POST", cookie }), auth)).toMatchObject({ allow: false, status: 403 });
+    expect(checkAccess(req({ ...PHONE, path: "/api/clips/pumpkin/cedar-australian/lure/01.mp3", cookie }), auth)).toMatchObject({ allow: false, status: 403 });
+    expect(checkAccess(req({ ...LOCAL, path: "/api/clips", method: "POST" }), auth)).toMatchObject({ allow: true, who: "local" });
+    // Not a prefix trick: only /api/clips and what's under it.
+    expect(checkAccess(req({ ...PHONE, path: "/api/clipsx", cookie }), auth)).toMatchObject({ allow: true, who: "remote" });
   });
 
   it("keeps the origin check: other sites are refused, the phone's own origin is fine", () => {
@@ -200,6 +214,7 @@ describe("Remote routes (Hono middleware)", () => {
     app.get("/api/health", (ctx) => ctx.json({ ok: true }));
     app.post("/api/session", (ctx) => ctx.json({ started: true }, 201));
     app.post("/api/vision", (ctx) => ctx.json({ error: "down" }, 502));
+    app.post("/api/clips", (ctx) => ctx.json({ generated: 30 }));
     const call = (path: string, from: string, init: RequestInit & { host?: string } = {}) => {
       const headers = new Headers(init.headers);
       headers.set("host", init.host ?? (isLoopback(from) ? "localhost:8787" : "192.168.1.5:8787"));
@@ -223,9 +238,11 @@ describe("Remote routes (Hono middleware)", () => {
     expect(setCookie).not.toContain(PIN);
     const cookie = setCookie.split(";")[0]!;
     expect((await call("/api/health", "192.168.1.23", { headers: { cookie } })).status).toBe(200);
-    // Signed in or not, the phone can't start a billed session.
+    // Signed in or not, the phone can't start a billed session, or make billed clips.
     expect((await call("/api/session", "192.168.1.23", { method: "POST", headers: { cookie } })).status).toBe(403);
     expect((await call("/api/session", "127.0.0.1", { method: "POST" })).status).toBe(201);
+    expect((await call("/api/clips", "192.168.1.23", { method: "POST", headers: { cookie } })).status).toBe(403);
+    expect((await call("/api/clips", "127.0.0.1", { method: "POST" })).status).toBe(200);
   });
 
   it("form sign-in (no JavaScript) posts the PIN in the body and redirects back", async () => {
@@ -277,10 +294,65 @@ describe("Remote routes (Hono middleware)", () => {
     expect(remote.alerts.isOpen("dashboard-offline")).toBe(false);
   });
 
+  it("takes the dashboard's offline-mode alert and its all-clear", async () => {
+    const { remote, call } = setup();
+    const post = (body: unknown) => call("/api/remote/alert", "127.0.0.1", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect((await post({ kind: "voice-offline", detail: "fetch failed" })).status).toBe(204);
+      expect(remote.alerts.isOpen("voice-offline")).toBe(true);
+      expect(warn).toHaveBeenCalledWith("[alert] Voice offline: playing recorded greetings: fetch failed");
+      expect((await post({ kind: "voice-offline", resolve: true, detail: "live voice back after 95 s offline" })).status).toBe(204);
+      expect(remote.alerts.isOpen("voice-offline")).toBe(false);
+      expect(log).toHaveBeenCalledWith("[alert] cleared: Voice offline: playing recorded greetings (live voice back after 95 s offline)");
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("counts open phone and dashboard streams, and forgets them when they go away", async () => {
+    const { remote, call } = setup();
+    expect(remote.streamCounts()).toEqual({ phones: 0, dashboards: 0 });
+    const phone = (await call("/api/remote/stream", "127.0.0.1")).body!.getReader();
+    const dashboard = (await call("/api/remote/commands", "127.0.0.1")).body!.getReader();
+    await phone.read(); // the first snapshot
+    expect(remote.streamCounts()).toEqual({ phones: 1, dashboards: 1 });
+    await phone.cancel();
+    await dashboard.cancel();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(remote.streamCounts()).toEqual({ phones: 0, dashboards: 0 });
+  });
+
   it("raises a vision alert once failures pile up", async () => {
     const { remote, call } = setup();
     for (let i = 0; i < 3; i++) await call("/api/vision", "127.0.0.1", { method: "POST" });
     expect(remote.alerts.alerts[0]).toMatchObject({ kind: "vision-errors" });
+  });
+
+  it("lets only the dashboard delete all snapshots, even with the phone signed in", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "creature-remote-"));
+    try {
+      const photo = join(dir, "2026-10-31", "snapshots", "18-00-00-arrived.jpg");
+      mkdirSync(dirname(photo), { recursive: true });
+      writeFileSync(photo, "jpeg");
+      const { remote, app, call } = setup();
+      // The same handler shape as server/index.ts.
+      app.post("/api/snapshots/delete-all", async (ctx) => ctx.json(deleteAllSnapshots(dir)));
+      const cookie = `${SESSION_COOKIE}=${signIn(remote.auth)}`;
+      const phone = await call("/api/snapshots/delete-all", "192.168.1.23", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: '{"confirm":true}' });
+      expect(phone.status).toBe(403);
+      expect(existsSync(photo)).toBe(true);
+      expect((await call("/api/snapshots/delete-all", "192.168.1.23", { method: "POST", body: '{"confirm":true}' })).status).toBe(401);
+      expect(existsSync(photo)).toBe(true);
+      const local = await call("/api/snapshots/delete-all", "127.0.0.1", { method: "POST", headers: { "content-type": "application/json" }, body: '{"confirm":true}' });
+      expect(local.status).toBe(200);
+      expect(await local.json()).toEqual({ days: ["2026-10-31"], files: 1 });
+      expect(existsSync(photo)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("validates commands", () => {
@@ -325,6 +397,24 @@ describe("AlertCenter", () => {
     expect(sent).toHaveLength(1);
     c.advance(15 * 60_000);
     alerts.raise("arduino-disconnected");
+    expect(sent).toHaveLength(2);
+  });
+
+  it("pushes one offline-mode alert however often the voice flaps between offline and back", () => {
+    const c = clock();
+    const { sent, notifier } = fakeNotifier();
+    const alerts = new AlertCenter({ now: c.now, notifier });
+    for (let i = 0; i < 5; i++) {
+      alerts.raise("voice-offline", "fetch failed");
+      c.advance(60_000);
+      alerts.resolve("voice-offline", "live voice back");
+      c.advance(60_000);
+    }
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ title: "Voice offline: playing recorded greetings" });
+    expect(sent[0]!.text).not.toContain("fetch failed"); // fixed text only
+    c.advance(15 * 60_000);
+    alerts.raise("voice-offline");
     expect(sent).toHaveLength(2);
   });
 

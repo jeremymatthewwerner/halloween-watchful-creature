@@ -24,6 +24,10 @@ export type EngineEvent =
 export interface GreetOptions {
   /** For "returned": how long they were away. */
   awayMs?: number;
+  /** How many visitors the tracker counts (0 or missing: unknown). Four or more is a big group (web/bigGroup.ts). */
+  count?: number;
+  /** How many times the group has grown this visit: a group that keeps growing is a line forming. */
+  grows?: number;
   /**
    * The session connecting (resolves true once open). The engine can start looking meanwhile,
    * but only speaks once it resolves true; false means it couldn't connect, so skip the greeting.

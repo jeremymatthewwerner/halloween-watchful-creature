@@ -6,12 +6,13 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**: a dapper pumpkin i
 
 **What it does**
 - **Greets fast:** starts waking the moment someone appears, says a quick hello while the camera's look is still being described, then praises each costume's **standout detail**.
+- **Keeps big groups moving:** for 4 or more visitors, or a group that keeps growing into a line, it gives one quick group welcome, a shout-out to one or two standout costumes and a group moment ("everybody say trick or treat!"), with no mini-game, instead of going costume by costume.
 - **Notices change:** new visitors, a second person joining, someone swapping in, and the same person back in a different hat (a playful remark), or back soon (silence) or after a while (a "welcome back").
 - **Doesn't repeat itself:** remembers what it said tonight across voice sessions, varies its openings and verdicts, and keeps running gags ("visitor number 50!", "the fourth dinosaur tonight!").
 - **Plays:** an occasional riddle for "trick", a roar contest, or "guess what I am".
 - **Lets you steer:** quick modes (Candy's low/out, Toddler mode, Back in 5, Last call), a spookiness dial, a voice picker, a kill switch and "make it say…", from the dashboard or **your phone**.
-- **Looks after itself:** a watchdog recovers a stuck camera or page, and alerts can **push to your phone**.
-- **Keeps a record:** a daily log with a snapshot of each greeting, and a **costume gallery** for the family.
+- **Looks after itself:** a watchdog recovers a stuck camera or page, and alerts can **push to your phone**. If Wi-Fi or OpenAI goes down, it greets visitors with **recorded greetings** and switches back to its live voice by itself.
+- **Keeps a record:** a daily log with a snapshot of each greeting, a **costume gallery** for the family, and a **night recap** (groups, busiest half hour, top costumes, best lines), with one push to your phone when the night is over.
 - **Rehearsal mode:** test greetings with sample photos, without walking in and out of frame.
 
 | Doc | What's in it |
@@ -23,6 +24,7 @@ The first character is **Jacques O'Lantern, Pumpkin Critic**: a dapper pumpkin i
 | [docs/PROP_BUILD.md](docs/PROP_BUILD.md) | Building the pumpkin, wiring the eyes, porch checklist |
 | [docs/templates/pumpkin-carving-template.pdf](docs/templates/pumpkin-carving-template.pdf) | Printable, actual-size carving template |
 | [docs/PI_MODE.md](docs/PI_MODE.md) | Running on a Raspberry Pi 5 |
+| [docs/SOAK_TEST.md](docs/SOAK_TEST.md) | The soak test: a whole evening at high speed, against a mock OpenAI |
 
 ## Quick start (Mac)
 
@@ -87,12 +89,20 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**. F
   - A new voice starts with the next voice session. While a session is running with another voice, **🔄 Restart voice session now** ends it; if visitors are there it reconnects right away with the new voice.
   - The server only accepts voices on its list (`shared/voices.ts`); anything else is ignored and logged.
 - **Conversation:** live transcript plus system notes.
-- **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery** and **all logs**.
+- **Server log:** the server's terminal output, live. Its links open **today's log**, today's **costume gallery**, the **night recap** and **all logs**. Under them: whether snapshots are on and how long they're kept, and **🗑️ Delete all snapshots now** (see **Privacy** below).
 - **Alerts:** health problems (see below), shown only when there are any.
 - **Between visitors** (both free: local audio only, they never open the voice session), each with a toggle in **Settings** that's remembered:
   - **Spooky sounds:** every 20–60 s on an empty porch, a quiet creaky door, owl, distant thunder, wind, cackle, wolf howl or church bell, synthesized in the browser (no audio files).
   - **Call out to people walking by (lure mode):** when someone is in view but too far to count as a visitor (a grey box), the pumpkin plays one of 14 recorded call-outs ("Psst! Over here! Come get your costume reviewed!"), never the same one twice in a row, at most once per **Seconds between call-outs** (default 45, plus up to 15 s at random). It waits 30 s after visitors leave or the creature talks, so it doesn't call back kids who just left.
   - Both stop the instant someone comes close or the creature speaks, stay silent while the kill switch is on, and play through the selected **Speaker**.
+  - **Eyes:** during a call-out the eyes (and jaw) pulse with the recording, as they do with the live voice. Ambience only gets a slow blink.
+- **Recorded clips in the creature's voice:** call-outs and offline greetings are read by OpenAI text-to-speech (`gpt-4o-mini-tts`), whose voices aren't GPT-Live's. When the dashboard wakes, and whenever you pick a voice, the server makes the clips in the closest TTS voice (about a cent, once per voice), caches them in `clip-cache/` (gitignored; `CLIP_CACHE_DIR`, `none` turns this off) and the dashboard switches to them. Until then, or if that isn't possible (no key, no network, a voice it knows nothing about), it uses the bundled clips (voice `cedar`). The mapping is in [docs/DESIGN.md](docs/DESIGN.md) ("Recorded clips in the session voice"): for example `ripple` is read by `cedar` with a light Australian accent. Making clips is dashboard-only: the phone remote can't trigger it.
+
+### Offline mode (Wi-Fi or OpenAI down)
+If the voice session can't start (an error, no network, or no connection within 5 s of a visitor arriving), or it drops mid-visit and won't come back, the pumpkin plays one of 16 short **recorded greetings** ("Happy Halloween! Ooh, what a great costume!") instead of going silent, with its eyes pulsing to the recording.
+- Never the same greeting twice in a row, and at most one every 20 s (a group stepping out and back doesn't get a string of them).
+- It keeps trying the live voice in the background, after 5 s, then 10, 20, 40 and every 60 s, and switches back the moment it works: visitors who only heard a recording then get a proper live greeting. With the porch empty, a successful check closes the session again right away.
+- The status pill shows **offline: recorded greetings**. Going offline and coming back are logged in the Conversation panel and the server log, and raise a **Voice offline** alert (pushed to your phone at most once per 15 minutes, however often it flaps). While offline, the watchdog's separate "voice session failing" alert is held back.
 
 ## Phone remote and alerts
 Watch and steer the creature from the couch, and get a push on your phone when something breaks. The dashboard on the creature's computer stays the brain: the phone's buttons go through the server to the dashboard, and its status comes back the same way.
@@ -108,14 +118,14 @@ Watch and steer the creature from the couch, and get a push on your phone when s
    - This works the same in development (`npm run dev`) and on Halloween night (`npm start`): the phone always talks to the server on port 8787, never to the Vite dev server on 5173 (that one only serves this computer, since it hands out project files without a PIN).
    - macOS may ask whether to allow incoming connections for `node`: allow it.
 
-The remote shows whether the creature is awake, asleep (kill switch) or waiting for a tap, visitors at the door, the voice session, the Arduino, today's awake minutes and estimated cost, and the latest alerts. Its buttons: **🛑 Sleep / ▶️ Wake** (the kill switch), **👋 Greet now**, **Make it say…**, the **quick modes**, and links to today's log, the costume gallery and all logs.
+The remote shows whether the creature is awake, asleep (kill switch) or waiting for a tap, visitors at the door, the voice session, the Arduino, today's awake minutes and estimated cost, and the latest alerts. Its buttons: **🛑 Sleep / ▶️ Wake** (the kill switch), **👋 Greet now**, **Make it say…**, the **quick modes**, and links to today's log, the costume gallery, the night recap and all logs.
 
 **Security:**
 - LAN access is off unless `REMOTE_PIN` is set. Setting `HOST=0.0.0.0` without a PIN is ignored (the server stays on 127.0.0.1 and says so). `HOST` can still pick a specific address when a PIN is set.
-- Every request from another device needs a signed-in session: all `/api` routes (including logs, snapshots and galleries) and the `/ws` socket. Only the PIN page and the PIN check itself are open. The dashboard on the creature's computer (loopback, addressed as `localhost`) needs no PIN.
+- Every request from another device needs a signed-in session: all `/api` routes (including logs, snapshots and galleries), the `/recap` pages and the `/ws` socket. Only the PIN page and the PIN check itself are open; a page opened without a session (like the recap link in a push) goes to the PIN page first. The dashboard on the creature's computer (loopback, addressed as `localhost`) needs no PIN.
 - The PIN is sent once, in the body of a POST, and swapped for an `HttpOnly`, `SameSite=Strict` session cookie (24 hours; restarting the server signs phones out). It's compared in constant time and never logged or put in a URL.
 - Wrong PINs: 5 per phone per 15 minutes, and 20 from all devices together, then sign-in locks for the rest of the 15 minutes.
-- Even signed in, the phone can't use the dashboard-only routes: it can't start voice sessions, call the vision model or drive the Arduino. The existing origin check still applies.
+- Even signed in, the phone can't use the dashboard-only routes: it can't start voice sessions, call the vision model, drive the Arduino or delete snapshots. The existing origin check still applies.
 - It's plain HTTP on your home network, so anyone who can watch your Wi-Fi traffic could see the PIN and cookie. Use it on a home network you trust, not on public Wi-Fi.
 
 ### Watchdog
@@ -135,7 +145,7 @@ open -na "Google Chrome" --args --autoplay-policy=no-user-gesture-required "http
 The Pi kiosk already uses this flag. The setting only lasts while that Chrome window runs, so quit Chrome fully first.
 
 ### Alerts
-Alerts show on the dashboard and the remote: camera lost, person detector failed, Arduino disconnected, vision errors piling up, voice session failing, daily cost cap reached, the watchdog reloading the page, the dashboard needing a tap, and the dashboard not checking in. Repeats of a problem that's still going are counted, not listed again, and they're marked when they clear up by themselves.
+Alerts show on the dashboard and the remote: camera lost, person detector failed, Arduino disconnected, vision errors piling up, voice session failing, voice offline (playing recorded greetings), daily cost cap reached, the watchdog reloading the page, the dashboard needing a tap, and the dashboard not checking in. Repeats of a problem that's still going are counted, not listed again, and they're marked when they clear up by themselves.
 
 **Push to your phone (optional), with [ntfy](https://ntfy.sh):**
 1. Install the **ntfy** app (iOS or Android).
@@ -143,7 +153,9 @@ Alerts show on the dashboard and the remote: camera lost, person detector failed
 3. In the app, tap **+** and subscribe to that topic (server `ntfy.sh`).
 4. In `.env`, set `NTFY_TOPIC=jacques-<that>` and restart the server.
 
-Pushes are short fixed messages (like "Camera stopped. Check the USB cable…"): never photos, transcripts or anything about visitors. Each kind of problem is pushed at most once per 15 minutes, and at most 6 pushes per hour in total. `NTFY_SERVER` and `NTFY_TOKEN` are for a self-hosted ntfy server or a protected topic.
+Pushes are short fixed messages (like "Camera stopped. Check the USB cable…"): never photos, transcripts or anything about visitors. Each kind of problem is pushed at most once per 15 minutes, and at most 6 pushes per hour in total.
+
+**End-of-night push:** once per evening, a message with the headline stats ("Jacques met 43 groups tonight (about 97 people), busiest 7:00–7:30 pm (9 groups). Awake 1 h 42 min."). It goes out when the kill switch has been on for `RECAP_SLEEP_MINUTES` (default 15; use **Back in 5** for short breaks), or at `RECAP_AT` (e.g. `22:00`) if that comes first. Numbers and times only, never photos or costumes. With `REMOTE_PIN` set it adds a link to the recap at this computer's home-network address (or `REMOTE_URL`); tapping it asks for the PIN if the phone isn't signed in. Without a PIN there's no link, since the phone can't reach the server. Nights with no visitors send nothing, and a `recap-sent.txt` in the day's folder stops a restarted server from sending it twice. `NTFY_SERVER` and `NTFY_TOKEN` are for a self-hosted ntfy server or a protected topic.
 
 ### Rehearsal mode (testing without walking into frame)
 **Settings → 🎭 Rehearsal (developer)** pretends visitors walk up, using sample images instead of the camera. Wake the creature first, then tick **Rehearsal on**.
@@ -166,11 +178,28 @@ How it works: `web/rehearsal.ts` sits behind two small seams in `web/main.ts`: t
 Each day gets a folder in `logs/` (for example `logs/2026-10-31/`). Server restarts append to the same day.
 - `log.html`: everything in one readable page: server lines, what visitors and the creature said, system notes, and a **snapshot** of each greeting with the vision verdict (click a snapshot for full size).
 - `log.txt`: the same as plain text, for `grep`.
-- `snapshots/`: the camera frame of each greeting.
+- `snapshots/`: the camera frame of each greeting, deleted after a week (see **Privacy** below).
 
 The **costume gallery** (`/api/session-logs/<day>/gallery.html`, linked from the dashboard and from **All logs**) turns a day into a grid of greetings: each snapshot with what the camera saw and the creature's best line from that moment. Click a costume, or **▶️ Slideshow**, to see them big (arrow keys move, Esc closes). It's built from the day's `log.txt` each time you open it, so there's nothing extra to save. It's for the family only: it shows other people's kids, so it has no share or upload buttons.
 
-This keeps photos and speech of visitors (often children) on your computer. Set `LOG_SNAPSHOTS=false` to skip the photos (the gallery then shows words only), or `LOG_DIR=none` to keep no logs at all (no gallery either). Delete old days by deleting their folders.
+The **night recap** (`/recap/<day>`, or `/recap` for the latest evening; linked from the dashboard, the remote and **All logs**) is the morning-after summary, also built from `log.txt` on request, with rehearsal lines left out:
+- **visitor groups** and **roughly how many people**: each greeting of new visitors (walking up, joining a group, or someone new found by a camera check) is a group, counted with the person detector's number, or the number the camera's description mentions; the page explains the method and its limits;
+- the **busiest half hour**, with a bar per half hour;
+- the **top costumes**: one snapshot per group, preferring new greetings with a vivid "standout:" detail, skipping the same group seen again (a snapshot deleted since shows a placeholder);
+- a few of the creature's **best lines**, and how long it was **awake** (voice session open) and **on duty**.
+
+It shows kids' photos, so it sits behind the same rules as the gallery: this computer only, or a phone signed in with the PIN.
+
+### Privacy: photos of visitors
+The snapshots are photos of other people's kids, so they're kept on your computer only, and not for long:
+- **Kept for a week, then deleted** (`SNAPSHOT_RETENTION_DAYS`, default `7`): when the server starts, and then once a day, it deletes the photos of every day more than 7 days old. Halloween's photos stay through Nov 7, so the family can enjoy the gallery the week after, and are gone on Nov 8. Only the photos go: `log.txt` stays, `log.html` shows a small "📷 photo removed after 7 days" in their place, and the gallery still shows what the camera saw and what the creature said. `0` (or `off`) keeps photos forever.
+- **Turn them off** with `SNAPSHOTS=off`: no camera frames are written to disk at all. The vision captions still go in the log, and the gallery says snapshots are turned off and shows words only. (The older `LOG_SNAPSHOTS=false` still works.)
+- **Delete them all now:** the dashboard shows the current setting under the log links (for example "📷 Snapshots on, kept 7 days"), with a **🗑️ Delete all snapshots now** button. It asks first, then deletes every day's photos, today's included, and keeps the logs. Only the dashboard on the creature's computer can do this, not the phone remote.
+- `LOG_DIR=none` keeps no logs at all (no gallery either). Deleting a day's folder removes that day completely.
+
+Upgrading from a version without retention: the first start deletes photos older than 7 days. Set `SNAPSHOT_RETENTION_DAYS=0` first if you want to keep them.
+
+The clean-up only ever deletes inside `LOG_DIR`: files named like a snapshot (`18-05-09-arrived.jpg`) in the `snapshots/` folder of a folder named like a day (`2026-10-31`). It never follows symlinks.
 
 ## How it saves money
 The voice session only runs while someone is at the porch.
@@ -200,16 +229,24 @@ GPT-Live costs about **$0.05 per minute** of voice, plus small vision-model call
 | `NTFY_TOPIC` | (off) | ntfy.sh topic for push alerts; make it long and random |
 | `NTFY_SERVER` / `NTFY_TOKEN` | `https://ntfy.sh` / (none) | Self-hosted ntfy server, or a token for a protected topic |
 | `LOG_DIR` | `logs` | Folder for the daily logs and snapshots; `none` keeps no logs (and no gallery) |
-| `LOG_SNAPSHOTS` | `true` | `false` keeps the logs but saves no photos |
+| `SNAPSHOTS` | `on` | `off` keeps the logs (with the vision captions) but writes no photos. The older `LOG_SNAPSHOTS=false` also turns them off |
+| `SNAPSHOT_RETENTION_DAYS` | `7` | Delete photos of days older than this (at start, then daily); `log.txt` is kept. `0` or `off` keeps them forever |
+| `RECAP_AT` | (off) | Local time (like `22:00`) to push the night recap's headline, if the kill switch hasn't already. Needs `NTFY_TOPIC` |
+| `RECAP_SLEEP_MINUTES` | `15` | Push the recap once the kill switch has been on this long; `off` to only use `RECAP_AT` |
+| `REMOTE_URL` | (guessed) | How the phone reaches this computer, e.g. `http://192.168.1.5:8787`, for the recap link. Only used with `REMOTE_PIN` |
+| `CLIP_CACHE_DIR` | `clip-cache` | Where call-outs and offline greetings in the picked voice are cached; `none` uses only the bundled clips |
 
 Set `BODY_DEBUG=1` to log the commands sent to the Arduino.
 
 ## Development
 ```bash
-npm test          # unit tests (tracker, director, engines, vision prompts, logs, gallery, remote, watchdog, body protocol, …)
+npm test          # unit tests (tracker, director, engines, vision prompts, logs, gallery, recap, remote, watchdog, body protocol, …)
 npm run typecheck
 npm run build
+npm run soak      # soak test: a whole Halloween evening in about 75 minutes, against a mock OpenAI (free)
 ```
+
+**Soak test:** `npm run soak` runs the real server and the real dashboard (headless Chrome, fake camera and mic, rehearsal mode, faked WebRTC) against a local mock of OpenAI, plays about 140 visitor groups plus phone-remote presses, reconnecting streams and an outage, and checks memory, timers, streams, disk and stalls. No key needed and no real API calls. `--hours 0.5` for a quick run. Details and what it can't cover: [docs/SOAK_TEST.md](docs/SOAK_TEST.md).
 
 **Layout:**
 - `server/`: Node server that starts sessions, runs the vision backend and drives the Arduino.
@@ -221,7 +258,7 @@ npm run build
 - `prompts/`: the shared rules plus one file per character.
 - `firmware/`: the Arduino sketch.
 - `tests/`: unit tests.
-- `scripts/make-lure-clips.ts`: one-time generator for the lure call-outs (`npx tsx scripts/make-lure-clips.ts pumpkin`). It uses OpenAI text-to-speech (`gpt-4o-mini-tts`, voice `cedar`) and writes MP3s plus `manifest.json` to `web/public/lure/<character>/`. The clips are committed, so the app doesn't need the script. Re-running only regenerates new or edited lines (`--force` redoes all). All 14 pumpkin clips (about a minute of audio) cost under 2 cents. Characters without clips just skip lure mode.
+- `scripts/make-lure-clips.ts`: one-time generator for the bundled recorded clips (`npx tsx scripts/make-lure-clips.ts pumpkin`, `--kind lure|greeting` for one kind). It uses OpenAI text-to-speech (`gpt-4o-mini-tts`, voice `cedar`) and writes MP3s plus `manifest.json` to `web/public/lure/<character>/` (call-outs) and `web/public/greeting/<character>/` (offline greetings). The lines live in `server/clips.ts`, which the server also uses to make the per-voice sets. The clips are committed, so the app doesn't need the script. Re-running only regenerates new or edited lines (`--force` redoes all). All 30 pumpkin clips cost about 2 cents. Characters without clips skip lure mode and stay quiet in offline mode.
 
 ### Add a character
 Copy `prompts/characters/pumpkin.md` to `prompts/characters/<id>.md` and edit:
@@ -242,7 +279,8 @@ It appears in the dashboard's character picker.
 - **The voice sounds flat or wrong:** try another voice in the dashboard's **Voice** picker (see the notes there). The persona's delivery rules ask for big, bouncy energy, but some voices carry it better than others.
 - **It greets people on the sidewalk:** raise "How close counts as a visitor".
 - **It doesn't notice people at night:** add light on the visitors.
-- **"Could not start voice session":**
+- **"Could not start voice session"** (and **offline: recorded greetings**): visitors still get recorded greetings, and it retries by itself; to fix the cause:
+  - check the internet connection;
   - check `OPENAI_API_KEY`;
   - check that your project has GPT-Live access;
   - read the server log for OpenAI's error detail;
