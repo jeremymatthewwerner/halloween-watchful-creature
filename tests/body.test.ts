@@ -3,7 +3,7 @@ import { BodyController, pickArduinoPort, type LineSink } from "../server/body/d
 import { encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { EyePalette } from "../shared/types.ts";
 import { BodyLink } from "../web/bodyLink.ts";
-import { eyeLook, FLOURISH_MS, flourishFrame, GREETING_FLOURISH } from "../web/eyeFlourish.ts";
+import { EyeBrightness, FLOURISH_MS, flourishFrame, GREETING_FLOURISH, JEWEL_PIXELS, jewelLook } from "../web/eyeFlourish.ts";
 
 const eyes: EyePalette = {
   sleeping: [1, 2, 3],
@@ -131,13 +131,37 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(flourishFrame("slowblink", 1399).lid).toBeCloseTo(1, 2);
   });
 
-  it("sparkles over the state color, with the two eyes on different colors, then fades back", () => {
-    const at = 0;
-    const left = eyeLook([255, 106, 0], 0.8, { effect: "sparkle", at }, 500, 0);
-    const right = eyeLook([255, 106, 0], 0.8, { effect: "sparkle", at }, 500, 1);
-    expect(left.rgb).not.toEqual(right.rgb);
-    expect(left.brightness).toBe(1);
-    expect(eyeLook([255, 106, 0], 0.8, { effect: "sparkle", at }, 1200, 0)).toEqual(eyeLook([255, 106, 0], 0.8, null, 1200, 0));
+  it("lights all 7 jewel pixels in the state color, scaled by brightness", () => {
+    const pixels = jewelLook([200, 100, 0], 0.5, null, 0, 0);
+    expect(pixels).toHaveLength(JEWEL_PIXELS);
+    for (const rgb of pixels) expect(rgb).toEqual([100, 50, 0]);
+  });
+
+  it("sparkles like the firmware: white center first, a rainbow around the ring, the eyes half a turn apart", () => {
+    const sparkle = { effect: "sparkle" as const, at: 0 };
+    expect(jewelLook([255, 106, 0], 0.8, sparkle, 100, 0)[0]).toEqual([255, 255, 255]);
+    const left = jewelLook([255, 106, 0], 0.8, sparkle, 500, 0);
+    const right = jewelLook([255, 106, 0], 0.8, sparkle, 500, 1);
+    expect(new Set(left.slice(1).map(String)).size).toBe(6); // six different ring colors
+    expect(left[1]).toEqual(right[4]); // half a turn = 3 pixels around the ring
+    expect(jewelLook([255, 106, 0], 0.8, sparkle, 500, 0, 3)[3]).toEqual([255, 255, 255]); // twinkle
+    expect(jewelLook([255, 106, 0], 0.8, sparkle, 1200, 0)).toEqual(jewelLook([255, 106, 0], 0.8, null, 1200, 0));
+  });
+
+  it("dims every pixel when the lids close", () => {
+    for (const rgb of jewelLook([255, 106, 0], 0.8, { effect: "slowblink", at: 0 }, 700, 1)) expect(rgb).toEqual([0, 0, 0]);
+  });
+
+  it("brightens with the voice and flickers like a candle when idle, as the firmware does", () => {
+    const eyes = new EyeBrightness(() => 1);
+    expect(eyes.at("speaking", 0, "flicker", 0)).toBeCloseTo(0.35);
+    expect(eyes.at("speaking", 1, "flicker", 0)).toBeCloseTo(1);
+    expect(eyes.at("sleeping", 0, "flicker", 0)).toBe(0.25);
+    const first = eyes.at("idle", 0, "flicker", 1000);
+    expect(first).toBeCloseTo(0.8 + (1 - 0.8) * 0.15);
+    expect(eyes.at("idle", 0, "flicker", 1005)).toBe(first); // one step per ~16 ms frame
+    expect(eyes.at("idle", 0, "blink", 4100)).toBe(0.05);
+    expect(eyes.at("idle", 0, "glow", 1000)).toBe(0.8);
   });
 
   it("greets new visitors and costume changes with a sparkle, and a welcome back with a gasp", () => {

@@ -64,7 +64,7 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**. F
   - session state (asleep, connecting, awake);
   - body state (sleeping, idle, listening, thinking, speaking);
   - running **cost**.
-- **Eye preview:** an on-screen copy of what the LED eyes are doing, so you can test without the Arduino.
+- **Eye preview:** an on-screen copy of the two NeoPixel Jewels, pixel by pixel, using the same colors and animations as the firmware, so you can test without the Arduino.
 - **👋 Greet now:** forces a greeting.
 - **🛑 Sleep (kill switch):** ends the voice session and ignores visitors until you press Wake.
 - **Quick modes:** one-tap buttons that change how the creature acts until you tap them again. A lit button (marked **ON**) is on. They're remembered for the evening, even if you reload the page, and are sent again each time a new voice session starts.

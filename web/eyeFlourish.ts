@@ -1,4 +1,4 @@
-import type { EyeFlourish, Rgb } from "../shared/types.ts";
+import type { BodyState, CharacterInfo, EyeFlourish, Rgb } from "../shared/types.ts";
 import type { GreetingKind } from "./engines/types.ts";
 
 /**
@@ -31,6 +31,8 @@ export interface FlourishFrame {
   sparkle: number;
 }
 
+type EyeStyle = CharacterInfo["eyeStyle"];
+
 const NONE: FlourishFrame = { lid: 1, wide: 0, sparkle: 0 };
 
 const ease = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, x)));
@@ -49,21 +51,60 @@ export function flourishFrame(effect: EyeFlourish, t: number): FlourishFrame {
   }
 }
 
+/** Pixels on one NeoPixel Jewel 7: pixel 0 in the center, 1-6 around the ring. */
+export const JEWEL_PIXELS = 7;
+
+/** The firmware picks a twinkle pixel from 0 to 3 x (both jewels' pixels): one about every third frame. */
+export const TWINKLE_SLOTS = JEWEL_PIXELS * 2 * 3;
+
 /**
- * One preview eye's color and brightness: the state's look (`color` at `brightness`) with the
- * flourish on top. `eye` is 0 or 1; the two eyes' rainbows run half a turn apart, as on the jewels.
+ * One preview jewel's 7 pixel colors, the same per pixel as renderEyes() in the firmware: the state's
+ * color at `brightness`, with the flourish on top. In a sparkle, a rainbow spins around the ring (the
+ * two eyes half a turn apart), the center flashes white first, and pixel `twinkle` (if 0-6) is white.
+ * Colors are on the full 0-255 scale; the firmware also caps them at MAX_BRIGHTNESS to save current.
  */
-export function eyeLook(color: Rgb, brightness: number, active: ActiveFlourish | null, now: number, eye: number): { rgb: Rgb; brightness: number } {
-  if (!active) return { rgb: scale(color, brightness), brightness };
-  const t = now - active.at;
-  const f = flourishFrame(active.effect, t);
-  const b = (brightness + (1 - brightness) * f.wide) * f.lid;
-  let rgb = scale(color, b);
-  if (f.sparkle > 0) {
-    const spark = t < 200 ? ([255, 255, 255] as Rgb) : hue((t / 1000) * 360 + eye * 180);
-    rgb = rgb.map((c, i) => c + (spark[i]! - c) * f.sparkle) as Rgb;
+export function jewelLook(color: Rgb, brightness: number, active: ActiveFlourish | null, now: number, eye: number, twinkle = -1): Rgb[] {
+  const t = active ? now - active.at : 0;
+  const f = active ? flourishFrame(active.effect, t) : NONE;
+  const base = scale(color, (brightness + (1 - brightness) * f.wide) * f.lid);
+  return Array.from({ length: JEWEL_PIXELS }, (_, p) => {
+    if (f.sparkle <= 0) return base;
+    // ColorHSV(p * 65536 / 6 + t * 66 + eye * 32768) in the firmware, in degrees.
+    const spark = p === twinkle || (p === 0 && t < 200) ? ([255, 255, 255] as Rgb) : hue(p * 60 + (t * 66 * 360) / 65536 + eye * 180);
+    return base.map((c, i) => c + (spark[i]! - c) * f.sparkle) as Rgb;
+  });
+}
+
+/**
+ * Eye brightness 0..1 for a state before any flourish, as stateBrightness() in the firmware,
+ * including its candle flicker: a drift toward a random target every ~16 ms frame.
+ */
+export class EyeBrightness {
+  private flicker = 0.8;
+  private lastStepAt = -Infinity;
+
+  constructor(private readonly random: () => number = Math.random) {}
+
+  at(state: BodyState, level: number, style: EyeStyle, now: number): number {
+    switch (state) {
+      case "speaking":
+        return 0.35 + 0.65 * level;
+      case "thinking":
+        return 0.45 + 0.35 * Math.sin(now / 250);
+      case "sleeping":
+        return 0.25;
+      default:
+        if (style === "flicker") {
+          if (now - this.lastStepAt >= 16) {
+            this.lastStepAt = now;
+            this.flicker += (0.55 + 0.45 * this.random() - this.flicker) * 0.15;
+          }
+          return this.flicker;
+        }
+        if (style === "blink" && now % 4000 < 150) return 0.05;
+        return 0.8;
+    }
   }
-  return { rgb, brightness: b + (1 - b) * f.sparkle };
 }
 
 function scale([r, g, b]: Rgb, k: number): Rgb {

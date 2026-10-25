@@ -4,7 +4,7 @@ import { BodyLink } from "./bodyLink.ts";
 import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from "./devices.ts";
 import { Director } from "./director.ts";
 import { EveningMemory, browserStorage } from "./evening.ts";
-import { eyeLook, GREETING_FLOURISH, type ActiveFlourish } from "./eyeFlourish.ts";
+import { EyeBrightness, GREETING_FLOURISH, JEWEL_PIXELS, jewelLook, TWINKLE_SLOTS, type ActiveFlourish } from "./eyeFlourish.ts";
 import { startPorchSounds } from "./porchSounds.ts";
 import { followServerLog } from "./serverLog.ts";
 import { ModePanel } from "./modePanel.ts";
@@ -758,32 +758,39 @@ function drawOverlay(people: DetectedPerson[], minArea: number): void {
   }
 }
 
-/** On-screen preview of what the Arduino eyes are doing. */
+/**
+ * The eye preview's pixels: one NeoPixel Jewel 7 per eye, laid out like the board (pixel 0 in
+ * the center, 1-6 around it), so the preview shows what each LED does.
+ */
+const jewels = [ui.eyeLeft, ui.eyeRight].map((board) =>
+  Array.from({ length: JEWEL_PIXELS }, (_, p) => {
+    const pixel = document.createElement("div");
+    pixel.className = "pixel";
+    if (p > 0) {
+      const angle = ((p - 1) * Math.PI) / 3;
+      pixel.style.left = `${50 + 34 * Math.sin(angle)}%`;
+      pixel.style.top = `${50 - 34 * Math.cos(angle)}%`;
+    }
+    board.append(pixel);
+    return pixel;
+  }),
+);
+const eyeBrightness = new EyeBrightness();
+
+/** On-screen preview of what the Arduino eyes are doing, pixel by pixel. */
 function renderEyes(cfg: ClientConfig, state: BodyState, level: number, t: number, flourish: ActiveFlourish | null = null): void {
-  let brightness: number;
-  switch (state) {
-    case "speaking":
-      brightness = 0.35 + 0.65 * level;
-      break;
-    case "thinking":
-      brightness = 0.45 + 0.35 * Math.sin(t / 250);
-      break;
-    case "sleeping":
-      brightness = 0.25;
-      break;
-    default:
-      brightness =
-        cfg.character.eyeStyle === "flicker"
-          ? 0.7 + 0.15 * Math.sin(t / 90) * Math.sin(t / 37)
-          : cfg.character.eyeStyle === "blink" && t % 4000 < 150
-            ? 0.05
-            : 0.8;
-  }
-  [ui.eyeLeft, ui.eyeRight].forEach((eye, i) => {
-    const look = eyeLook(cfg.character.eyes[state], brightness, flourish, t, i);
-    const color = `rgb(${look.rgb.map(Math.round).join(", ")})`;
-    eye.style.backgroundColor = color;
-    eye.style.boxShadow = `0 0 ${Math.round(10 + 30 * look.brightness)}px ${color}`;
+  const brightness = eyeBrightness.at(state, level, cfg.character.eyeStyle, t);
+  // As the firmware: one random twinkle slot per frame across both jewels; most frames have none.
+  const twinkle = Math.floor(Math.random() * TWINKLE_SLOTS);
+  jewels.forEach((pixels, eye) => {
+    const colors = jewelLook(cfg.character.eyes[state], brightness, flourish, t, eye, twinkle - eye * JEWEL_PIXELS);
+    pixels.forEach((pixel, p) => {
+      const rgb = colors[p]!;
+      const color = `rgb(${rgb.map(Math.round).join(", ")})`;
+      const glow = Math.max(...rgb) / 255;
+      pixel.style.backgroundColor = color;
+      pixel.style.boxShadow = `0 0 ${Math.round(2 + 12 * glow)}px ${Math.round(1 + 3 * glow)}px ${color}`;
+    });
   });
 }
 
