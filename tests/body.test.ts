@@ -3,7 +3,7 @@ import { BodyController, pickArduinoPort, type LineSink } from "../server/body/d
 import { encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { EyePalette } from "../shared/types.ts";
 import { BodyLink } from "../web/bodyLink.ts";
-import { FLOURISH_MS, flourishFrame, GREETING_FLOURISH, JEWEL_PIXELS, JewelAnimator, pixelMotion, shiftHue } from "../web/eyeFlourish.ts";
+import { FLOURISH_MS, flourishFrame, GREETING_FLOURISH, JEWEL_PIXELS, JewelAnimator, pixelMotion, shiftHue, speakSpinRate } from "../web/eyeFlourish.ts";
 
 const eyes: EyePalette = {
   sleeping: [1, 2, 3],
@@ -179,6 +179,20 @@ describe("eye flourishes (dashboard preview)", () => {
     const ring = [1, 2, 3, 4, 5, 6].map((p) => pixelMotion("speaking", "flicker", 1, 0, 0, p));
     expect(Math.max(...ring.map((m) => m.b)) - Math.min(...ring.map((m) => m.b))).toBeCloseTo(0.4, 1);
     expect(new Set(ring.map((m) => Math.round(m.hue))).size).toBeGreaterThan(2);
+  });
+
+  it("spins the speaking ripple faster the louder the voice", () => {
+    expect(speakSpinRate(1)).toBeGreaterThan(5 * speakSpinRate(0));
+    // Where the ripple's brightest ring pixel is after `ms` of speaking at `level`, in 16 ms frames.
+    const peakAfter = (level: number, ms: number) => {
+      const animator = steady();
+      let frame: number[][][] = [];
+      for (let t = 0; t <= ms; t += 16) frame = animator.frame([255, 208, 0], "speaking", level, "flicker", t);
+      const ring = frame[0]!.slice(1).map((rgb) => Math.max(...rgb));
+      return ring.indexOf(Math.max(...ring));
+    };
+    expect(peakAfter(0, 160)).toBe(0); // quiet: barely moved
+    expect(peakAfter(1, 160)).toBe(3); // loud: half a turn (3 pixels) in 160 ms
   });
 
   it("flickers each LED on its own when idle, like a candle", () => {

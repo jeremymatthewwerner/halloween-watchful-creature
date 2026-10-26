@@ -186,6 +186,8 @@ void readSerial() {
 
 float flicker = 0.8;           // plain-LED eyes: one candle flicker for both
 float pixelFlicker[EYE_PIXELS];  // NeoPixel eyes: each LED's own candle flicker
+float speakSpin = 0;             // how far round the speaking ripple is (turns)
+unsigned long lastRenderAt = 0;
 
 // Eye brightness 0..1 for the current state, before any flourish.
 float stateBrightness(unsigned long now) {
@@ -255,7 +257,8 @@ float wrap(float x, float m) {
 
 // How one NeoPixel moves in the current state. p: 0 = jewel center, 1-6 = ring; the two eyes turn
 // in mirror image. Keep in sync with pixelMotion() in web/eyeFlourish.ts (the dashboard preview).
-//   speaking:  brightness follows the voice, with a ripple of brightness and warmer hue going round
+//   speaking:  brightness follows the voice, with a ripple of brightness and warmer hue going round,
+//              spinning faster the louder the voice (speakSpin)
 //   thinking:  a comet spins round the ring, its tail fading and drifting in hue
 //   listening: a soft bright spot circles slowly round a steady center
 //   sleeping:  a faint ember drifting round
@@ -267,7 +270,7 @@ Motion pixelMotion(unsigned long now, uint8_t eye, uint8_t p, float flick) {
     case SPEAKING: {
       float base = 0.35 + 0.65 * level;
       if (p == 0) return {base, 0};
-      float w = cos(TWO_PI * (ring / 6 - dir * phase(now, 1200)));
+      float w = cos(TWO_PI * (ring / 6 - dir * speakSpin));
       return {base * (0.8 + 0.2 * w), -12 * (1 + w)};  // toward warmer, never greener
     }
     case THINKING: {
@@ -312,6 +315,11 @@ void shiftHue(float &r, float &g, float &b, float degrees) {
 void renderEyes(unsigned long now) {
   FlourishFrame f = flourishFrame(now);
 #if EYES_NEOPIXEL
+  // The speaking ripple goes round faster the louder the voice: a lazy drift when quiet, quick
+  // when loud. Keep in sync with speakSpinRate() in web/eyeFlourish.ts.
+  float dt = min(now - lastRenderAt, 100UL) / 1000.0;
+  lastRenderAt = now;
+  speakSpin = wrap(speakSpin + dt * (0.4 + 2.6 * level), 1);
   const uint8_t *c = palette[state];
   // Sparkle: a rainbow spinning around each jewel's ring (the two eyes half a turn apart),
   // the centers flashing white first, and a white twinkle on a random pixel about every third frame.

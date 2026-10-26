@@ -71,13 +71,23 @@ const wrap = (x: number, m: number) => ((x % m) + m) % m;
 /**
  * How one LED moves in a state, the same as pixelMotion() in the firmware. `p` is the pixel (0 =
  * center, 1-6 = ring); the two eyes turn in mirror image. `flicker` is that LED's own candle flicker.
- *  - speaking: brightness follows the voice, with a ripple of brightness and warmer hue going round
+ *  - speaking: brightness follows the voice, with a ripple of brightness and warmer hue going round,
+ *    spinning faster the louder the voice (`spin`: how far round it is, in turns)
  *  - thinking: a comet spins round the ring, its tail fading and drifting in hue
  *  - listening: a soft bright spot circles slowly round a steady center
  *  - sleeping: a faint ember drifting round
  *  - idle: every LED flickers on its own (flicker), a slow hue swirl (glow), or a blink
  */
-export function pixelMotion(state: BodyState, style: EyeStyle, level: number, now: number, eye: number, p: number, flicker = 0.8): PixelMotion {
+export function pixelMotion(
+  state: BodyState,
+  style: EyeStyle,
+  level: number,
+  now: number,
+  eye: number,
+  p: number,
+  flicker = 0.8,
+  spin = 0,
+): PixelMotion {
   const ring = p - 1;
   const dir = eye === 0 ? 1 : -1;
   const wave = (periodMs: number) => Math.cos(2 * Math.PI * (ring / 6 - dir * phase(now, periodMs)));
@@ -85,7 +95,7 @@ export function pixelMotion(state: BodyState, style: EyeStyle, level: number, no
     case "speaking": {
       const base = 0.35 + 0.65 * level;
       if (p === 0) return { b: base, hue: 0 };
-      const w = wave(1200);
+      const w = Math.cos(2 * Math.PI * (ring / 6 - dir * spin));
       return { b: base * (0.8 + 0.2 * w), hue: -12 * (1 + w) }; // toward warmer, never greener
     }
     case "thinking": {
@@ -109,6 +119,9 @@ export function pixelMotion(state: BodyState, style: EyeStyle, level: number, no
   }
 }
 
+/** How fast the speaking ripple goes round (turns a second): a lazy drift when quiet, quick when loud. */
+export const speakSpinRate = (level: number) => 0.4 + 2.6 * level;
+
 /**
  * Both preview jewels' pixel colors, frame by frame, the same as renderEyes() in the firmware: each
  * LED's motion for the state, with the flourish on top. In a sparkle, a rainbow spins around the
@@ -120,6 +133,9 @@ export class JewelAnimator {
   /** Each LED's own candle flicker (both jewels), drifting toward a random target every ~16 ms. */
   private readonly flicker = new Array<number>(JEWEL_PIXELS * 2).fill(0.8);
   private lastStepAt = -Infinity;
+  /** How far round the speaking ripple is (turns), and when it was last moved. */
+  private spin = 0;
+  private lastFrameAt: number | null = null;
 
   constructor(private readonly random: () => number = Math.random) {}
 
@@ -128,12 +144,15 @@ export class JewelAnimator {
       this.lastStepAt = now;
       for (let i = 0; i < this.flicker.length; i++) this.flicker[i]! += (0.55 + 0.45 * this.random() - this.flicker[i]!) * 0.15;
     }
+    const dt = this.lastFrameAt === null ? 0 : Math.min(Math.max(now - this.lastFrameAt, 0), 100);
+    this.lastFrameAt = now;
+    this.spin = wrap(this.spin + (dt / 1000) * speakSpinRate(level), 1);
     const t = active ? now - active.at : 0;
     const f = active ? flourishFrame(active.effect, t) : NONE;
     return [0, 1].map((eye) =>
       Array.from({ length: JEWEL_PIXELS }, (_, p) => {
         const i = eye * JEWEL_PIXELS + p;
-        const m = pixelMotion(state, style, level, now, eye, p, this.flicker[i]);
+        const m = pixelMotion(state, style, level, now, eye, p, this.flicker[i], this.spin);
         const rgb = scale(shiftHue(color, m.hue), (m.b + (1 - m.b) * f.wide) * f.lid);
         if (f.sparkle <= 0) return rgb;
         // ColorHSV(p * 65536 / 6 + t * 66 + eye * 32768) in the firmware, in degrees.
