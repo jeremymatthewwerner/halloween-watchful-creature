@@ -4,7 +4,7 @@ import { BodyLink } from "./bodyLink.ts";
 import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from "./devices.ts";
 import { Director } from "./director.ts";
 import { EveningMemory, browserStorage } from "./evening.ts";
-import { EyeBrightness, GREETING_FLOURISH, JEWEL_PIXELS, jewelLook, TWINKLE_SLOTS, type ActiveFlourish } from "./eyeFlourish.ts";
+import { GREETING_FLOURISH, JEWEL_PIXELS, JewelAnimator, TWINKLE_SLOTS, type ActiveFlourish } from "./eyeFlourish.ts";
 import { startPorchSounds } from "./porchSounds.ts";
 import { followServerLog } from "./serverLog.ts";
 import { ModePanel } from "./modePanel.ts";
@@ -775,17 +775,16 @@ const jewels = [ui.eyeLeft, ui.eyeRight].map((board) =>
     return pixel;
   }),
 );
-const eyeBrightness = new EyeBrightness();
+const jewelAnimator = new JewelAnimator();
 
 /** On-screen preview of what the Arduino eyes are doing, pixel by pixel. */
 function renderEyes(cfg: ClientConfig, state: BodyState, level: number, t: number, flourish: ActiveFlourish | null = null): void {
-  const brightness = eyeBrightness.at(state, level, cfg.character.eyeStyle, t);
   // As the firmware: one random twinkle slot per frame across both jewels; most frames have none.
   const twinkle = Math.floor(Math.random() * TWINKLE_SLOTS);
+  const frame = jewelAnimator.frame(cfg.character.eyes[state], state, level, cfg.character.eyeStyle, t, flourish, twinkle);
   jewels.forEach((pixels, eye) => {
-    const colors = jewelLook(cfg.character.eyes[state], brightness, flourish, t, eye, twinkle - eye * JEWEL_PIXELS);
     pixels.forEach((pixel, p) => {
-      const rgb = colors[p]!;
+      const rgb = frame[eye]![p]!;
       const color = `rgb(${rgb.map(Math.round).join(", ")})`;
       const glow = Math.max(...rgb) / 255;
       pixel.style.backgroundColor = color;
