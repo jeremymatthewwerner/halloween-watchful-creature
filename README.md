@@ -246,6 +246,8 @@ npm run build
 npm run soak      # soak test: a whole Halloween evening in about 75 minutes, against a mock OpenAI (free)
 ```
 
+**CI:** on every pull request, GitHub Actions (`.github/workflows/ci.yml`) runs the tests, typecheck and build, and compiles the Arduino firmware for the Uno in both eye modes (NeoPixel Jewels and plain LEDs).
+
 **Soak test:** `npm run soak` runs the real server and the real dashboard (headless Chrome, fake camera and mic, rehearsal mode, faked WebRTC) against a local mock of OpenAI, plays about 140 visitor groups plus phone-remote presses, reconnecting streams and an outage, and checks memory, timers, streams, disk and stalls. No key needed and no real API calls. `--hours 0.5` for a quick run. Details and what it can't cover: [docs/SOAK_TEST.md](docs/SOAK_TEST.md).
 
 **Layout:**

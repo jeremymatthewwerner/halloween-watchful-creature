@@ -50,7 +50,9 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
                        Jewel #1 DOUT ── Jewel #2 DIN
                        (5V / GND of both jewels to the rails above)
 ```
-1. Solder **7 joints**: Jewel #1 gets 5V, GND, DIN and DOUT; Jewel #2 gets 5V, GND and DIN. Run Jewel #2's power from Jewel #1 (two wires in each of Jewel #1's 5V and GND pads), so only three wires (5V, GND, data) go back to the Arduino. Optionally tin those three ends, or splice them onto halves of kit jumper wires, so they sit firmly in the breadboard. Practise on the spare Jewel first.
+1. Solder **7 joints**: Jewel #1 gets PWR, GND, IN and OUT; Jewel #2 gets PWR, GND and IN (it has two GND holes: use either). For wire, cut **one** end off a kit jumper (about 9½" left): solder the cut end to the Jewel, and the pin end plugs into the breadboard. Wire each Jewel's PWR and GND **straight to the breadboard's + and – rails** (the Jewel's plated holes take one wire each), and chain only the data: a short pin-less piece from Jewel #1 OUT to Jewel #2 IN. Practise on the spare Jewel first.
+   - **Through-holes:** strip about 5 mm, twist and lightly tin the wire (not the hole), push it in from the back (the side without LEDs), and solder from the back so solder flows into the hole; trim what pokes out on the LED side. Use a small flat (screwdriver, about 1/16") tip.
+   - **Check before plugging in:** red wires only on +, black only on –, data into IN (not OUT), no strand touching a neighbouring hole. **If the USB cable gets hot or the Arduino's ON light stays off, unplug at once:** that's a 5V-to-GND short. Re-add the wires a step at a time to find it.
 2. Put the 330 Ω resistor in the data line (on the breadboard is fine; a 220 Ω from the kit works too).
 3. **Test before mounting:** Serial Monitor commands below. Then put a dab of hot glue over the joints for strain relief.
 4. Mount each Jewel in an **eye cup** (below), LEDs facing the eye, and plug the Arduino into the USB hub.
@@ -78,20 +80,23 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
 3. **Stop the creature server first** (`npm run dev` or the Pi service). It grabs the Arduino's port, and an upload then fails with "programmer is not responding".
 4. Open `firmware/creature_body/creature_body.ino`, choose **Arduino Uno** and its port, then click **Upload**.
    - **The port** looks like `/dev/cu.usbmodem…`, or `/dev/cu.usbserial-…` / `cu.wchusbserial…` on clone boards. A USB-C hub can add a `usbmodem` port of its own; if the upload fails "not in sync", unplug the Arduino and see which port disappears.
+   - **"Resource busy"?** Something else has the port open: Serial Monitor (a tab in the IDE's bottom panel), or a creature server still running (`npm run dev` / `npm start`, maybe from another Terminal window or app). Close or stop it, unplug the Arduino for 5 s, and upload again.
    - **Still "not in sync" on the right port?** Boards with an FTDI USB chip (port `cu.usbserial-…`) often have the older bootloader: choose **Arduino Duemilanove or Diecimila**, Processor **ATmega328P**.
 5. Test it in **Serial Monitor** (115200 baud, newline line ending). Type each of these and watch the eyes:
 
 | Command | What should happen |
 |---|---|
 | `M eyes` | eyes mode turns on |
-| `S idle` | orange flicker |
-| `S speaking` | speaking color |
-| `L 255` | bright |
+| `S idle` | orange candle flicker, each LED flickering on its own |
+| `S thinking` | a purple comet spinning round each ring, the two eyes in mirror image |
+| `S listening` | a soft bright spot circling slowly round a steady center |
+| `S speaking` then `L 255` | bright speaking color, with a warm ripple going round |
 | `F sparkle` | about a second of spinning rainbow with white twinkles, then back to normal (plain LEDs: a quick left-right twinkle) |
 | `F gasp` | two quick blinks, then wide-eyed for a moment |
 | `F slowblink` | a slow, thoughtful blink |
 | (stop typing for 2 s) | eyes dim to "sleeping"; that's the fail-safe |
 
+   Watch right after each Enter: 2 seconds after the last command, the fail-safe dims the eyes again.
    State names are exact and lowercase (`S speaking`, not `S Speaking`), or the board answers `ERR state`.
    The `F` flourishes play over whatever state the eyes are in (even after the fail-safe has dimmed them), and an unknown one answers `ERR flourish`. In the app, new visitors and costume changes get a sparkle, the same visitors back after a while get a gasp, and the eyes slow-blink when the creature starts thinking.
 6. Close Serial Monitor. The app can't open the port while it's open.

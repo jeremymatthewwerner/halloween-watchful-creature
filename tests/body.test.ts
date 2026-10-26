@@ -3,7 +3,7 @@ import { BodyController, pickArduinoPort, type LineSink } from "../server/body/d
 import { encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { EyePalette } from "../shared/types.ts";
 import { BodyLink } from "../web/bodyLink.ts";
-import { EyeBrightness, FLOURISH_MS, flourishFrame, GREETING_FLOURISH, JEWEL_PIXELS, jewelLook } from "../web/eyeFlourish.ts";
+import { FLOURISH_MS, flourishFrame, GREETING_FLOURISH, JEWEL_PIXELS, JewelAnimator, pixelMotion, shiftHue, speakSpinRate } from "../web/eyeFlourish.ts";
 
 const eyes: EyePalette = {
   sleeping: [1, 2, 3],
@@ -131,37 +131,85 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(flourishFrame("slowblink", 1399).lid).toBeCloseTo(1, 2);
   });
 
-  it("lights all 7 jewel pixels in the state color, scaled by brightness", () => {
-    const pixels = jewelLook([200, 100, 0], 0.5, null, 0, 0);
-    expect(pixels).toHaveLength(JEWEL_PIXELS);
-    for (const rgb of pixels) expect(rgb).toEqual([100, 50, 0]);
+  const orange: [number, number, number] = [255, 106, 0];
+  const steady = () => new JewelAnimator(() => 0.5);
+
+  it("draws both jewels' 7 pixels in the state's color", () => {
+    const [left, right] = steady().frame(orange, "idle", 0, "blink", 1000);
+    expect(left).toHaveLength(JEWEL_PIXELS);
+    expect(right).toHaveLength(JEWEL_PIXELS);
+    for (const rgb of [...left!, ...right!]) expect(Math.max(...rgb)).toBeCloseTo(204); // all at 0.8 brightness
+    expect(left![0]!.map(Math.round)).toEqual([204, 85, 0]); // the center keeps the exact color; the ring swirls
   });
 
-  it("sparkles like the firmware: white center first, a rainbow around the ring, the eyes half a turn apart", () => {
+  it("sparkles like the firmware: white centers first, a rainbow around the ring, the eyes half a turn apart", () => {
     const sparkle = { effect: "sparkle" as const, at: 0 };
-    expect(jewelLook([255, 106, 0], 0.8, sparkle, 100, 0)[0]).toEqual([255, 255, 255]);
-    const left = jewelLook([255, 106, 0], 0.8, sparkle, 500, 0);
-    const right = jewelLook([255, 106, 0], 0.8, sparkle, 500, 1);
-    expect(new Set(left.slice(1).map(String)).size).toBe(6); // six different ring colors
-    expect(left[1]).toEqual(right[4]); // half a turn = 3 pixels around the ring
-    expect(jewelLook([255, 106, 0], 0.8, sparkle, 500, 0, 3)[3]).toEqual([255, 255, 255]); // twinkle
-    expect(jewelLook([255, 106, 0], 0.8, sparkle, 1200, 0)).toEqual(jewelLook([255, 106, 0], 0.8, null, 1200, 0));
+    const early = steady().frame(orange, "idle", 0, "glow", 100, sparkle);
+    expect(early[0]![0]).toEqual([255, 255, 255]);
+    expect(early[1]![0]).toEqual([255, 255, 255]);
+    const [left, right] = steady().frame(orange, "idle", 0, "glow", 500, sparkle);
+    expect(new Set(left!.slice(1).map(String)).size).toBe(6); // six different ring colors
+    expect(left![1]).toEqual(right![4]); // half a turn = 3 pixels around the ring
+    expect(steady().frame(orange, "idle", 0, "glow", 500, sparkle, 3)[0]![3]).toEqual([255, 255, 255]); // twinkle
+    expect(steady().frame(orange, "idle", 0, "glow", 500, sparkle, 10)[1]![3]).toEqual([255, 255, 255]); // on the right jewel
+    expect(steady().frame(orange, "idle", 0, "glow", 1200, sparkle)).toEqual(steady().frame(orange, "idle", 0, "glow", 1200));
   });
 
   it("dims every pixel when the lids close", () => {
-    for (const rgb of jewelLook([255, 106, 0], 0.8, { effect: "slowblink", at: 0 }, 700, 1)) expect(rgb).toEqual([0, 0, 0]);
+    for (const eye of steady().frame(orange, "speaking", 1, "flicker", 700, { effect: "slowblink", at: 0 })) {
+      for (const rgb of eye) expect(rgb).toEqual([0, 0, 0]);
+    }
   });
 
-  it("brightens with the voice and flickers like a candle when idle, as the firmware does", () => {
-    const eyes = new EyeBrightness(() => 1);
-    expect(eyes.at("speaking", 0, "flicker", 0)).toBeCloseTo(0.35);
-    expect(eyes.at("speaking", 1, "flicker", 0)).toBeCloseTo(1);
-    expect(eyes.at("sleeping", 0, "flicker", 0)).toBe(0.25);
-    const first = eyes.at("idle", 0, "flicker", 1000);
-    expect(first).toBeCloseTo(0.8 + (1 - 0.8) * 0.15);
-    expect(eyes.at("idle", 0, "flicker", 1005)).toBe(first); // one step per ~16 ms frame
-    expect(eyes.at("idle", 0, "blink", 4100)).toBe(0.05);
-    expect(eyes.at("idle", 0, "glow", 1000)).toBe(0.8);
+  it("spins a comet round the ring while thinking, the eyes in mirror image", () => {
+    const ring = (eye: number, now: number) => [1, 2, 3, 4, 5, 6].map((p) => pixelMotion("thinking", "flicker", 0, now, eye, p).b);
+    const head = (b: number[]) => b.indexOf(Math.max(...b)) + 1;
+    expect(head(ring(0, 0))).toBe(1);
+    expect(head(ring(0, 150))).toBe(2); // a sixth of the 900 ms turn later, one pixel on
+    expect(head(ring(1, 150))).toBe(6); // the other eye goes the other way
+    // The tail fades behind the head and drifts in hue.
+    const b = ring(0, 150);
+    expect(b[0]).toBeGreaterThan(b[5]!);
+    expect(pixelMotion("thinking", "flicker", 0, 150, 0, 1).hue).toBeLessThan(0);
+  });
+
+  it("follows the voice while speaking, rippling brightness and hue round the ring", () => {
+    expect(pixelMotion("speaking", "flicker", 0, 0, 0, 0).b).toBeCloseTo(0.35);
+    expect(pixelMotion("speaking", "flicker", 1, 0, 0, 0).b).toBeCloseTo(1);
+    const ring = [1, 2, 3, 4, 5, 6].map((p) => pixelMotion("speaking", "flicker", 1, 0, 0, p));
+    expect(Math.max(...ring.map((m) => m.b)) - Math.min(...ring.map((m) => m.b))).toBeCloseTo(0.4, 1);
+    expect(new Set(ring.map((m) => Math.round(m.hue))).size).toBeGreaterThan(2);
+  });
+
+  it("spins the speaking ripple faster the louder the voice", () => {
+    expect(speakSpinRate(1)).toBeGreaterThan(5 * speakSpinRate(0));
+    // Where the ripple's brightest ring pixel is after `ms` of speaking at `level`, in 16 ms frames.
+    const peakAfter = (level: number, ms: number) => {
+      const animator = steady();
+      let frame: number[][][] = [];
+      for (let t = 0; t <= ms; t += 16) frame = animator.frame([255, 208, 0], "speaking", level, "flicker", t);
+      const ring = frame[0]!.slice(1).map((rgb) => Math.max(...rgb));
+      return ring.indexOf(Math.max(...ring));
+    };
+    expect(peakAfter(0, 160)).toBe(0); // quiet: barely moved
+    expect(peakAfter(1, 160)).toBe(3); // loud: half a turn (3 pixels) in 160 ms
+  });
+
+  it("flickers each LED on its own when idle, like a candle", () => {
+    let n = 0;
+    const animator = new JewelAnimator(() => (n++ % 7) / 7);
+    animator.frame(orange, "idle", 0, "flicker", 0);
+    const [left] = animator.frame(orange, "idle", 0, "flicker", 20);
+    expect(new Set(left!.map(String)).size).toBeGreaterThan(1);
+    expect(pixelMotion("idle", "blink", 0, 4100, 0, 3).b).toBe(0.05);
+    expect(pixelMotion("sleeping", "flicker", 0, 0, 0, 0).b).toBe(0.2);
+  });
+
+  it("shifts hue round the color wheel, keeping brightness", () => {
+    expect(shiftHue([255, 0, 0], 120).map(Math.round)).toEqual([0, 255, 0]);
+    expect(shiftHue([255, 0, 0], -120).map(Math.round)).toEqual([0, 0, 255]);
+    expect(shiftHue([200, 200, 200], 90)).toEqual([200, 200, 200]); // grey has no hue
+    expect(shiftHue(orange, 0)).toEqual(orange);
   });
 
   it("greets new visitors and costume changes with a sparkle, and a welcome back with a gasp", () => {

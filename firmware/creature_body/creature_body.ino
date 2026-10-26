@@ -57,6 +57,11 @@ struct FlourishFrame {
   float sparkle;  // 0..1: how much of the sparkle shows over the normal look
   unsigned long t;  // ms since the flourish started
 };
+// One NeoPixel's brightness (0..1) and hue shift (degrees from the state's color) this frame.
+struct Motion {
+  float b;
+  float hue;
+};
 
 Adafruit_NeoPixel eyes(EYE_PIXELS, EYES_PIN, NEO_GRB + NEO_KHZ800);
 Servo jaw;
@@ -179,7 +184,10 @@ void readSerial() {
   }
 }
 
-float flicker = 0.8;
+float flicker = 0.8;           // plain-LED eyes: one candle flicker for both
+float pixelFlicker[EYE_PIXELS];  // NeoPixel eyes: each LED's own candle flicker
+float speakSpin = 0;             // how far round the speaking ripple is (turns)
+unsigned long lastRenderAt = 0;
 
 // Eye brightness 0..1 for the current state, before any flourish.
 float stateBrightness(unsigned long now) {
@@ -236,20 +244,99 @@ FlourishFrame flourishFrame(unsigned long now) {
   return f;
 }
 
+// How far through a cycle of periodMs the clock is, 0..1.
+float phase(unsigned long now, unsigned long periodMs) {
+  return (now % periodMs) / (float)periodMs;
+}
+
+// Wraps x into [0, m).
+float wrap(float x, float m) {
+  x = fmod(x, m);
+  return x < 0 ? x + m : x;
+}
+
+// How one NeoPixel moves in the current state. p: 0 = jewel center, 1-6 = ring; the two eyes turn
+// in mirror image. Keep in sync with pixelMotion() in web/eyeFlourish.ts (the dashboard preview).
+//   speaking:  brightness follows the voice, with a ripple of brightness and warmer hue going round,
+//              spinning faster the louder the voice (speakSpin)
+//   thinking:  a comet spins round the ring, its tail fading and drifting in hue
+//   listening: a soft bright spot circles slowly round a steady center
+//   sleeping:  a faint ember drifting round
+//   idle:      every LED flickers on its own (flicker), a slow hue swirl (glow), or a blink
+Motion pixelMotion(unsigned long now, uint8_t eye, uint8_t p, float flick) {
+  float ring = p - 1.0;
+  float dir = eye == 0 ? 1 : -1;
+  switch (state) {
+    case SPEAKING: {
+      float base = 0.35 + 0.65 * level;
+      if (p == 0) return {base, 0};
+      float w = cos(TWO_PI * (ring / 6 - dir * speakSpin));
+      return {base * (0.8 + 0.2 * w), -12 * (1 + w)};  // toward warmer, never greener
+    }
+    case THINKING: {
+      if (p == 0) return {0.25 + 0.1 * sin(now / 250.0), 0};
+      // How far (in pixels) this LED is behind the comet's head, which goes round every 900 ms.
+      float behind = wrap(6 * phase(now, 900) - dir * ring, 6);
+      float k = 1 - behind / 6;
+      return {0.06 + 0.94 * k * k * k, -12 * behind};
+    }
+    case LISTENING: {
+      if (p == 0) return {0.9, 0};
+      float w = cos(TWO_PI * (ring / 6 - dir * phase(now, 2400)));
+      return {0.8 + 0.2 * w, 12 * w};
+    }
+    case SLEEPING:
+      if (p == 0) return {0.2, 0};
+      return {0.225 + 0.075 * cos(TWO_PI * (ring / 6 - dir * phase(now, 6000))), 0};
+    default:  // IDLE
+      if (eyeStyle == FLICKER) return {flick, 0};
+      if (eyeStyle == BLINK && now % 4000 < 150) return {0.05, 0};
+      if (p == 0) return {0.8, 0};
+      return {0.8, 15 * cos(TWO_PI * (ring / 6 - dir * phase(now, 4000)))};
+  }
+}
+
+// Turns a color `degrees` round the color wheel, keeping its saturation and brightness.
+void shiftHue(float &r, float &g, float &b, float degrees) {
+  float mx = max(r, max(g, b));
+  float c = mx - min(r, min(g, b));
+  if (degrees == 0 || c <= 0) return;
+  float h = mx == r ? fmod((g - b) / c, 6) : mx == g ? (b - r) / c + 2 : (r - g) / c + 4;
+  h = wrap(h + degrees / 60, 6);
+  float x = c * (1 - fabs(fmod(h, 2) - 1));
+  float m = mx - c;
+  float rgb[6][3] = {{c, x, 0}, {x, c, 0}, {0, c, x}, {0, x, c}, {x, 0, c}, {c, 0, x}};
+  uint8_t sector = (uint8_t)h % 6;
+  r = rgb[sector][0] + m;
+  g = rgb[sector][1] + m;
+  b = rgb[sector][2] + m;
+}
+
 void renderEyes(unsigned long now) {
-  float base = stateBrightness(now);
   FlourishFrame f = flourishFrame(now);
-  float b = (base + (1 - base) * f.wide) * f.lid;
 #if EYES_NEOPIXEL
-  b *= MAX_BRIGHTNESS;
+  // The speaking ripple goes round faster the louder the voice: a lazy drift when quiet, quick
+  // when loud. Keep in sync with speakSpinRate() in web/eyeFlourish.ts.
+  float dt = min(now - lastRenderAt, 100UL) / 1000.0;
+  lastRenderAt = now;
+  speakSpin = wrap(speakSpin + dt * (0.4 + 2.6 * level), 1);
   const uint8_t *c = palette[state];
   // Sparkle: a rainbow spinning around each jewel's ring (the two eyes half a turn apart),
   // the centers flashing white first, and a white twinkle on a random pixel about every third frame.
   uint8_t twinkle = random(EYE_PIXELS * 3);
   for (uint8_t i = 0; i < EYE_PIXELS; i++) {
-    float r = c[0] * b, g = c[1] * b, bl = c[2] * b;
+    // The per-pixel math takes a few ms: keep up with the serial input (64-byte buffer) halfway through.
+    if (i == 7) readSerial();
+    pixelFlicker[i] += (random(55, 100) / 100.0 - pixelFlicker[i]) * 0.15;
+    uint8_t p = i % 7;  // 0 = jewel center, 1-6 = ring
+    Motion m = pixelMotion(now, i / 7, p, pixelFlicker[i]);
+    float b = (m.b + (1 - m.b) * f.wide) * f.lid * MAX_BRIGHTNESS;
+    float r = c[0], g = c[1], bl = c[2];
+    shiftHue(r, g, bl, m.hue);
+    r *= b;
+    g *= b;
+    bl *= b;
     if (f.sparkle > 0) {
-      uint8_t p = i % 7;  // 0 = jewel center, 1-6 = ring
       uint32_t s = (i == twinkle || (p == 0 && f.t < 200))
                        ? 0xFFFFFFUL
                        : Adafruit_NeoPixel::ColorHSV((uint16_t)(p * 65536UL / 6 + f.t * 66UL + (i / 7) * 32768UL));
@@ -262,6 +349,8 @@ void renderEyes(unsigned long now) {
   }
   eyes.show();
 #else
+  float base = stateBrightness(now);
+  float b = (base + (1 - base) * f.wide) * f.lid;
   for (uint8_t i = 0; i < 2; i++) {
     float e = b;
     // Plain LEDs can't do colors, so the sparkle is brightness only: the eyes twinkle, alternating.
@@ -290,6 +379,7 @@ void setup() {
   eyes.show();
   for (uint8_t i = 0; i < 2; i++) pinMode(PLAIN_EYE_PINS[i], OUTPUT);
   randomSeed(analogRead(A0));
+  for (uint8_t i = 0; i < EYE_PIXELS; i++) pixelFlicker[i] = 0.8;
   Serial.println(F("READY creature_body 1"));
 }
 

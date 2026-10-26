@@ -198,7 +198,7 @@ The voice below is each character's default; the dashboard's **Voice** picker an
 
 - **Fail-safe:** if no line arrives for 2 s, the firmware dims the eyes to "sleeping", opens the relay and closes the jaw.
 - **Modes:**
-  - **eyes:** two NeoPixel Jewels (`EYES_NEOPIXEL 1`, the default) whose color follows the state and whose brightness follows the voice; or two plain LEDs on D3/D5 (`EYES_NEOPIXEL 0`), brightness only, gamma-corrected so the states look distinct. Flourishes (`F …`) degrade to brightness-only twinkles on plain LEDs.
+  - **eyes:** two NeoPixel Jewels (`EYES_NEOPIXEL 1`, the default) in the state's color, each LED animated on its own (`pixelMotion()`: a candle flicker per LED when idle, a soft spot circling while listening, a comet spinning while thinking, and a warm ripple while speaking, with brightness following the voice; the two eyes turn in mirror image, and the dashboard preview runs the same math in `web/eyeFlourish.ts`); or two plain LEDs on D3/D5 (`EYES_NEOPIXEL 0`), brightness only, gamma-corrected so the states look distinct. Flourishes (`F …`) degrade to brightness-only twinkles on plain LEDs.
   - **jaw:** an SG90 servo whose angle follows the loudness.
   - **relay:** a 400 ms "button press" on a store animatronic's trigger when speech starts, with an 8 s cooldown.
 

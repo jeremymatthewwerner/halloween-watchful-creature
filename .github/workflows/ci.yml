@@ -1,0 +1,43 @@
+# Checks every pull request (and main): the app's tests, typecheck and build, and that the
+# Arduino firmware still compiles for the Uno, in both eye modes (NeoPixel Jewels and plain LEDs).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  firmware:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        eyes: [neopixel, plain-leds]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use plain-LED eyes
+        if: matrix.eyes == 'plain-leds'
+        run: sed -i 's/^#define EYES_NEOPIXEL 1/#define EYES_NEOPIXEL 0/' firmware/creature_body/creature_body.ino
+      - uses: arduino/compile-sketches@v1
+        with:
+          fqbn: arduino:avr:uno
+          sketch-paths: firmware/creature_body
+          libraries: |
+            - name: Adafruit NeoPixel
+            - name: Servo
+          cli-compile-flags: |
+            - --warnings
+            - all

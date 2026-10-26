@@ -57,54 +57,136 @@ export const JEWEL_PIXELS = 7;
 /** The firmware picks a twinkle pixel from 0 to 3 x (both jewels' pixels): one about every third frame. */
 export const TWINKLE_SLOTS = JEWEL_PIXELS * 2 * 3;
 
-/**
- * One preview jewel's 7 pixel colors, the same per pixel as renderEyes() in the firmware: the state's
- * color at `brightness`, with the flourish on top. In a sparkle, a rainbow spins around the ring (the
- * two eyes half a turn apart), the center flashes white first, and pixel `twinkle` (if 0-6) is white.
- * Colors are on the full 0-255 scale; the firmware also caps them at MAX_BRIGHTNESS to save current.
- */
-export function jewelLook(color: Rgb, brightness: number, active: ActiveFlourish | null, now: number, eye: number, twinkle = -1): Rgb[] {
-  const t = active ? now - active.at : 0;
-  const f = active ? flourishFrame(active.effect, t) : NONE;
-  const base = scale(color, (brightness + (1 - brightness) * f.wide) * f.lid);
-  return Array.from({ length: JEWEL_PIXELS }, (_, p) => {
-    if (f.sparkle <= 0) return base;
-    // ColorHSV(p * 65536 / 6 + t * 66 + eye * 32768) in the firmware, in degrees.
-    const spark = p === twinkle || (p === 0 && t < 200) ? ([255, 255, 255] as Rgb) : hue(p * 60 + (t * 66 * 360) / 65536 + eye * 180);
-    return base.map((c, i) => c + (spark[i]! - c) * f.sparkle) as Rgb;
-  });
+/** Each LED's own brightness (0..1) and hue shift (degrees from the state's color) for a frame. */
+export interface PixelMotion {
+  b: number;
+  hue: number;
 }
 
+/** How far through a cycle of `periodMs` the clock is, 0..1 (as phase() in the firmware). */
+const phase = (now: number, periodMs: number) => (now % periodMs) / periodMs;
+/** Wraps `x` into [0, m). */
+const wrap = (x: number, m: number) => ((x % m) + m) % m;
+
 /**
- * Eye brightness 0..1 for a state before any flourish, as stateBrightness() in the firmware,
- * including its candle flicker: a drift toward a random target every ~16 ms frame.
+ * How one LED moves in a state, the same as pixelMotion() in the firmware. `p` is the pixel (0 =
+ * center, 1-6 = ring); the two eyes turn in mirror image. `flicker` is that LED's own candle flicker.
+ *  - speaking: brightness follows the voice, with a ripple of brightness and warmer hue going round,
+ *    spinning faster the louder the voice (`spin`: how far round it is, in turns)
+ *  - thinking: a comet spins round the ring, its tail fading and drifting in hue
+ *  - listening: a soft bright spot circles slowly round a steady center
+ *  - sleeping: a faint ember drifting round
+ *  - idle: every LED flickers on its own (flicker), a slow hue swirl (glow), or a blink
  */
-export class EyeBrightness {
-  private flicker = 0.8;
+export function pixelMotion(
+  state: BodyState,
+  style: EyeStyle,
+  level: number,
+  now: number,
+  eye: number,
+  p: number,
+  flicker = 0.8,
+  spin = 0,
+): PixelMotion {
+  const ring = p - 1;
+  const dir = eye === 0 ? 1 : -1;
+  const wave = (periodMs: number) => Math.cos(2 * Math.PI * (ring / 6 - dir * phase(now, periodMs)));
+  switch (state) {
+    case "speaking": {
+      const base = 0.35 + 0.65 * level;
+      if (p === 0) return { b: base, hue: 0 };
+      const w = Math.cos(2 * Math.PI * (ring / 6 - dir * spin));
+      return { b: base * (0.8 + 0.2 * w), hue: -12 * (1 + w) }; // toward warmer, never greener
+    }
+    case "thinking": {
+      if (p === 0) return { b: 0.25 + 0.1 * Math.sin(now / 250), hue: 0 };
+      // How far (in pixels) this LED is behind the comet's head, which goes round every 900 ms.
+      const behind = wrap(6 * phase(now, 900) - dir * ring, 6);
+      const k = 1 - behind / 6;
+      return { b: 0.06 + 0.94 * k * k * k, hue: -12 * behind };
+    }
+    case "listening": {
+      if (p === 0) return { b: 0.9, hue: 0 };
+      const w = wave(2400);
+      return { b: 0.8 + 0.2 * w, hue: 12 * w };
+    }
+    case "sleeping":
+      return { b: p === 0 ? 0.2 : 0.225 + 0.075 * wave(6000), hue: 0 };
+    case "idle":
+      if (style === "flicker") return { b: flicker, hue: 0 };
+      if (style === "blink" && now % 4000 < 150) return { b: 0.05, hue: 0 };
+      return { b: 0.8, hue: p === 0 ? 0 : 15 * wave(4000) };
+  }
+}
+
+/** How fast the speaking ripple goes round (turns a second): a lazy drift when quiet, quick when loud. */
+export const speakSpinRate = (level: number) => 0.4 + 2.6 * level;
+
+/**
+ * Both preview jewels' pixel colors, frame by frame, the same as renderEyes() in the firmware: each
+ * LED's motion for the state, with the flourish on top. In a sparkle, a rainbow spins around the
+ * ring (the two eyes half a turn apart), the centers flash white first, and pixel `twinkle` (0-13,
+ * counting both jewels; anything else for none) is white. Colors are on the full 0-255 scale; the
+ * firmware also caps them at MAX_BRIGHTNESS to save current.
+ */
+export class JewelAnimator {
+  /** Each LED's own candle flicker (both jewels), drifting toward a random target every ~16 ms. */
+  private readonly flicker = new Array<number>(JEWEL_PIXELS * 2).fill(0.8);
   private lastStepAt = -Infinity;
+  /** How far round the speaking ripple is (turns), and when it was last moved. */
+  private spin = 0;
+  private lastFrameAt: number | null = null;
 
   constructor(private readonly random: () => number = Math.random) {}
 
-  at(state: BodyState, level: number, style: EyeStyle, now: number): number {
-    switch (state) {
-      case "speaking":
-        return 0.35 + 0.65 * level;
-      case "thinking":
-        return 0.45 + 0.35 * Math.sin(now / 250);
-      case "sleeping":
-        return 0.25;
-      default:
-        if (style === "flicker") {
-          if (now - this.lastStepAt >= 16) {
-            this.lastStepAt = now;
-            this.flicker += (0.55 + 0.45 * this.random() - this.flicker) * 0.15;
-          }
-          return this.flicker;
-        }
-        if (style === "blink" && now % 4000 < 150) return 0.05;
-        return 0.8;
+  frame(color: Rgb, state: BodyState, level: number, style: EyeStyle, now: number, active: ActiveFlourish | null = null, twinkle = -1): Rgb[][] {
+    if (now - this.lastStepAt >= 16) {
+      this.lastStepAt = now;
+      for (let i = 0; i < this.flicker.length; i++) this.flicker[i]! += (0.55 + 0.45 * this.random() - this.flicker[i]!) * 0.15;
     }
+    const dt = this.lastFrameAt === null ? 0 : Math.min(Math.max(now - this.lastFrameAt, 0), 100);
+    this.lastFrameAt = now;
+    this.spin = wrap(this.spin + (dt / 1000) * speakSpinRate(level), 1);
+    const t = active ? now - active.at : 0;
+    const f = active ? flourishFrame(active.effect, t) : NONE;
+    return [0, 1].map((eye) =>
+      Array.from({ length: JEWEL_PIXELS }, (_, p) => {
+        const i = eye * JEWEL_PIXELS + p;
+        const m = pixelMotion(state, style, level, now, eye, p, this.flicker[i], this.spin);
+        const rgb = scale(shiftHue(color, m.hue), (m.b + (1 - m.b) * f.wide) * f.lid);
+        if (f.sparkle <= 0) return rgb;
+        // ColorHSV(p * 65536 / 6 + t * 66 + eye * 32768) in the firmware, in degrees.
+        const spark = i === twinkle || (p === 0 && t < 200) ? ([255, 255, 255] as Rgb) : hue(p * 60 + (t * 66 * 360) / 65536 + eye * 180);
+        return rgb.map((c, k) => c + (spark[k]! - c) * f.sparkle) as Rgb;
+      }),
+    );
   }
+}
+
+/** `color` turned `degrees` round the color wheel, keeping its saturation and brightness. */
+export function shiftHue(color: Rgb, degrees: number): Rgb {
+  const [r, g, b] = color;
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  if (!degrees || d <= 0) return color;
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return hsv(wrap(h + degrees / 60, 6), d, max);
+}
+
+/** The color at `h` (0..6, a sixth of the wheel each) with chroma `c` and value `v`. */
+function hsv(h: number, c: number, v: number): Rgb {
+  const x = c * (1 - Math.abs((h % 2) - 1));
+  const m = v - c;
+  const sector: Rgb[] = [
+    [c, x, 0],
+    [x, c, 0],
+    [0, c, x],
+    [0, x, c],
+    [x, 0, c],
+    [c, 0, x],
+  ];
+  const [r, g, b] = sector[Math.floor(h) % 6]!;
+  return [r + m, g + m, b + m];
 }
 
 function scale([r, g, b]: Rgb, k: number): Rgb {
@@ -113,15 +195,5 @@ function scale([r, g, b]: Rgb, k: number): Rgb {
 
 /** Fully saturated color at `degrees` around the color wheel. */
 function hue(degrees: number): Rgb {
-  const h = (((degrees % 360) + 360) % 360) / 60;
-  const x = 255 * (1 - Math.abs((h % 2) - 1));
-  const sector: Rgb[] = [
-    [255, x, 0],
-    [x, 255, 0],
-    [0, 255, x],
-    [0, x, 255],
-    [x, 0, 255],
-    [255, 0, x],
-  ];
-  return sector[Math.floor(h) % 6]!;
+  return hsv(wrap(degrees, 360) / 60, 255, 255);
 }
