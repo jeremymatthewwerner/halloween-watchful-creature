@@ -3,15 +3,22 @@ import { describe, expect, it } from "vitest";
 import { BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
 import { BODY_BAUD, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { BodyMessage, EyePalette } from "../shared/types.ts";
-import { BodyLink } from "../web/bodyLink.ts";
+import { BodyLink, deriveBodyState } from "../web/bodyLink.ts";
 import {
   FLOURISH_MS,
   flourishFrame,
   EYE_TOP_PIXEL,
   GREETING_FLOURISH,
   JEWEL_PIXELS,
+  IDLE_SPIN_MS,
+  IDLE_SPIN_TURNS,
+  idlePulse,
   JewelAnimator,
   LID_COLOR,
+  PULSE_COLOR,
+  PULSE_MS,
+  SPARK_COLOR,
+  sparkAt,
   LID_OPEN,
   LID_DOWN_MS,
   LID_SHUT_MS,
@@ -166,7 +173,7 @@ describe("eye flourishes (dashboard preview)", () => {
   const steady = () => new JewelAnimator(() => 0.5);
 
   it("draws both jewels' 7 pixels in the state's color", () => {
-    const [left, right] = steady().frame(orange, "idle", 0, "blink", 1000);
+    const [left, right] = steady().frame(orange, "idle", 0, "blink", PULSE_MS); // the center's purple pulse at rest
     expect(left).toHaveLength(JEWEL_PIXELS);
     expect(right).toHaveLength(JEWEL_PIXELS);
     for (const rgb of [...left!, ...right!]) expect(Math.max(...rgb)).toBeCloseTo(204); // all at 0.8 brightness
@@ -249,7 +256,7 @@ describe("eye flourishes (dashboard preview)", () => {
       const eyes = new LivelyEyes(() => 0.5);
       eyes.step(0, state, 0);
       eyes.step(2750, state, 0); // the first blink, 1.5-4 s in
-      expect(eyes.step(2750 + LID_DOWN_MS, state, 0)).toEqual({ lid: -lidEdge(-1), whirl: 0 });
+      expect(eyes.step(2750 + LID_DOWN_MS, state, 0)).toMatchObject({ lid: -lidEdge(-1), whirl: 0 });
       eyes.step(2750 + BLINK_MS, state, 0);
       expect(eyes.step(8700, state, 0).lid).toBe(lidEdge(-1)); // the next one 4-8 s later: 6 s with this "random"
       eyes.step(8750, state, 0);
@@ -310,6 +317,58 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(whirlRate(WHIRL_MS)).toBe(0);
   });
 
+  it("breathes the idle center toward dark purple and back", () => {
+    expect(idlePulse(0)).toBe(0);
+    expect(idlePulse(PULSE_MS / 2)).toBeCloseTo(0.8);
+    expect(idlePulse(PULSE_MS)).toBeCloseTo(0);
+    const center = (now: number) => steady().frame(orange, "idle", 0, "glow", now)[0]![0]!;
+    expect(center(PULSE_MS / 2)[2]).toBeGreaterThan(50); // purple: plenty of blue
+    expect(center(PULSE_MS)[2]).toBeCloseTo(0); // back to plain orange
+    expect(steady().frame(orange, "listening", 0, "glow", PULSE_MS / 2)[0]![0]![2]).toBe(0); // idle only
+  });
+
+  it("races a spark round the ring, a tail behind it, fading in and out", () => {
+    const ring = (t: number, from: number, dir: number) => [1, 2, 3, 4, 5, 6].map((p) => sparkAt(t, from, dir, p));
+    const head = (k: number[]) => k.indexOf(Math.max(...k));
+    expect(sparkAt(IDLE_SPIN_MS / 2, 0, 1, 0)).toBe(0); // never the center
+    expect(Math.max(...ring(0, 2, 1))).toBe(0); // fades in...
+    expect(Math.max(...ring(IDLE_SPIN_MS, 2, 1))).toBe(0); // ...and is gone at the end
+    // Starts at its pixel; a tail fades out behind the head, which way round depends on `dir`.
+    const forward = ring(200, 2, 1);
+    expect(head(forward)).toBe(2);
+    expect(forward[1]).toBeGreaterThan(0);
+    expect(forward[3]).toBe(0);
+    const backward = ring(200, 2, -1);
+    expect(head(backward)).toBe(2);
+    expect(backward[3]).toBeGreaterThan(0);
+    expect(backward[1]).toBe(0);
+    // Halfway through it has gone round IDLE_SPIN_TURNS / 2 times: back at its pixel.
+    expect(head(ring(IDLE_SPIN_MS / 2, 2, 1))).toBe(2);
+    expect(IDLE_SPIN_TURNS).toBe(2);
+  });
+
+  it("spins a spark every 3-7 s while idle, a random way round, the eyes in mirror image", () => {
+    let n = 0;
+    const randoms = [0.5, 0.5, 0.5, 0.2, 0.9]; // blink, spin delay, spin pixel, way round, next spin...
+    const eyes = new LivelyEyes(() => randoms[n++ % randoms.length]!);
+    eyes.step(0, "idle", 0);
+    expect(eyes.step(1999, "idle", 0).spin).toBeNull(); // the first one 1-3 s in: 2 s here
+    expect(eyes.step(2000, "idle", 0).spin).toEqual({ t: 0, from: 3, dir: 1 });
+    expect(eyes.step(2000 + IDLE_SPIN_MS - 1, "idle", 0).spin?.t).toBe(IDLE_SPIN_MS - 1);
+    expect(eyes.step(2000 + IDLE_SPIN_MS, "idle", 0).spin).toBeNull();
+    // Only while idle.
+    const talking = new LivelyEyes(() => 0.5);
+    for (let t = 0; t < 20_000; t += 50) expect(talking.step(t, "speaking", 0.3).spin).toBeNull();
+    // In the preview: the spark is warm white, the right eye's mirrored round the top pixel.
+    const animator = new JewelAnimator(() => 0.5);
+    let frame: number[][][] = [];
+    for (let t = 0; t <= 2000 + 150; t += 10) frame = animator.frame(orange, "idle", 0, "glow", t);
+    // From ring pixel 3 with this "random"; 150 ms in, it has barely moved: nearly all spark.
+    for (const [k, c] of SPARK_COLOR.entries()) expect(Math.abs(frame[0]![4]![k]! - c)).toBeLessThan(15);
+    expect(frame[1]![4]).toEqual(frame[0]![4]); // ring pixel 3 mirrors to itself
+    expect(frame[0]![2]![2]).toBeCloseTo(0); // pixels away from the spark keep the plain orange
+  });
+
   it("keeps the speaking blinks and whirls in step with the firmware", () => {
     const firmware = readFileSync(new URL("../firmware/creature_body/creature_body.ino", import.meta.url), "utf8");
     expect(firmware).toContain(`BLINK_MS = ${BLINK_MS};`);
@@ -318,6 +377,11 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(firmware).toContain(`LID_COLOR[3] = {${LID_COLOR.join(", ")}};`);
     expect(firmware).toContain(`EYE_TOP_PIXEL = ${EYE_TOP_PIXEL};`);
     expect(firmware).toContain(`WHIRL_MS = ${WHIRL_MS};`);
+    expect(firmware).toContain(`IDLE_SPIN_MS = ${IDLE_SPIN_MS};`);
+    expect(firmware).toContain(`IDLE_SPIN_TURNS = ${IDLE_SPIN_TURNS};`);
+    expect(firmware).toContain(`SPARK_COLOR[3] = {${SPARK_COLOR.join(", ")}};`);
+    expect(firmware).toContain(`PULSE_MS = ${PULSE_MS};`);
+    expect(firmware).toContain(`PULSE_COLOR[3] = {${PULSE_COLOR.join(", ")}};`);
     expect(firmware).toContain(`WHIRL_PEAK = ${WHIRL_PEAK};`);
     expect(firmware).toContain(`WHIRL_COOLDOWN_MS = ${WHIRL_COOLDOWN_MS};`);
     expect(firmware).toContain(`WHIRL_AT_LEAST_EVERY_MS = ${WHIRL_AT_LEAST_EVERY_MS};`);
@@ -363,6 +427,27 @@ describe("BodyLink flourishes", () => {
     link.setState("idle", 10_100);
     link.setState("thinking", 10_200);
     expect(link.activeFlourish(10_200)?.effect).toBe("sparkle");
+  });
+});
+
+describe("deriveBodyState", () => {
+  const quiet = { awake: true, live: true, speaking: false, thinking: false, sinceHeardMs: 10_000 };
+
+  it("is idle while awake with nobody around, even with the voice session asleep (autopilot waiting)", () => {
+    expect(deriveBodyState({ ...quiet, live: false })).toBe("idle");
+    expect(deriveBodyState(quiet)).toBe("idle");
+  });
+
+  it("sleeps only when the creature does (the kill switch)", () => {
+    expect(deriveBodyState({ ...quiet, awake: false, live: false })).toBe("sleeping");
+  });
+
+  it("speaks, thinks and listens as before", () => {
+    expect(deriveBodyState({ ...quiet, speaking: true, thinking: true })).toBe("speaking");
+    expect(deriveBodyState({ ...quiet, live: false, speaking: true })).toBe("speaking"); // a recorded clip
+    expect(deriveBodyState({ ...quiet, thinking: true, sinceHeardMs: 0 })).toBe("thinking");
+    expect(deriveBodyState({ ...quiet, sinceHeardMs: 1000 })).toBe("listening");
+    expect(deriveBodyState({ ...quiet, live: false, thinking: true })).toBe("idle"); // no session, nothing to wait on
   });
 });
 

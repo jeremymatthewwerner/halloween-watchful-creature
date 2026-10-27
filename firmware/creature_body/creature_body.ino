@@ -56,6 +56,14 @@ const unsigned int WHIRL_MS = 600;
 const float WHIRL_PEAK = 0.7;
 const unsigned long WHIRL_COOLDOWN_MS = 5000;
 const unsigned long WHIRL_AT_LEAST_EVERY_MS = 9000;
+// While idle: every 3-7 s a warm white spark races IDLE_SPIN_TURNS round each ring (from a random
+// pixel, a random way round, the eyes in mirror image), and the center breathes toward dark purple
+// every PULSE_MS. Keep in sync with LivelyEyes in web/eyeFlourish.ts.
+const unsigned int IDLE_SPIN_MS = 1600;
+const uint8_t IDLE_SPIN_TURNS = 2;
+const uint8_t SPARK_COLOR[3] = {255, 190, 90};
+const unsigned int PULSE_MS = 3200;
+const uint8_t PULSE_COLOR[3] = {60, 0, 90};
 
 enum State { SLEEPING, IDLE, LISTENING, THINKING, SPEAKING, STATE_COUNT };
 const char *STATE_NAMES[STATE_COUNT] = {"sleeping", "idle", "listening", "thinking", "speaking"};
@@ -83,7 +91,7 @@ Servo jaw;
 
 // Default palette (pumpkin) until the server sends the character's colors.
 uint8_t palette[STATE_COUNT][3] = {
-  {42, 10, 0}, {255, 106, 0}, {255, 176, 0}, {155, 48, 255}, {255, 208, 0}};
+  {42, 10, 0}, {255, 61, 0}, {255, 176, 0}, {155, 48, 255}, {255, 208, 0}};
 EyeStyle eyeStyle = FLICKER;
 bool modeEyes = true, modeJaw = false, modeRelay = false;
 
@@ -208,6 +216,11 @@ float lastLevel = 0;
 unsigned long blinkAt = 0, nextBlinkAt = 0, whirlAt = 0, whirlBy = 0;
 float whirlSpin = 0;             // the whirl's extra spin this frame (turns a second)
 float lidAt = LID_OPEN;          // where the lid's edge is this frame (see lidEdge)
+bool wasIdle = false;
+unsigned long spinAt = 0, nextSpinAt = 0;
+uint8_t spinFrom = 0;            // the ring pixel (0-5) the idle spin started from (left eye)
+int8_t spinDir = 1;              // which way round it goes (left eye)
+bool spinning = false;           // an idle spin is playing this frame
 
 // Eye brightness 0..1 for the current state, before any flourish.
 float stateBrightness(unsigned long now) {
@@ -281,7 +294,8 @@ float wrap(float x, float m) {
 //   thinking:  a comet spins round the ring, its tail fading and drifting in hue
 //   listening: a soft bright spot circles slowly round a steady center
 //   sleeping:  a faint ember drifting round
-//   idle:      every LED flickers on its own (flicker), a slow hue swirl (glow), or a blink
+//   idle:      every LED flickers on its own (flicker), a slow hue swirl (glow), or a blink;
+//              renderEyes() adds a purple pulse in the center and livelyStep()'s spinning spark
 Motion pixelMotion(unsigned long now, uint8_t eye, uint8_t p, float flick) {
   float ring = p - 1.0;
   float dir = eye == 0 ? 1 : -1;
@@ -340,11 +354,14 @@ float lidCover(float edge, uint8_t p) {
 // comes 1.5-4 s after the eyes settle into speaking, idle or sleeping.
 void livelyStep(unsigned long now) {
   bool speaking = state == SPEAKING;
-  bool blinks = speaking || state == IDLE || state == SLEEPING;
+  bool idle = state == IDLE;
+  bool blinks = speaking || idle || state == SLEEPING;
   if (blinks && !wasBlinking) nextBlinkAt = now + random(1500, 4000);
   if (speaking && !wasSpeaking) whirlBy = now + WHIRL_AT_LEAST_EVERY_MS;
+  if (idle && !wasIdle) nextSpinAt = now + random(1000, 3000);
   wasBlinking = blinks;
   wasSpeaking = speaking;
+  wasIdle = idle;
   bool rising = level >= WHIRL_PEAK && lastLevel < WHIRL_PEAK;
   lastLevel = level;
   if (blinks && (long)(now - nextBlinkAt) >= 0) {
@@ -355,8 +372,39 @@ void livelyStep(unsigned long now) {
     whirlAt = now;
     whirlBy = now + WHIRL_AT_LEAST_EVERY_MS;
   }
+  if (idle && (long)(now - nextSpinAt) >= 0) {
+    spinAt = now;
+    spinFrom = random(6);
+    spinDir = random(2) ? 1 : -1;
+    nextSpinAt = now + IDLE_SPIN_MS + random(3000, 7000);
+  }
   lidAt = blinks ? lidEdge(now - blinkAt) : LID_OPEN;
   whirlSpin = speaking ? whirlRate(now - whirlAt) : 0;
+  spinning = idle && now - spinAt < IDLE_SPIN_MS;
+}
+
+// How much of the idle center is PULSE_COLOR at `now`: 0 to 0.8 and back, every PULSE_MS.
+float idlePulse(unsigned long now) {
+  float s = sin(PI * (now % PULSE_MS) / PULSE_MS);
+  return 0.8 * s * s;
+}
+
+// How much of the spark ring pixel p (1-6) shows t ms into a spin that started at ring pixel `from`
+// (0-5) going `dir` round: full at the head, a tail fading over 2.5 pixels behind it, and the whole
+// spin fading in and out over 150 ms at its ends.
+float sparkAt(unsigned long t, float from, float dir, uint8_t p) {
+  if (p == 0 || t >= IDLE_SPIN_MS) return 0;
+  float head = from + dir * 6 * IDLE_SPIN_TURNS * ease(t / (float)IDLE_SPIN_MS);
+  float behind = wrap(dir * (head - (p - 1)), 6);
+  float k = behind > 5.5 ? (behind - 5.5) / 0.5 : max(0.0, 1 - behind / 2.5);
+  return k * min(1.0, min(t / 150.0, (IDLE_SPIN_MS - t) / 150.0));
+}
+
+// `c` (0-255 each, scaled by MAX_BRIGHTNESS like the eye colors) mixed `k` (0..1) into r, g, b.
+void mixIn(float &r, float &g, float &b, const uint8_t *c, float k) {
+  r += (c[0] * MAX_BRIGHTNESS - r) * k;
+  g += (c[1] * MAX_BRIGHTNESS - g) * k;
+  b += (c[2] * MAX_BRIGHTNESS - b) * k;
 }
 
 // Turns a color `degrees` round the color wheel, keeping its saturation and brightness.
@@ -400,6 +448,14 @@ void renderEyes(unsigned long now) {
     r *= b;
     g *= b;
     bl *= b;
+    if (state == IDLE) {
+      if (p == 0) mixIn(r, g, bl, PULSE_COLOR, idlePulse(now));
+      // The right eye spins in mirror image: from the mirrored pixel, the other way round.
+      else if (spinning) {
+        unsigned long st = now - spinAt;
+        mixIn(r, g, bl, SPARK_COLOR, i < 7 ? sparkAt(st, spinFrom, spinDir, p) : sparkAt(st, (6 - spinFrom) % 6, -spinDir, p));
+      }
+    }
     if (f.sparkle > 0) {
       uint32_t s = (i == twinkle || (p == 0 && f.t < 200))
                        ? 0xFFFFFFUL
@@ -409,10 +465,7 @@ void renderEyes(unsigned long now) {
       g += ((uint8_t)(s >> 8) * MAX_BRIGHTNESS - g) * f.sparkle;
       bl += ((uint8_t)s * MAX_BRIGHTNESS - bl) * f.sparkle;
     }
-    float cover = lidCover(min(lidAt, f.edge), p);  // a blink: the lid on top of everything
-    r += (LID_COLOR[0] * MAX_BRIGHTNESS - r) * cover;
-    g += (LID_COLOR[1] * MAX_BRIGHTNESS - g) * cover;
-    bl += (LID_COLOR[2] * MAX_BRIGHTNESS - bl) * cover;
+    mixIn(r, g, bl, LID_COLOR, lidCover(min(lidAt, f.edge), p));  // a blink: the lid on top of everything
     eyes.setPixelColor(i, (uint8_t)r, (uint8_t)g, (uint8_t)bl);
   }
   eyes.show();

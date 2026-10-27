@@ -106,7 +106,8 @@ const wrap = (x: number, m: number) => ((x % m) + m) % m;
  *  - thinking: a comet spins round the ring, its tail fading and drifting in hue
  *  - listening: a soft bright spot circles slowly round a steady center
  *  - sleeping: a faint ember drifting round
- *  - idle: every LED flickers on its own (flicker), a slow hue swirl (glow), or a blink
+ *  - idle: every LED flickers on its own (flicker), a slow hue swirl (glow), or a blink; the
+ *    renderer adds a purple pulse in the center and LivelyEyes' spinning spark
  */
 export function pixelMotion(
   state: BodyState,
@@ -164,11 +165,44 @@ export const WHIRL_AT_LEAST_EVERY_MS = 9000;
 /** The whirl's extra spin (turns a second) `t` ms after it started: up to 4, easing in and out. */
 export const whirlRate = (t: number) => (t >= 0 && t < WHIRL_MS ? 4 * Math.sin((Math.PI * t) / WHIRL_MS) : 0);
 
+/** An idle spin: a bright spark races this many turns round each ring, easing in and out, in IDLE_SPIN_MS. */
+export const IDLE_SPIN_MS = 1600;
+export const IDLE_SPIN_TURNS = 2;
+/** The spark: a warm white, on the same 0-255 scale as the eye colors. */
+export const SPARK_COLOR: Rgb = [255, 190, 90];
+/** The idle center breathes toward a dark purple and back this often. */
+export const PULSE_MS = 3200;
+export const PULSE_COLOR: Rgb = [60, 0, 90];
+
+/** How much of PULSE_COLOR shows in the idle center at `now`: 0 to 0.8 and back, every PULSE_MS. */
+export const idlePulse = (now: number) => 0.8 * Math.sin((Math.PI * now) / PULSE_MS) ** 2;
+
+/**
+ * How much of the spark ring pixel `p` (1-6) shows `t` ms into a spin that started at ring pixel
+ * `from` (0-5) going `dir` (1 or -1 round the ring): full at the head, a tail fading over 2.5 pixels
+ * behind it, and the whole spin fading in and out over 150 ms at its ends.
+ */
+export function sparkAt(t: number, from: number, dir: number, p: number): number {
+  if (p === 0 || t < 0 || t >= IDLE_SPIN_MS) return 0;
+  const head = from + dir * 6 * IDLE_SPIN_TURNS * ease(t / IDLE_SPIN_MS);
+  const behind = wrap(dir * (head - (p - 1)), 6);
+  const k = behind > 5.5 ? (behind - 5.5) / 0.5 : Math.max(0, 1 - behind / 2.5);
+  return k * Math.min(1, t / 150, (IDLE_SPIN_MS - t) / 150);
+}
+
+/** An idle spin in progress: how long ago it started, and where and which way it went (for the left eye). */
+export interface IdleSpin {
+  t: number;
+  from: number;
+  dir: number;
+}
+
 /**
  * What keeps the eyes lively, the same as livelyStep() in the firmware. Speaking, idle and sleeping
  * eyes blink (the first 1.5-4 s after the eyes settle into one of them): every 3-6 s while speaking,
  * every 4-8 s otherwise. Listening and thinking have motion enough. Speaking also whirls when the
- * voice jumps loud.
+ * voice jumps loud, and idle spins a spark round the rings every 3-7 s (the first 1-3 s in), from a
+ * random pixel, a random way round.
  */
 export class LivelyEyes {
   private blinks = false;
@@ -178,19 +212,27 @@ export class LivelyEyes {
   private nextBlinkAt = Infinity;
   private whirlAt = -Infinity;
   private whirlBy = Infinity;
+  private idle = false;
+  private spin: IdleSpin = { t: -Infinity, from: 0, dir: 1 };
+  private spinAt = -Infinity;
+  private nextSpinAt = Infinity;
 
   constructor(private readonly random: () => number = Math.random) {}
 
   /**
-   * Moves on to `now`: where the lid's edge is (see lidEdge) and the whirl's extra spin (turns a second).
+   * Moves on to `now`: where the lid's edge is (see lidEdge), the whirl's extra spin (turns a
+   * second), and the idle spin playing, if any.
    */
-  step(now: number, state: BodyState, level: number): { lid: number; whirl: number } {
+  step(now: number, state: BodyState, level: number): { lid: number; whirl: number; spin: IdleSpin | null } {
     const speaking = state === "speaking";
-    const blinks = speaking || state === "idle" || state === "sleeping";
+    const idle = state === "idle";
+    const blinks = speaking || idle || state === "sleeping";
     if (blinks && !this.blinks) this.nextBlinkAt = now + 1500 + 2500 * this.random();
     if (speaking && !this.speaking) this.whirlBy = now + WHIRL_AT_LEAST_EVERY_MS;
+    if (idle && !this.idle) this.nextSpinAt = now + 1000 + 2000 * this.random();
     this.blinks = blinks;
     this.speaking = speaking;
+    this.idle = idle;
     const rising = level >= WHIRL_PEAK && this.lastLevel < WHIRL_PEAK;
     this.lastLevel = level;
     if (blinks && now >= this.nextBlinkAt) {
@@ -201,9 +243,16 @@ export class LivelyEyes {
       this.whirlAt = now;
       this.whirlBy = now + WHIRL_AT_LEAST_EVERY_MS;
     }
+    if (idle && now >= this.nextSpinAt) {
+      this.spinAt = now;
+      this.spin = { t: 0, from: Math.floor(6 * this.random()), dir: this.random() < 0.5 ? 1 : -1 };
+      this.nextSpinAt = now + IDLE_SPIN_MS + 3000 + 4000 * this.random();
+    }
+    const spinT = now - this.spinAt;
     return {
       lid: blinks ? lidEdge(now - this.blinkAt) : LID_OPEN,
       whirl: speaking ? whirlRate(now - this.whirlAt) : 0,
+      spin: idle && spinT < IDLE_SPIN_MS ? { ...this.spin, t: spinT } : null,
     };
   }
 }
@@ -244,6 +293,14 @@ export class JewelAnimator {
         const i = eye * JEWEL_PIXELS + p;
         const m = pixelMotion(state, style, level, now, eye, p, this.flicker[i], this.spin);
         let rgb = scale(shiftHue(color, m.hue), (m.b + (1 - m.b) * f.wide) * f.lid);
+        if (state === "idle") {
+          if (p === 0) rgb = mix(rgb, PULSE_COLOR, idlePulse(now));
+          // The right eye spins in mirror image: from the mirrored pixel, the other way round.
+          else if (lively.spin) {
+            const { t: st, from, dir } = lively.spin;
+            rgb = mix(rgb, SPARK_COLOR, eye === 0 ? sparkAt(st, from, dir, p) : sparkAt(st, wrap(-from, 6), -dir, p));
+          }
+        }
         if (f.sparkle > 0) {
           // ColorHSV(p * 65536 / 6 + t * 66 + eye * 32768) in the firmware, in degrees.
           const spark = i === twinkle || (p === 0 && t < 200) ? ([255, 255, 255] as Rgb) : hue(p * 60 + (t * 66 * 360) / 65536 + eye * 180);
