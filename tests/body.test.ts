@@ -4,7 +4,30 @@ import { BodyController, pickArduinoPort, type LineSink } from "../server/body/d
 import { BODY_BAUD, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { EyePalette } from "../shared/types.ts";
 import { BodyLink } from "../web/bodyLink.ts";
-import { FLOURISH_MS, flourishFrame, GREETING_FLOURISH, JEWEL_PIXELS, JewelAnimator, pixelMotion, shiftHue, speakSpinRate } from "../web/eyeFlourish.ts";
+import {
+  FLOURISH_MS,
+  flourishFrame,
+  EYE_TOP_PIXEL,
+  GREETING_FLOURISH,
+  JEWEL_PIXELS,
+  JewelAnimator,
+  SPEAK_LID_COLOR,
+  LID_DOWN_MS,
+  LID_SHUT_MS,
+  lidCover,
+  lidEdge,
+  pixelMotion,
+  BLINK_MS,
+  LivelyEyes,
+  REST_LID_COLOR,
+  shiftHue,
+  speakSpinRate,
+  WHIRL_AT_LEAST_EVERY_MS,
+  WHIRL_COOLDOWN_MS,
+  WHIRL_MS,
+  WHIRL_PEAK,
+  whirlRate,
+} from "../web/eyeFlourish.ts";
 
 const eyes: EyePalette = {
   sleeping: [1, 2, 3],
@@ -179,11 +202,11 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(pixelMotion("thinking", "flicker", 0, 150, 0, 1).hue).toBeLessThan(0);
   });
 
-  it("follows the voice while speaking, rippling brightness and hue round the ring", () => {
-    expect(pixelMotion("speaking", "flicker", 0, 0, 0, 0).b).toBeCloseTo(0.35);
+  it("follows the voice while speaking, dim between words, rippling brightness and hue round the ring", () => {
+    expect(pixelMotion("speaking", "flicker", 0, 0, 0, 0).b).toBeCloseTo(0.1);
     expect(pixelMotion("speaking", "flicker", 1, 0, 0, 0).b).toBeCloseTo(1);
     const ring = [1, 2, 3, 4, 5, 6].map((p) => pixelMotion("speaking", "flicker", 1, 0, 0, p));
-    expect(Math.max(...ring.map((m) => m.b)) - Math.min(...ring.map((m) => m.b))).toBeCloseTo(0.4, 1);
+    expect(Math.max(...ring.map((m) => m.b)) - Math.min(...ring.map((m) => m.b))).toBeCloseTo(0.7);
     expect(new Set(ring.map((m) => Math.round(m.hue))).size).toBeGreaterThan(2);
   });
 
@@ -197,8 +220,106 @@ describe("eye flourishes (dashboard preview)", () => {
       const ring = frame[0]!.slice(1).map((rgb) => Math.max(...rgb));
       return ring.indexOf(Math.max(...ring));
     };
-    expect(peakAfter(0, 160)).toBe(0); // quiet: barely moved
-    expect(peakAfter(1, 160)).toBe(3); // loud: half a turn (3 pixels) in 160 ms
+    expect(peakAfter(0, 240)).toBe(1); // quiet: barely a pixel in 240 ms
+    expect(peakAfter(0.65, 240)).toBe(3); // louder (but no whirl): half a turn (3 pixels)
+  });
+
+  it("blinks now and then while speaking: a lid comes down and goes back up", () => {
+    const eyes = new LivelyEyes(() => 0.5);
+    const open = lidEdge(-1);
+    expect(eyes.step(0, "speaking", 0.3).lid).toBe(open);
+    // The first blink comes 1.5-4 s in: 2.75 s with this "random".
+    expect(eyes.step(2700, "speaking", 0.3).lid).toBe(open);
+    expect(eyes.step(2750, "speaking", 0.3).lid).toBe(open); // starts at the top...
+    expect(eyes.step(2750 + LID_DOWN_MS / 2, "speaking", 0.3).lid).toBeCloseTo(0); // ...halfway down...
+    expect(eyes.step(2750 + LID_DOWN_MS + LID_SHUT_MS / 2, "speaking", 0.3).lid).toBe(-open); // ...shut...
+    expect(eyes.step(2750 + BLINK_MS, "speaking", 0.3).lid).toBe(open); // ...and back up
+    // The next one 3-6 s later.
+    expect(eyes.step(7200, "speaking", 0.3).lid).toBe(open);
+    eyes.step(7250, "speaking", 0.3);
+    expect(eyes.step(7250 + LID_DOWN_MS + LID_SHUT_MS / 2, "speaking", 0.3).lid).toBe(-open);
+    // Never while listening (or thinking): they have motion enough.
+    expect(eyes.step(20_000, "listening", 0).lid).toBe(open);
+  });
+
+  it("blinks a black lid, less often, while idle or sleeping", () => {
+    for (const state of ["idle", "sleeping"] as const) {
+      const eyes = new LivelyEyes(() => 0.5);
+      eyes.step(0, state, 0);
+      eyes.step(2750, state, 0); // the first blink, 1.5-4 s in
+      expect(eyes.step(2750 + LID_DOWN_MS, state, 0)).toMatchObject({ lid: -lidEdge(-1), lidColor: REST_LID_COLOR, whirl: 0 });
+      eyes.step(2750 + BLINK_MS, state, 0);
+      expect(eyes.step(8700, state, 0).lid).toBe(lidEdge(-1)); // the next one 4-8 s later: 6 s with this "random"
+      eyes.step(8750, state, 0);
+      expect(eyes.step(8750 + LID_DOWN_MS, state, 0).lid).toBe(-lidEdge(-1));
+    }
+    // Going quiet between sentences doesn't put the next blink off.
+    const eyes = new LivelyEyes(() => 0.5);
+    eyes.step(0, "speaking", 0.3);
+    eyes.step(2000, "idle", 0);
+    eyes.step(2750, "speaking", 0.3);
+    expect(eyes.step(2750 + LID_DOWN_MS, "speaking", 0.3)).toMatchObject({ lidColor: SPEAK_LID_COLOR });
+    // Thinking never blinks.
+    const thinking = new LivelyEyes(() => 0.5);
+    for (let t = 0; t < 20_000; t += 50) expect(thinking.step(t, "thinking", 0).lid).toBe(lidEdge(-1));
+  });
+
+  it("covers the eye from the top down", () => {
+    const bottom = ((EYE_TOP_PIXEL + 2) % 6) + 1;
+    const all = [0, 1, 2, 3, 4, 5, 6];
+    expect(all.map((p) => lidCover(lidEdge(-1), p))).toEqual(all.map(() => 0)); // open
+    expect(all.map((p) => lidCover(lidEdge(LID_DOWN_MS), p))).toEqual(all.map(() => 1)); // shut
+    expect(lidCover(0, EYE_TOP_PIXEL)).toBe(1); // halfway: the top is covered...
+    expect(lidCover(0, 0)).toBe(0.5); // ...the center half...
+    expect(lidCover(0, bottom)).toBe(0); // ...the bottom not yet
+    // In the preview: the top pixel goes the lid's purple while the bottom keeps the eye color.
+    const animator = new JewelAnimator(() => 0.5);
+    let frame: number[][][] = [];
+    for (let t = 0; t <= 2750 + LID_DOWN_MS / 2; t += 5) frame = animator.frame([255, 208, 0], "speaking", 0.5, "flicker", t);
+    expect(frame[0]![EYE_TOP_PIXEL]).toEqual(SPEAK_LID_COLOR);
+    expect(frame[1]![EYE_TOP_PIXEL]).toEqual(SPEAK_LID_COLOR);
+    expect(frame[0]![bottom]![1]).toBeGreaterThan(20); // still yellow (the lid has no green)
+  });
+
+  it("whirls when the voice jumps loud, at most every 5 s, at least every 9 s", () => {
+    const eyes = new LivelyEyes(() => 0.5);
+    expect(eyes.step(0, "speaking", 0.3).whirl).toBe(0);
+    expect(eyes.step(100, "speaking", WHIRL_PEAK).whirl).toBe(0); // starts...
+    expect(eyes.step(100 + WHIRL_MS / 2, "speaking", 0.9).whirl).toBeCloseTo(4); // ...flat out halfway...
+    expect(eyes.step(100 + WHIRL_MS, "speaking", 0.9).whirl).toBe(0); // ...and done
+    eyes.step(1000, "speaking", 0.3);
+    eyes.step(1100, "speaking", 0.9); // loud again, but too soon
+    expect(eyes.step(1100 + WHIRL_MS / 2, "speaking", 0.9).whirl).toBe(0);
+    eyes.step(100 + WHIRL_COOLDOWN_MS, "speaking", 0.3);
+    eyes.step(200 + WHIRL_COOLDOWN_MS, "speaking", 0.9); // loud after the cooldown: whirls
+    expect(eyes.step(200 + WHIRL_COOLDOWN_MS + WHIRL_MS / 2, "speaking", 0.9).whirl).toBeCloseTo(4);
+    // A long, even answer still gets one.
+    const steadyTalk = new LivelyEyes(() => 0.5);
+    steadyTalk.step(0, "speaking", 0.3);
+    expect(steadyTalk.step(WHIRL_AT_LEAST_EVERY_MS - 100, "speaking", 0.3).whirl).toBe(0);
+    steadyTalk.step(WHIRL_AT_LEAST_EVERY_MS, "speaking", 0.3);
+    expect(steadyTalk.step(WHIRL_AT_LEAST_EVERY_MS + WHIRL_MS / 2, "speaking", 0.3).whirl).toBeCloseTo(4);
+  });
+
+  it("spins the ripple about 1.5 extra turns in a whirl", () => {
+    let turns = 0;
+    for (let t = 0; t < WHIRL_MS; t++) turns += whirlRate(t) / 1000;
+    expect(turns).toBeCloseTo(1.53, 1);
+    expect(whirlRate(WHIRL_MS)).toBe(0);
+  });
+
+  it("keeps the speaking blinks and whirls in step with the firmware", () => {
+    const firmware = readFileSync(new URL("../firmware/creature_body/creature_body.ino", import.meta.url), "utf8");
+    expect(firmware).toContain(`BLINK_MS = ${BLINK_MS};`);
+    expect(firmware).toContain(`LID_DOWN_MS = ${LID_DOWN_MS};`);
+    expect(firmware).toContain(`LID_SHUT_MS = ${LID_SHUT_MS};`);
+    expect(firmware).toContain(`SPEAK_LID_COLOR[3] = {${SPEAK_LID_COLOR.join(", ")}};`);
+    expect(firmware).toContain(`REST_LID_COLOR[3] = {${REST_LID_COLOR.join(", ")}};`);
+    expect(firmware).toContain(`EYE_TOP_PIXEL = ${EYE_TOP_PIXEL};`);
+    expect(firmware).toContain(`WHIRL_MS = ${WHIRL_MS};`);
+    expect(firmware).toContain(`WHIRL_PEAK = ${WHIRL_PEAK};`);
+    expect(firmware).toContain(`WHIRL_COOLDOWN_MS = ${WHIRL_COOLDOWN_MS};`);
+    expect(firmware).toContain(`WHIRL_AT_LEAST_EVERY_MS = ${WHIRL_AT_LEAST_EVERY_MS};`);
   });
 
   it("flickers each LED on its own when idle, like a candle", () => {

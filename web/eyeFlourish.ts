@@ -71,8 +71,9 @@ const wrap = (x: number, m: number) => ((x % m) + m) % m;
 /**
  * How one LED moves in a state, the same as pixelMotion() in the firmware. `p` is the pixel (0 =
  * center, 1-6 = ring); the two eyes turn in mirror image. `flicker` is that LED's own candle flicker.
- *  - speaking: brightness follows the voice, with a ripple of brightness and warmer hue going round,
- *    spinning faster the louder the voice (`spin`: how far round it is, in turns)
+ *  - speaking: brightness follows the voice, from dim between words to full on loud ones, with a
+ *    ripple of brightness and warmer hue going round, spinning faster the louder the voice (`spin`:
+ *    how far round it is, in turns). LivelyEyes adds blinks and whirls on top.
  *  - thinking: a comet spins round the ring, its tail fading and drifting in hue
  *  - listening: a soft bright spot circles slowly round a steady center
  *  - sleeping: a faint ember drifting round
@@ -93,10 +94,10 @@ export function pixelMotion(
   const wave = (periodMs: number) => Math.cos(2 * Math.PI * (ring / 6 - dir * phase(now, periodMs)));
   switch (state) {
     case "speaking": {
-      const base = 0.35 + 0.65 * level;
+      const base = 0.1 + 0.9 * level;
       if (p === 0) return { b: base, hue: 0 };
       const w = Math.cos(2 * Math.PI * (ring / 6 - dir * spin));
-      return { b: base * (0.8 + 0.2 * w), hue: -12 * (1 + w) }; // toward warmer, never greener
+      return { b: base * (0.65 + 0.35 * w), hue: -12 * (1 + w) }; // toward warmer, never greener
     }
     case "thinking": {
       if (p === 0) return { b: 0.25 + 0.1 * Math.sin(now / 250), hue: 0 };
@@ -122,9 +123,96 @@ export function pixelMotion(
 /** How fast the speaking ripple goes round (turns a second): a lazy drift when quiet, quick when loud. */
 export const speakSpinRate = (level: number) => 0.4 + 2.6 * level;
 
+/** A blink: a dark lid comes down over each eye, stays shut a moment and goes back up. */
+export const LID_DOWN_MS = 145;
+export const LID_SHUT_MS = 65;
+export const BLINK_MS = 375;
+/** The lid's color while speaking: a dark purple, on the same 0-255 scale as the eye colors. */
+export const SPEAK_LID_COLOR: Rgb = [60, 0, 90];
+/** ...and while idle or sleeping: black. */
+export const REST_LID_COLOR: Rgb = [0, 0, 0];
+/** Which ring pixel (1-6) is at the top of each jewel as it's mounted: the lid comes down from it. */
+export const EYE_TOP_PIXEL = 1;
+/** Where the lid's edge sits when open: just above the top pixel (pixels sit from -1, bottom, to 1, top). */
+const LID_OPEN = 1.3;
+
+/** Where the lid's edge is `t` ms into a blink: coming down, shut, then going up for the rest. */
+export function lidEdge(t: number): number {
+  if (t < 0 || t >= BLINK_MS) return LID_OPEN;
+  if (t < LID_DOWN_MS) return LID_OPEN - 2 * LID_OPEN * ease(t / LID_DOWN_MS);
+  const up = LID_DOWN_MS + LID_SHUT_MS;
+  if (t < up) return -LID_OPEN;
+  return -LID_OPEN + 2 * LID_OPEN * ease((t - up) / (BLINK_MS - up));
+}
+
+/** How much of pixel `p` (0 = center, 1-6 = ring) the lid covers with its edge at `edge`: 0..1, soft-edged. */
+export function lidCover(edge: number, p: number): number {
+  const y = p === 0 ? 0 : Math.cos((2 * Math.PI * (p - EYE_TOP_PIXEL)) / 6);
+  return Math.min(1, Math.max(0, (y - edge) / 0.6 + 0.5));
+}
+/** A whirl: the speaking ripple spins about 1.5 extra turns in this long. */
+export const WHIRL_MS = 600;
+/** The voice jumping to this loud starts a whirl... */
+export const WHIRL_PEAK = 0.7;
+/** ...at most this often... */
+export const WHIRL_COOLDOWN_MS = 5000;
+/** ...and a long answer gets one at least this often anyway. */
+export const WHIRL_AT_LEAST_EVERY_MS = 9000;
+
+/** The whirl's extra spin (turns a second) `t` ms after it started: up to 4, easing in and out. */
+export const whirlRate = (t: number) => (t >= 0 && t < WHIRL_MS ? 4 * Math.sin((Math.PI * t) / WHIRL_MS) : 0);
+
+/**
+ * What keeps the eyes lively, the same as livelyStep() in the firmware. Speaking, idle and sleeping
+ * eyes blink (the first 1.5-4 s after the eyes settle into one of them): a purple lid every 3-6 s while
+ * speaking, a black one every 4-8 s otherwise. Listening and thinking have motion enough. Speaking
+ * also whirls when the voice jumps loud.
+ */
+export class LivelyEyes {
+  private blinks = false;
+  private speaking = false;
+  private lastLevel = 0;
+  private blinkAt = -Infinity;
+  private nextBlinkAt = Infinity;
+  private lidColor = REST_LID_COLOR;
+  private whirlAt = -Infinity;
+  private whirlBy = Infinity;
+
+  constructor(private readonly random: () => number = Math.random) {}
+
+  /**
+   * Moves on to `now`: where the lid's edge is (see lidEdge), the lid's color, and the whirl's extra
+   * spin (turns a second).
+   */
+  step(now: number, state: BodyState, level: number): { lid: number; lidColor: Rgb; whirl: number } {
+    const speaking = state === "speaking";
+    const blinks = speaking || state === "idle" || state === "sleeping";
+    if (blinks && !this.blinks) this.nextBlinkAt = now + 1500 + 2500 * this.random();
+    if (speaking && !this.speaking) this.whirlBy = now + WHIRL_AT_LEAST_EVERY_MS;
+    this.blinks = blinks;
+    this.speaking = speaking;
+    const rising = level >= WHIRL_PEAK && this.lastLevel < WHIRL_PEAK;
+    this.lastLevel = level;
+    if (blinks && now >= this.nextBlinkAt) {
+      this.blinkAt = now;
+      this.lidColor = speaking ? SPEAK_LID_COLOR : REST_LID_COLOR;
+      this.nextBlinkAt = now + (speaking ? 3000 + 3000 * this.random() : 4000 + 4000 * this.random());
+    }
+    if (speaking && ((rising && now - this.whirlAt >= WHIRL_COOLDOWN_MS) || now >= this.whirlBy)) {
+      this.whirlAt = now;
+      this.whirlBy = now + WHIRL_AT_LEAST_EVERY_MS;
+    }
+    return {
+      lid: blinks ? lidEdge(now - this.blinkAt) : LID_OPEN,
+      lidColor: this.lidColor,
+      whirl: speaking ? whirlRate(now - this.whirlAt) : 0,
+    };
+  }
+}
+
 /**
  * Both preview jewels' pixel colors, frame by frame, the same as renderEyes() in the firmware: each
- * LED's motion for the state, with the flourish on top. In a sparkle, a rainbow spins around the
+ * LED's motion for the state, with the flourish and then a blinking lid on top. In a sparkle, a rainbow spins around the
  * ring (the two eyes half a turn apart), the centers flash white first, and pixel `twinkle` (0-13,
  * counting both jewels; anything else for none) is white. Colors are on the full 0-255 scale; the
  * firmware also caps them at MAX_BRIGHTNESS to save current.
@@ -136,8 +224,11 @@ export class JewelAnimator {
   /** How far round the speaking ripple is (turns), and when it was last moved. */
   private spin = 0;
   private lastFrameAt: number | null = null;
+  private readonly lively: LivelyEyes;
 
-  constructor(private readonly random: () => number = Math.random) {}
+  constructor(private readonly random: () => number = Math.random) {
+    this.lively = new LivelyEyes(random);
+  }
 
   frame(color: Rgb, state: BodyState, level: number, style: EyeStyle, now: number, active: ActiveFlourish | null = null, twinkle = -1): Rgb[][] {
     if (now - this.lastStepAt >= 16) {
@@ -146,18 +237,21 @@ export class JewelAnimator {
     }
     const dt = this.lastFrameAt === null ? 0 : Math.min(Math.max(now - this.lastFrameAt, 0), 100);
     this.lastFrameAt = now;
-    this.spin = wrap(this.spin + (dt / 1000) * speakSpinRate(level), 1);
+    const lively = this.lively.step(now, state, level);
+    this.spin = wrap(this.spin + (dt / 1000) * (speakSpinRate(level) + lively.whirl), 1);
     const t = active ? now - active.at : 0;
     const f = active ? flourishFrame(active.effect, t) : NONE;
     return [0, 1].map((eye) =>
       Array.from({ length: JEWEL_PIXELS }, (_, p) => {
         const i = eye * JEWEL_PIXELS + p;
         const m = pixelMotion(state, style, level, now, eye, p, this.flicker[i], this.spin);
-        const rgb = scale(shiftHue(color, m.hue), (m.b + (1 - m.b) * f.wide) * f.lid);
-        if (f.sparkle <= 0) return rgb;
-        // ColorHSV(p * 65536 / 6 + t * 66 + eye * 32768) in the firmware, in degrees.
-        const spark = i === twinkle || (p === 0 && t < 200) ? ([255, 255, 255] as Rgb) : hue(p * 60 + (t * 66 * 360) / 65536 + eye * 180);
-        return rgb.map((c, k) => c + (spark[k]! - c) * f.sparkle) as Rgb;
+        let rgb = scale(shiftHue(color, m.hue), (m.b + (1 - m.b) * f.wide) * f.lid);
+        if (f.sparkle > 0) {
+          // ColorHSV(p * 65536 / 6 + t * 66 + eye * 32768) in the firmware, in degrees.
+          const spark = i === twinkle || (p === 0 && t < 200) ? ([255, 255, 255] as Rgb) : hue(p * 60 + (t * 66 * 360) / 65536 + eye * 180);
+          rgb = mix(rgb, spark, f.sparkle);
+        }
+        return mix(rgb, lively.lidColor, lidCover(lively.lid, p));
       }),
     );
   }
@@ -187,6 +281,11 @@ function hsv(h: number, c: number, v: number): Rgb {
   ];
   const [r, g, b] = sector[Math.floor(h) % 6]!;
   return [r + m, g + m, b + m];
+}
+
+/** `a` moved `k` (0..1) of the way to `b`. */
+function mix(a: Rgb, b: Rgb, k: number): Rgb {
+  return k <= 0 ? a : (a.map((c, n) => c + (b[n]! - c) * k) as Rgb);
 }
 
 function scale([r, g, b]: Rgb, k: number): Rgb {
