@@ -42,6 +42,21 @@ const uint8_t SERVO_PIN = 9;
 const int JAW_CLOSED_DEG = 90;
 const int JAW_OPEN_DEG = 125;
 const unsigned long FAILSAFE_MS = 2000;
+// Blinks: a dark lid comes down over each eye and goes back up, purple every 3-6 s while speaking,
+// black every 4-8 s while idle or sleeping. And while speaking, a whirl (the ripple spins about 1.5
+// extra turns) when the voice jumps loud, at most every 5 s but at least every 9 s. Keep in sync
+// with LivelyEyes in web/eyeFlourish.ts.
+const unsigned int LID_DOWN_MS = 145;
+const unsigned int LID_SHUT_MS = 65;
+const unsigned int BLINK_MS = 375;  // down, shut, then up for the rest
+const uint8_t SPEAK_LID_COLOR[3] = {60, 0, 90};  // dark purple
+const uint8_t REST_LID_COLOR[3] = {0, 0, 0};
+const uint8_t EYE_TOP_PIXEL = 1;           // the ring pixel (1-6) at the top of each jewel as mounted
+const float LID_OPEN = 1.3;                // the lid's edge when open: just above the top pixel
+const unsigned int WHIRL_MS = 600;
+const float WHIRL_PEAK = 0.7;
+const unsigned long WHIRL_COOLDOWN_MS = 5000;
+const unsigned long WHIRL_AT_LEAST_EVERY_MS = 9000;
 
 enum State { SLEEPING, IDLE, LISTENING, THINKING, SPEAKING, STATE_COUNT };
 const char *STATE_NAMES[STATE_COUNT] = {"sleeping", "idle", "listening", "thinking", "speaking"};
@@ -188,6 +203,12 @@ float flicker = 0.8;           // plain-LED eyes: one candle flicker for both
 float pixelFlicker[EYE_PIXELS];  // NeoPixel eyes: each LED's own candle flicker
 float speakSpin = 0;             // how far round the speaking ripple is (turns)
 unsigned long lastRenderAt = 0;
+bool wasBlinking = false, wasSpeaking = false;
+float lastLevel = 0;
+unsigned long blinkAt = 0, nextBlinkAt = 0, whirlAt = 0, whirlBy = 0;
+const uint8_t *lidColor = REST_LID_COLOR;
+float whirlSpin = 0;             // the whirl's extra spin this frame (turns a second)
+float lidAt = LID_OPEN;          // where the lid's edge is this frame (see lidEdge)
 
 // Eye brightness 0..1 for the current state, before any flourish.
 float stateBrightness(unsigned long now) {
@@ -257,8 +278,9 @@ float wrap(float x, float m) {
 
 // How one NeoPixel moves in the current state. p: 0 = jewel center, 1-6 = ring; the two eyes turn
 // in mirror image. Keep in sync with pixelMotion() in web/eyeFlourish.ts (the dashboard preview).
-//   speaking:  brightness follows the voice, with a ripple of brightness and warmer hue going round,
-//              spinning faster the louder the voice (speakSpin)
+//   speaking:  brightness follows the voice, from dim between words to full on loud ones, with a
+//              ripple of brightness and warmer hue going round, spinning faster the louder the voice
+//              (speakSpin); livelyStep() adds blinks and whirls
 //   thinking:  a comet spins round the ring, its tail fading and drifting in hue
 //   listening: a soft bright spot circles slowly round a steady center
 //   sleeping:  a faint ember drifting round
@@ -268,10 +290,10 @@ Motion pixelMotion(unsigned long now, uint8_t eye, uint8_t p, float flick) {
   float dir = eye == 0 ? 1 : -1;
   switch (state) {
     case SPEAKING: {
-      float base = 0.35 + 0.65 * level;
+      float base = 0.1 + 0.9 * level;
       if (p == 0) return {base, 0};
       float w = cos(TWO_PI * (ring / 6 - dir * speakSpin));
-      return {base * (0.8 + 0.2 * w), -12 * (1 + w)};  // toward warmer, never greener
+      return {base * (0.65 + 0.35 * w), -12 * (1 + w)};  // toward warmer, never greener
     }
     case THINKING: {
       if (p == 0) return {0.25 + 0.1 * sin(now / 250.0), 0};
@@ -296,6 +318,51 @@ Motion pixelMotion(unsigned long now, uint8_t eye, uint8_t p, float flick) {
   }
 }
 
+// The whirl's extra spin (turns a second) t ms after it started: up to 4, easing in and out.
+float whirlRate(unsigned long t) {
+  return t < WHIRL_MS ? 4 * sin(PI * t / WHIRL_MS) : 0;
+}
+
+// Where the lid's edge is t ms into a blink (pixels sit from -1, bottom, to 1, top): coming down,
+// shut, then going up for the rest.
+float lidEdge(unsigned long t) {
+  if (t >= BLINK_MS) return LID_OPEN;
+  if (t < LID_DOWN_MS) return LID_OPEN - 2 * LID_OPEN * ease(t / (float)LID_DOWN_MS);
+  const unsigned int up = LID_DOWN_MS + LID_SHUT_MS;
+  if (t < up) return -LID_OPEN;
+  return -LID_OPEN + 2 * LID_OPEN * ease((t - up) / (float)(BLINK_MS - up));
+}
+
+// How much of pixel p (0 = center, 1-6 = ring) the lid covers with its edge at `edge`: 0..1, soft-edged.
+float lidCover(float edge, uint8_t p) {
+  float y = p == 0 ? 0 : cos(TWO_PI * ((int)p - EYE_TOP_PIXEL) / 6.0);
+  return constrain((y - edge) / 0.6 + 0.5, 0.0, 1.0);
+}
+
+// Moves the blinks and whirls on to `now`: sets lidAt, lidColor and whirlSpin. The first blink
+// comes 1.5-4 s after the eyes settle into speaking, idle or sleeping.
+void livelyStep(unsigned long now) {
+  bool speaking = state == SPEAKING;
+  bool blinks = speaking || state == IDLE || state == SLEEPING;
+  if (blinks && !wasBlinking) nextBlinkAt = now + random(1500, 4000);
+  if (speaking && !wasSpeaking) whirlBy = now + WHIRL_AT_LEAST_EVERY_MS;
+  wasBlinking = blinks;
+  wasSpeaking = speaking;
+  bool rising = level >= WHIRL_PEAK && lastLevel < WHIRL_PEAK;
+  lastLevel = level;
+  if (blinks && (long)(now - nextBlinkAt) >= 0) {
+    blinkAt = now;
+    lidColor = speaking ? SPEAK_LID_COLOR : REST_LID_COLOR;
+    nextBlinkAt = now + (speaking ? random(3000, 6000) : random(4000, 8000));
+  }
+  if (speaking && ((rising && now - whirlAt >= WHIRL_COOLDOWN_MS) || (long)(now - whirlBy) >= 0)) {
+    whirlAt = now;
+    whirlBy = now + WHIRL_AT_LEAST_EVERY_MS;
+  }
+  lidAt = blinks ? lidEdge(now - blinkAt) : LID_OPEN;
+  whirlSpin = speaking ? whirlRate(now - whirlAt) : 0;
+}
+
 // Turns a color `degrees` round the color wheel, keeping its saturation and brightness.
 void shiftHue(float &r, float &g, float &b, float degrees) {
   float mx = max(r, max(g, b));
@@ -314,12 +381,13 @@ void shiftHue(float &r, float &g, float &b, float degrees) {
 
 void renderEyes(unsigned long now) {
   FlourishFrame f = flourishFrame(now);
+  livelyStep(now);
 #if EYES_NEOPIXEL
   // The speaking ripple goes round faster the louder the voice: a lazy drift when quiet, quick
   // when loud. Keep in sync with speakSpinRate() in web/eyeFlourish.ts.
   float dt = min(now - lastRenderAt, 100UL) / 1000.0;
   lastRenderAt = now;
-  speakSpin = wrap(speakSpin + dt * (0.4 + 2.6 * level), 1);
+  speakSpin = wrap(speakSpin + dt * (0.4 + 2.6 * level + whirlSpin), 1);
   const uint8_t *c = palette[state];
   // Sparkle: a rainbow spinning around each jewel's ring (the two eyes half a turn apart),
   // the centers flashing white first, and a white twinkle on a random pixel about every third frame.
@@ -345,12 +413,16 @@ void renderEyes(unsigned long now) {
       g += ((uint8_t)(s >> 8) * MAX_BRIGHTNESS - g) * f.sparkle;
       bl += ((uint8_t)s * MAX_BRIGHTNESS - bl) * f.sparkle;
     }
+    float cover = lidCover(lidAt, p);  // a blink: the lid on top of everything
+    r += (lidColor[0] * MAX_BRIGHTNESS - r) * cover;
+    g += (lidColor[1] * MAX_BRIGHTNESS - g) * cover;
+    bl += (lidColor[2] * MAX_BRIGHTNESS - bl) * cover;
     eyes.setPixelColor(i, (uint8_t)r, (uint8_t)g, (uint8_t)bl);
   }
   eyes.show();
 #else
   float base = stateBrightness(now);
-  float b = (base + (1 - base) * f.wide) * f.lid;
+  float b = (base + (1 - base) * f.wide) * f.lid * (1 - lidCover(lidAt, 0));  // one LED: the lid just dims it
   for (uint8_t i = 0; i < 2; i++) {
     float e = b;
     // Plain LEDs can't do colors, so the sparkle is brightness only: the eyes twinkle, alternating.
