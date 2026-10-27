@@ -42,14 +42,19 @@ const uint8_t SERVO_PIN = 9;
 const int JAW_CLOSED_DEG = 90;
 const int JAW_OPEN_DEG = 125;
 const unsigned long FAILSAFE_MS = 2000;
-// Blinks: a black lid comes down over each eye and goes back up, every 3-6 s while speaking and
-// every 4-8 s while idle or sleeping. And while speaking, a whirl (the ripple spins about 1.5
+// Blinks: a black lid comes down over each eye and goes back up, at uneven gaps (see blinkGap),
+// shorter while speaking; about one in six is a double. Each is 0.85-1.15x BLINK_MS long, the right
+// eye starting it 20-40 ms after the left. And while speaking, a whirl (the ripple spins about 1.5
 // extra turns) when the voice jumps loud, at most every 5 s but at least every 9 s. Keep in sync
 // with LivelyEyes in web/eyeFlourish.ts.
 const unsigned int LID_DOWN_MS = 145;
 const unsigned int LID_SHUT_MS = 65;
 const unsigned int BLINK_MS = 375;  // down, shut, then up for the rest
 const uint8_t LID_COLOR[3] = {0, 0, 0};
+const unsigned int SPEAK_BLINK_GAP[3] = {1200, 2500, 9000};  // min, mean over it, max (ms)
+const unsigned int REST_BLINK_GAP[3] = {2000, 3500, 12000};
+const uint8_t DOUBLE_BLINK_ODDS = 6;  // one blink in this many is a double
+const unsigned int DOUBLE_BLINK_GAP_MS = 120;
 const uint8_t EYE_TOP_PIXEL = 1;           // the ring pixel (1-6) at the top of each jewel as mounted
 const float LID_OPEN = 1.3;                // the lid's edge when open: just above the top pixel
 const unsigned int WHIRL_MS = 600;
@@ -215,7 +220,8 @@ bool wasBlinking = false, wasSpeaking = false;
 float lastLevel = 0;
 unsigned long blinkAt = 0, nextBlinkAt = 0, whirlAt = 0, whirlBy = 0;
 float whirlSpin = 0;             // the whirl's extra spin this frame (turns a second)
-float lidAt = LID_OPEN;          // where the lid's edge is this frame (see lidEdge)
+float lidAt[2] = {LID_OPEN, LID_OPEN};  // where each eye's lid edge is this frame (see lidEdge)
+float blinkScale = 1, blinkLag = 0;     // this blink's speed (x BLINK_MS), and the right eye's lag (ms)
 bool wasIdle = false;
 unsigned long spinAt = 0, nextSpinAt = 0;
 uint8_t spinFrom = 0;            // the ring pixel (0-5) the idle spin started from (left eye)
@@ -244,10 +250,11 @@ float ease(float x) {
   return 0.5 - 0.5 * cos(PI * constrain(x, 0.0, 1.0));
 }
 
-// A quick blink between start and end ms: open (1) outside, shut (0) at the midpoint.
-float blinkLid(unsigned long t, unsigned long start, unsigned long end) {
-  if (t < start || t >= end) return 1;
-  return fabs(2.0 * (t - start) / (end - start) - 1);
+// A gasp's quick blinks: the same lid as a blink, sped up to GASP_BLINK_MS. Where its edge is t ms
+// after it starts (see lidEdge).
+const unsigned int GASP_BLINK_MS = 150;
+float gaspLid(float t) {
+  return lidEdge(t * BLINK_MS / GASP_BLINK_MS);
 }
 
 FlourishFrame flourishFrame(unsigned long now) {
@@ -259,8 +266,8 @@ FlourishFrame flourishFrame(unsigned long now) {
     return f;
   }
   switch (flourish) {
-    case FL_GASP:  // blink-blink, then wide-eyed, easing back
-      f.lid = blinkLid(f.t, 0, 150) * blinkLid(f.t, 220, 370);
+    case FL_GASP:  // two quick lid blinks, then wide-eyed, easing back
+      f.edge = min(gaspLid(f.t), gaspLid(f.t - 220.0));
       if (f.t >= 370) f.wide = 1 - ease((f.t - 370) / 530.0);
       break;
     case FL_SLOWBLINK:  // a blink like the idle ones: the lid comes down from the top and goes back up
@@ -336,12 +343,19 @@ float whirlRate(unsigned long t) {
 
 // Where the lid's edge is t ms into a blink (pixels sit from -1, bottom, to 1, top): coming down,
 // shut, then going up for the rest.
-float lidEdge(unsigned long t) {
-  if (t >= BLINK_MS) return LID_OPEN;
+float lidEdge(float t) {
+  if (t < 0 || t >= BLINK_MS) return LID_OPEN;
   if (t < LID_DOWN_MS) return LID_OPEN - 2 * LID_OPEN * ease(t / (float)LID_DOWN_MS);
   const unsigned int up = LID_DOWN_MS + LID_SHUT_MS;
   if (t < up) return -LID_OPEN;
   return -LID_OPEN + 2 * LID_OPEN * ease((t - up) / (float)(BLINK_MS - up));
+}
+
+// The wait before the next blink: at least gap[0] ms, usually a little more, now and then much more
+// (up to gap[2]): an exponential tail with mean gap[1] over the minimum.
+unsigned long blinkGap(const unsigned int *gap) {
+  float r = random(10000) / 10000.0;
+  return min((float)gap[2], gap[0] - gap[1] * log(1 - r));
 }
 
 // How much of pixel p (0 = center, 1-6 = ring) the lid covers with its edge at `edge`: 0..1, soft-edged.
@@ -350,7 +364,7 @@ float lidCover(float edge, uint8_t p) {
   return constrain((y - edge) / 0.6 + 0.5, 0.0, 1.0);
 }
 
-// Moves the blinks and whirls on to `now`: sets lidAt and whirlSpin. The first blink
+// Moves the blinks and whirls on to `now`: sets lidAt (each eye) and whirlSpin. The first blink
 // comes 1.5-4 s after the eyes settle into speaking, idle or sleeping.
 void livelyStep(unsigned long now) {
   bool speaking = state == SPEAKING;
@@ -366,7 +380,11 @@ void livelyStep(unsigned long now) {
   lastLevel = level;
   if (blinks && (long)(now - nextBlinkAt) >= 0) {
     blinkAt = now;
-    nextBlinkAt = now + (speaking ? random(3000, 6000) : random(4000, 8000));
+    blinkScale = random(85, 116) / 100.0;
+    blinkLag = random(20, 41);
+    unsigned long length = BLINK_MS * blinkScale + blinkLag;
+    nextBlinkAt = now + (random(DOUBLE_BLINK_ODDS) == 0 ? length + DOUBLE_BLINK_GAP_MS
+                                                        : blinkGap(speaking ? SPEAK_BLINK_GAP : REST_BLINK_GAP));
   }
   if (speaking && ((rising && now - whirlAt >= WHIRL_COOLDOWN_MS) || (long)(now - whirlBy) >= 0)) {
     whirlAt = now;
@@ -378,7 +396,9 @@ void livelyStep(unsigned long now) {
     spinDir = random(2) ? 1 : -1;
     nextSpinAt = now + IDLE_SPIN_MS + random(3000, 7000);
   }
-  lidAt = blinks ? lidEdge(now - blinkAt) : LID_OPEN;
+  float t = now - blinkAt;
+  lidAt[0] = blinks ? lidEdge(t / blinkScale) : LID_OPEN;
+  lidAt[1] = blinks ? lidEdge((t - blinkLag) / blinkScale) : LID_OPEN;
   whirlSpin = speaking ? whirlRate(now - whirlAt) : 0;
   spinning = idle && now - spinAt < IDLE_SPIN_MS;
 }
@@ -465,15 +485,15 @@ void renderEyes(unsigned long now) {
       g += ((uint8_t)(s >> 8) * MAX_BRIGHTNESS - g) * f.sparkle;
       bl += ((uint8_t)s * MAX_BRIGHTNESS - bl) * f.sparkle;
     }
-    mixIn(r, g, bl, LID_COLOR, lidCover(min(lidAt, f.edge), p));  // a blink: the lid on top of everything
+    mixIn(r, g, bl, LID_COLOR, lidCover(min(lidAt[i / 7], f.edge), p));  // a blink: the lid on top of everything
     eyes.setPixelColor(i, (uint8_t)r, (uint8_t)g, (uint8_t)bl);
   }
   eyes.show();
 #else
   float base = stateBrightness(now);
-  float b = (base + (1 - base) * f.wide) * f.lid * (1 - lidCover(min(lidAt, f.edge), 0));  // one LED: the lid just dims it
+  float b = (base + (1 - base) * f.wide) * f.lid;
   for (uint8_t i = 0; i < 2; i++) {
-    float e = b;
+    float e = b * (1 - lidCover(min(lidAt[i], f.edge), 0));  // one LED: the lid just dims it
     // Plain LEDs can't do colors, so the sparkle is brightness only: the eyes twinkle, alternating.
     if (f.sparkle > 0) e += ((((f.t / 70) + i) % 2 ? 1.0 : 0.3) - e) * f.sparkle;
     uint8_t duty = (uint8_t)(255 * pow(constrain(e, 0.0, 1.0), PLAIN_EYE_GAMMA));

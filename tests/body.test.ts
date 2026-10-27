@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
+import { BodyClients, BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
 import { BODY_BAUD, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
-import type { BodyMessage, EyePalette } from "../shared/types.ts";
+import type { BodyMessage, BodyState, EyePalette } from "../shared/types.ts";
 import { BodyLink, deriveBodyState } from "../web/bodyLink.ts";
 import {
   FLOURISH_MS,
@@ -26,6 +26,12 @@ import {
   lidEdge,
   pixelMotion,
   BLINK_MS,
+  GASP_BLINK_MS,
+  blinkGap,
+  DOUBLE_BLINK_GAP_MS,
+  DOUBLE_BLINK_ODDS,
+  REST_BLINK_GAP,
+  SPEAK_BLINK_GAP,
   LivelyEyes,
   shiftHue,
   speakSpinRate,
@@ -154,11 +160,14 @@ describe("eye flourishes (dashboard preview)", () => {
     }
   });
 
-  it("gasps with two blinks, then goes wide-eyed", () => {
-    expect(flourishFrame("gasp", 75).lid).toBeCloseTo(0); // first blink shut
-    expect(flourishFrame("gasp", 185).lid).toBe(1); // open between blinks
-    expect(flourishFrame("gasp", 295).lid).toBeCloseTo(0); // second blink shut
-    expect(flourishFrame("gasp", 400)).toMatchObject({ lid: 1, wide: expect.closeTo(1, 1) });
+  it("gasps with two quick lid blinks, then goes wide-eyed", () => {
+    // Two quick lids, like the blinks but over GASP_BLINK_MS each, never dimming all the LEDs at once.
+    for (let t = 0; t < FLOURISH_MS.gasp; t += 5) expect(flourishFrame("gasp", t).lid).toBe(1);
+    expect(flourishFrame("gasp", 75).edge).toBe(-LID_OPEN); // first blink shut
+    expect(flourishFrame("gasp", 185).edge).toBe(LID_OPEN); // open between blinks
+    expect(flourishFrame("gasp", 295).edge).toBe(-LID_OPEN); // second blink shut
+    expect(flourishFrame("gasp", 400)).toMatchObject({ edge: LID_OPEN, wide: expect.closeTo(1, 1) });
+    expect(GASP_BLINK_MS).toBe(150);
   });
 
   it("blinks for thinking like the idle blinks: a lid down from the top and back up, never fading all the LEDs", () => {
@@ -234,21 +243,23 @@ describe("eye flourishes (dashboard preview)", () => {
   });
 
   it("blinks now and then while speaking: a lid comes down and goes back up", () => {
-    const eyes = new LivelyEyes(() => 0.5);
+    const eyes = new LivelyEyes(() => 0.5); // 0.5: normal speed, the right eye 30 ms behind, no double
     const open = lidEdge(-1);
-    expect(eyes.step(0, "speaking", 0.3).lid).toBe(open);
+    const left = (t: number, state: BodyState = "speaking") => eyes.step(t, state, 0.3).lid[0];
+    expect(left(0)).toBe(open);
     // The first blink comes 1.5-4 s in: 2.75 s with this "random".
-    expect(eyes.step(2700, "speaking", 0.3).lid).toBe(open);
-    expect(eyes.step(2750, "speaking", 0.3).lid).toBe(open); // starts at the top...
-    expect(eyes.step(2750 + LID_DOWN_MS / 2, "speaking", 0.3).lid).toBeCloseTo(0); // ...halfway down...
-    expect(eyes.step(2750 + LID_DOWN_MS + LID_SHUT_MS / 2, "speaking", 0.3).lid).toBe(-open); // ...shut...
-    expect(eyes.step(2750 + BLINK_MS, "speaking", 0.3).lid).toBe(open); // ...and back up
-    // The next one 3-6 s later.
-    expect(eyes.step(7200, "speaking", 0.3).lid).toBe(open);
-    eyes.step(7250, "speaking", 0.3);
-    expect(eyes.step(7250 + LID_DOWN_MS + LID_SHUT_MS / 2, "speaking", 0.3).lid).toBe(-open);
+    expect(left(2700)).toBe(open);
+    expect(left(2750)).toBe(open); // starts at the top...
+    expect(left(2750 + LID_DOWN_MS / 2)).toBeCloseTo(0); // ...halfway down...
+    expect(left(2750 + LID_DOWN_MS + LID_SHUT_MS / 2)).toBe(-open); // ...shut...
+    expect(left(2750 + BLINK_MS)).toBe(open); // ...and back up
+    // The next after a blinkGap: 1.2 s plus 2.5 s x ln 2 with this "random".
+    const next = 2750 + blinkGap(...SPEAK_BLINK_GAP, 0.5);
+    expect(left(Math.ceil(next) - 1)).toBe(open);
+    eyes.step(Math.ceil(next), "speaking", 0.3);
+    expect(left(Math.ceil(next) + LID_DOWN_MS + LID_SHUT_MS / 2)).toBe(-open);
     // Never while listening (or thinking): they have motion enough.
-    expect(eyes.step(20_000, "listening", 0).lid).toBe(open);
+    expect(left(20_000, "listening")).toBe(open);
   });
 
   it("blinks less often while idle or sleeping", () => {
@@ -256,21 +267,54 @@ describe("eye flourishes (dashboard preview)", () => {
       const eyes = new LivelyEyes(() => 0.5);
       eyes.step(0, state, 0);
       eyes.step(2750, state, 0); // the first blink, 1.5-4 s in
-      expect(eyes.step(2750 + LID_DOWN_MS, state, 0)).toMatchObject({ lid: -lidEdge(-1), whirl: 0 });
-      eyes.step(2750 + BLINK_MS, state, 0);
-      expect(eyes.step(8700, state, 0).lid).toBe(lidEdge(-1)); // the next one 4-8 s later: 6 s with this "random"
-      eyes.step(8750, state, 0);
-      expect(eyes.step(8750 + LID_DOWN_MS, state, 0).lid).toBe(-lidEdge(-1));
+      expect(eyes.step(2750 + LID_DOWN_MS, state, 0)).toMatchObject({ lid: [-lidEdge(-1), expect.any(Number)], whirl: 0 });
+      const next = Math.ceil(2750 + blinkGap(...REST_BLINK_GAP, 0.5));
+      expect(blinkGap(...REST_BLINK_GAP, 0.5)).toBeGreaterThan(blinkGap(...SPEAK_BLINK_GAP, 0.5));
+      expect(eyes.step(next - 1, state, 0).lid[0]).toBe(lidEdge(-1));
+      eyes.step(next, state, 0);
+      expect(eyes.step(next + LID_DOWN_MS, state, 0).lid[0]).toBe(-lidEdge(-1));
     }
     // Going quiet between sentences doesn't put the next blink off.
     const eyes = new LivelyEyes(() => 0.5);
     eyes.step(0, "speaking", 0.3);
     eyes.step(2000, "idle", 0);
     eyes.step(2750, "speaking", 0.3);
-    expect(eyes.step(2750 + LID_DOWN_MS, "speaking", 0.3).lid).toBe(-lidEdge(-1));
+    expect(eyes.step(2750 + LID_DOWN_MS, "speaking", 0.3).lid[0]).toBe(-lidEdge(-1));
     // Thinking never blinks.
     const thinking = new LivelyEyes(() => 0.5);
-    for (let t = 0; t < 20_000; t += 50) expect(thinking.step(t, "thinking", 0).lid).toBe(lidEdge(-1));
+    for (let t = 0; t < 20_000; t += 50) expect(thinking.step(t, "thinking", 0).lid).toEqual([lidEdge(-1), lidEdge(-1)]);
+  });
+
+  it("spaces blinks unevenly: mostly a little over the minimum, now and then much longer, never past the max", () => {
+    const [min, mean, max] = SPEAK_BLINK_GAP;
+    expect(blinkGap(min, mean, max, 0)).toBe(min);
+    expect(blinkGap(min, mean, max, 0.5)).toBeCloseTo(min + mean * Math.LN2);
+    expect(blinkGap(min, mean, max, 0.9999)).toBe(max);
+    const gaps = Array.from({ length: 1000 }, (_, i) => blinkGap(min, mean, max, (i + 0.5) / 1000));
+    const median = gaps[500]!;
+    expect(gaps.filter((g) => g > 2 * median).length).toBeGreaterThan(50); // a long tail...
+    expect(gaps.filter((g) => g < median).length).toBe(500); // ...over mostly short gaps
+  });
+
+  it("varies each blink: a little faster or slower, now and then a double, the right eye just behind", () => {
+    // Randoms per blink: speed, right eye's lag, double?, then the gap (when not a double). Sleeping, so no sparks draw randoms too.
+    let n = 0;
+    const randoms = [0.5 /* first blink's delay */, 1, 1, 0 /* a double */, 0, 0, 0.9, 0.5];
+    const eyes = new LivelyEyes(() => randoms[n++] ?? 0.5);
+    eyes.step(0, "sleeping", 0);
+    eyes.step(2750, "sleeping", 0); // slowest (1.15x), the right eye 40 ms behind
+    const shut = (t: number) => eyes.step(2750 + t, "sleeping", 0).lid;
+    expect(shut(LID_DOWN_MS * 1.15 + 10)).toEqual([-lidEdge(-1), expect.any(Number)]);
+    expect(shut(LID_DOWN_MS * 1.15 + 10)[1]).toBeGreaterThan(-lidEdge(-1)); // the right eye isn't shut yet
+    expect(shut(BLINK_MS * 1.15 - 1)[0]).toBeLessThan(lidEdge(-1)); // a slow blink is still going...
+    expect(shut(BLINK_MS * 1.15 + 1)[0]).toBe(lidEdge(-1)); // ...then done
+    // The double: the next blink straight after this one (and the right eye's lag) ends.
+    const again = Math.ceil(2750 + BLINK_MS * 1.15 + 40 + DOUBLE_BLINK_GAP_MS);
+    expect(eyes.step(again - 1, "sleeping", 0).lid[0]).toBe(lidEdge(-1));
+    eyes.step(again, "sleeping", 0); // fastest (0.85x), the right eye 20 ms behind
+    expect(eyes.step(again + LID_DOWN_MS * 0.85 + 5, "sleeping", 0).lid[0]).toBe(-lidEdge(-1));
+    expect(eyes.step(again + BLINK_MS * 0.85 + 1, "sleeping", 0).lid[0]).toBe(lidEdge(-1));
+    expect(DOUBLE_BLINK_ODDS).toBeCloseTo(1 / 6);
   });
 
   it("covers the eye from the top down", () => {
@@ -286,8 +330,9 @@ describe("eye flourishes (dashboard preview)", () => {
     let frame: number[][][] = [];
     for (let t = 0; t <= 2750 + LID_DOWN_MS / 2; t += 5) frame = animator.frame([255, 208, 0], "speaking", 0.5, "flicker", t);
     expect(frame[0]![EYE_TOP_PIXEL]).toEqual(LID_COLOR);
-    expect(frame[1]![EYE_TOP_PIXEL]).toEqual(LID_COLOR);
     expect(frame[0]![bottom]![1]).toBeGreaterThan(20); // still yellow
+    // The right eye is 30 ms behind with this "random": its lid not yet all the way over the top pixel.
+    expect(frame[1]![EYE_TOP_PIXEL]![1]).toBeGreaterThan(0);
   });
 
   it("whirls when the voice jumps loud, at most every 5 s, at least every 9 s", () => {
@@ -372,6 +417,11 @@ describe("eye flourishes (dashboard preview)", () => {
   it("keeps the speaking blinks and whirls in step with the firmware", () => {
     const firmware = readFileSync(new URL("../firmware/creature_body/creature_body.ino", import.meta.url), "utf8");
     expect(firmware).toContain(`BLINK_MS = ${BLINK_MS};`);
+    expect(firmware).toContain(`GASP_BLINK_MS = ${GASP_BLINK_MS};`);
+    expect(firmware).toContain(`SPEAK_BLINK_GAP[3] = {${SPEAK_BLINK_GAP.join(", ")}};`);
+    expect(firmware).toContain(`REST_BLINK_GAP[3] = {${REST_BLINK_GAP.join(", ")}};`);
+    expect(firmware).toContain(`DOUBLE_BLINK_ODDS = ${Math.round(1 / DOUBLE_BLINK_ODDS)};`);
+    expect(firmware).toContain(`DOUBLE_BLINK_GAP_MS = ${DOUBLE_BLINK_GAP_MS};`);
     expect(firmware).toContain(`LID_DOWN_MS = ${LID_DOWN_MS};`);
     expect(firmware).toContain(`LID_SHUT_MS = ${LID_SHUT_MS};`);
     expect(firmware).toContain(`LID_COLOR[3] = {${LID_COLOR.join(", ")}};`);
@@ -475,6 +525,76 @@ describe("BodyLink keep-alive", () => {
     expect(sink.lines).toEqual(["S idle"]); // still heartbeating
     expect(sent).toBeGreaterThanOrEqual(20);
     expect(sent).toBeLessThanOrEqual(22); // about once a second, not every frame
+  });
+});
+
+describe("BodyClients (more than one dashboard open)", () => {
+  const palette = (r: number): BodyMessage => ({ type: "palette", eyes: { ...eyes, idle: [r, 0, 0] }, eyeStyle: "flicker" });
+  const setup = () => {
+    const sent: BodyMessage[] = [];
+    const logs: string[] = [];
+    return { sent, logs, clients: new BodyClients({ handle: (m) => sent.push(m) }, (l) => logs.push(l)) };
+  };
+
+  it("passes everything through from a single dashboard", () => {
+    const { sent, clients } = setup();
+    const a = clients.connect();
+    sent.length = 0;
+    clients.handle(a, palette(1));
+    clients.handle(a, { type: "state", state: "idle" });
+    clients.handle(a, { type: "level", level: 0.5 });
+    expect(sent).toEqual([palette(1), { type: "state", state: "idle" }, { type: "level", level: 0.5 }]);
+  });
+
+  it("follows the awake dashboard, ignoring a forgotten sleeping one, even a newer one", () => {
+    const { sent, logs, clients } = setup();
+    const awake = clients.connect();
+    clients.handle(awake, palette(1));
+    clients.handle(awake, { type: "state", state: "idle" });
+    const forgotten = clients.connect();
+    clients.handle(forgotten, palette(2));
+    sent.length = 0;
+    for (let i = 0; i < 5; i++) {
+      clients.handle(forgotten, { type: "state", state: "sleeping" }); // its keep-alive
+      clients.handle(awake, { type: "state", state: "idle" });
+    }
+    expect(sent.every((m) => m.type === "state" && m.state === "idle")).toBe(true);
+    expect(logs).toEqual([]);
+  });
+
+  it("hands over to the newest awake dashboard, replaying its palette and state", () => {
+    const { sent, logs, clients } = setup();
+    const first = clients.connect();
+    clients.handle(first, palette(1));
+    clients.handle(first, { type: "state", state: "idle" });
+    const second = clients.connect();
+    clients.handle(second, palette(2));
+    sent.length = 0;
+    clients.handle(second, { type: "state", state: "listening" }); // woken: both awake, the newest wins
+    expect(sent).toEqual([palette(2), { type: "state", state: "listening" }, { type: "state", state: "listening" }]);
+    expect(logs).toEqual(["[body] 2 dashboards open: following the newest awake one"]);
+    sent.length = 0;
+    clients.handle(first, { type: "state", state: "speaking" });
+    expect(sent).toEqual([]); // not the leader any more
+    // The leader closes: back to the other, with its palette and state.
+    clients.disconnect(second);
+    expect(sent).toEqual([palette(1), { type: "state", state: "speaking" }]);
+  });
+
+  it("follows the newest dashboard when none is awake, and nobody once all are closed", () => {
+    const { sent, clients } = setup();
+    const a = clients.connect();
+    clients.handle(a, { type: "state", state: "sleeping" });
+    const b = clients.connect();
+    sent.length = 0;
+    clients.handle(a, { type: "level", level: 0.2 });
+    clients.handle(b, { type: "level", level: 0.3 });
+    expect(sent).toEqual([{ type: "level", level: 0.3 }]);
+    clients.disconnect(a);
+    clients.disconnect(b);
+    sent.length = 0;
+    clients.handle(a, { type: "state", state: "idle" }); // closed: ignored
+    expect(sent).toEqual([]);
   });
 });
 

@@ -20,7 +20,7 @@ import type {
   VoiceClipsRequest,
   VoiceClipsResult,
 } from "../shared/types.ts";
-import { BodyController, NullSink, SerialSink } from "./body/driver.ts";
+import { BodyClients, BodyController, NullSink, SerialSink } from "./body/driver.ts";
 import { buildInstructions, listCharacterIds, loadCharacter, publicInfo } from "./characters.ts";
 import { VoiceClips, openaiSpeaker } from "./clips.ts";
 import { config } from "./config.ts";
@@ -359,6 +359,7 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: listen.hos
   if (!config.production) console.log("Open the dashboard at http://localhost:5173");
 });
 
+const bodyClients = new BodyClients(body, (line) => console.log(line));
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 server.on("upgrade", (req, socket, head) => {
   if (req.url !== "/ws/body" || !remote.checkUpgrade(req).allow) {
@@ -366,9 +367,11 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
   wss.handleUpgrade(req, socket, head, (ws) => {
+    const id = bodyClients.connect();
+    ws.on("close", () => bodyClients.disconnect(id));
     ws.on("message", (data) => {
       try {
-        body.handle(JSON.parse(String(data)) as BodyMessage);
+        bodyClients.handle(id, JSON.parse(String(data)) as BodyMessage);
       } catch (err) {
         console.warn(`[body] bad message: ${(err as Error).message}`);
       }

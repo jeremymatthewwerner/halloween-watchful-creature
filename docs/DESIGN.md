@@ -184,7 +184,8 @@ The voice below is each character's default; the dashboard's **Voice** picker an
 - Both go over a WebSocket to the server's `BodyController`, which:
   - auto-detects the Arduino;
   - replays the palette and state when the Arduino reconnects;
-  - heartbeats only while a dashboard is attached.
+  - heartbeats only while a dashboard is attached (the dashboard re-sends its state every second);
+  - with more than one dashboard open, follows only one (`BodyClients`): the newest awake one, or the newest if none is awake, so a forgotten tab can't fight over the eyes.
 - Serial line protocol (38400 baud; faster loses bytes while the NeoPixels update):
 
 | Command | Meaning |
@@ -198,7 +199,7 @@ The voice below is each character's default; the dashboard's **Voice** picker an
 
 - **Fail-safe:** if no line arrives for 2 s, the firmware dims the eyes to "sleeping", opens the relay and closes the jaw.
 - **Modes:**
-  - **eyes:** two NeoPixel Jewels (`EYES_NEOPIXEL 1`, the default) in the state's color, each LED animated on its own (`pixelMotion()`: a candle flicker per LED when idle, with the center breathing toward dark purple every 3.2 s and, every 3–7 s, a warm white spark racing twice round the rings from a random pixel, a random way round (idle and sleeping eyes also blink a black lid every 4–8 s), a soft spot circling while listening, a comet spinning while thinking, and a warm ripple while speaking, with brightness following the voice from dim between words to full, a blink every 3–6 s (a black lid sweeps down over each eye and back up in under 0.4 s; `EYE_TOP_PIXEL` says which ring LED is on top as mounted), and a whirl (about 1.5 fast extra turns) when the voice jumps loud, at most every 5 s and at least every 9 s; the two eyes turn in mirror image, and the dashboard preview runs the same math in `web/eyeFlourish.ts`); or two plain LEDs on D3/D5 (`EYES_NEOPIXEL 0`), brightness only, gamma-corrected so the states look distinct. Flourishes (`F …`) degrade to brightness-only twinkles on plain LEDs.
+  - **eyes:** two NeoPixel Jewels (`EYES_NEOPIXEL 1`, the default) in the state's color, each LED animated on its own (`pixelMotion()`: a candle flicker per LED when idle, with the center breathing toward dark purple every 3.2 s and, every 3–7 s, a warm white spark racing twice round the rings from a random pixel, a random way round (idle and sleeping eyes also blink), a soft spot circling while listening, a comet spinning while thinking, and a warm ripple while speaking, with brightness following the voice from dim between words to full, blinks (a black lid sweeps down over each eye and back up in under 0.4 s; `EYE_TOP_PIXEL` says which ring LED is on top as mounted), and a whirl (about 1.5 fast extra turns) when the voice jumps loud, at most every 5 s and at least every 9 s; the two eyes turn in mirror image. Blinks come at uneven gaps, mostly 1–4 s apart while speaking and 2–6 s otherwise with the odd longer pause, about one in six a double; each is a little faster or slower than the last, and the right eye starts 20–40 ms after the left. The dashboard preview runs the same math in `web/eyeFlourish.ts`); or two plain LEDs on D3/D5 (`EYES_NEOPIXEL 0`), brightness only, gamma-corrected so the states look distinct. Flourishes (`F …`) degrade to brightness-only twinkles on plain LEDs.
   - **jaw:** an SG90 servo whose angle follows the loudness.
   - **relay:** a 400 ms "button press" on a store animatronic's trigger when speech starts, with an 8 s cooldown.
 
