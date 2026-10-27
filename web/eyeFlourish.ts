@@ -28,6 +28,22 @@ export function lidEdge(t: number): number {
   return -LID_OPEN + 2 * LID_OPEN * ease((t - up) / (BLINK_MS - up));
 }
 
+/**
+ * The wait before the next blink: at least `min` ms, usually a little more, now and then much more
+ * (up to `max`), as people blink: an exponential tail with mean `mean` ms over the minimum. `r` is
+ * a random number in [0, 1).
+ */
+export function blinkGap(min: number, mean: number, max: number, r: number): number {
+  return Math.min(max, min - mean * Math.log(1 - r));
+}
+
+/** Blink gaps while speaking, and while idle or sleeping: [min, mean over it, max] ms. */
+export const SPEAK_BLINK_GAP = [1200, 2500, 9000] as const;
+export const REST_BLINK_GAP = [2000, 3500, 12000] as const;
+/** About one blink in six is a double: another straight after, this soon after the first ends. */
+export const DOUBLE_BLINK_ODDS = 1 / 6;
+export const DOUBLE_BLINK_GAP_MS = 120;
+
 /** How much of pixel `p` (0 = center, 1-6 = ring) the lid covers with its edge at `edge`: 0..1, soft-edged. */
 export function lidCover(edge: number, p: number): number {
   const y = p === 0 ? 0 : Math.cos((2 * Math.PI * (p - EYE_TOP_PIXEL)) / 6);
@@ -199,8 +215,9 @@ export interface IdleSpin {
 
 /**
  * What keeps the eyes lively, the same as livelyStep() in the firmware. Speaking, idle and sleeping
- * eyes blink (the first 1.5-4 s after the eyes settle into one of them): every 3-6 s while speaking,
- * every 4-8 s otherwise. Listening and thinking have motion enough. Speaking also whirls when the
+ * eyes blink (the first 1.5-4 s after the eyes settle into one of them), at uneven gaps (see
+ * blinkGap), shorter while speaking; now and then twice in a row. Each blink is a little faster or
+ * slower than the last (0.85-1.15x), and the right eye starts it 20-40 ms after the left. Listening and thinking have motion enough. Speaking also whirls when the
  * voice jumps loud, and idle spins a spark round the rings every 3-7 s (the first 1-3 s in), from a
  * random pixel, a random way round.
  */
@@ -210,6 +227,9 @@ export class LivelyEyes {
   private lastLevel = 0;
   private blinkAt = -Infinity;
   private nextBlinkAt = Infinity;
+  /** This blink's speed (its length is BLINK_MS x this) and how late the right eye starts it (ms). */
+  private blinkScale = 1;
+  private blinkLag = 0;
   private whirlAt = -Infinity;
   private whirlBy = Infinity;
   private idle = false;
@@ -220,10 +240,10 @@ export class LivelyEyes {
   constructor(private readonly random: () => number = Math.random) {}
 
   /**
-   * Moves on to `now`: where the lid's edge is (see lidEdge), the whirl's extra spin (turns a
-   * second), and the idle spin playing, if any.
+   * Moves on to `now`: where each eye's lid edge is (see lidEdge; left, right), the whirl's extra
+   * spin (turns a second), and the idle spin playing, if any.
    */
-  step(now: number, state: BodyState, level: number): { lid: number; whirl: number; spin: IdleSpin | null } {
+  step(now: number, state: BodyState, level: number): { lid: [number, number]; whirl: number; spin: IdleSpin | null } {
     const speaking = state === "speaking";
     const idle = state === "idle";
     const blinks = speaking || idle || state === "sleeping";
@@ -237,7 +257,12 @@ export class LivelyEyes {
     this.lastLevel = level;
     if (blinks && now >= this.nextBlinkAt) {
       this.blinkAt = now;
-      this.nextBlinkAt = now + (speaking ? 3000 + 3000 * this.random() : 4000 + 4000 * this.random());
+      this.blinkScale = 0.85 + 0.3 * this.random();
+      this.blinkLag = 20 + 20 * this.random();
+      const length = BLINK_MS * this.blinkScale + this.blinkLag;
+      const [min, mean, max] = speaking ? SPEAK_BLINK_GAP : REST_BLINK_GAP;
+      this.nextBlinkAt =
+        now + (this.random() < DOUBLE_BLINK_ODDS ? length + DOUBLE_BLINK_GAP_MS : blinkGap(min, mean, max, this.random()));
     }
     if (speaking && ((rising && now - this.whirlAt >= WHIRL_COOLDOWN_MS) || now >= this.whirlBy)) {
       this.whirlAt = now;
@@ -249,8 +274,9 @@ export class LivelyEyes {
       this.nextSpinAt = now + IDLE_SPIN_MS + 3000 + 4000 * this.random();
     }
     const spinT = now - this.spinAt;
+    const t = now - this.blinkAt;
     return {
-      lid: blinks ? lidEdge(now - this.blinkAt) : LID_OPEN,
+      lid: blinks ? [lidEdge(t / this.blinkScale), lidEdge((t - this.blinkLag) / this.blinkScale)] : [LID_OPEN, LID_OPEN],
       whirl: speaking ? whirlRate(now - this.whirlAt) : 0,
       spin: idle && spinT < IDLE_SPIN_MS ? { ...this.spin, t: spinT } : null,
     };
@@ -306,7 +332,7 @@ export class JewelAnimator {
           const spark = i === twinkle || (p === 0 && t < 200) ? ([255, 255, 255] as Rgb) : hue(p * 60 + (t * 66 * 360) / 65536 + eye * 180);
           rgb = mix(rgb, spark, f.sparkle);
         }
-        return mix(rgb, LID_COLOR, lidCover(Math.min(lively.lid, f.edge), p));
+        return mix(rgb, LID_COLOR, lidCover(Math.min(lively.lid[eye]!, f.edge), p));
       }),
     );
   }
