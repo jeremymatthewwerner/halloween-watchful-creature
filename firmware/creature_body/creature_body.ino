@@ -64,6 +64,10 @@ const uint8_t IDLE_SPIN_TURNS = 2;
 const uint8_t SPARK_COLOR[3] = {255, 190, 90};
 const unsigned int PULSE_MS = 3200;
 const uint8_t PULSE_COLOR[3] = {60, 0, 90};
+// Idle also breathes slowly: bright for 5 s, then down to about the sleeping glow and back, 1 s each way.
+const unsigned int BREATH_BRIGHT_MS = 5000;
+const unsigned int BREATH_FADE_MS = 1000;
+const float BREATH_DIM = 0.06;
 
 enum State { SLEEPING, IDLE, LISTENING, THINKING, SPEAKING, STATE_COUNT };
 const char *STATE_NAMES[STATE_COUNT] = {"sleeping", "idle", "listening", "thinking", "speaking"};
@@ -389,6 +393,15 @@ float idlePulse(unsigned long now) {
   return 0.8 * s * s;
 }
 
+// The idle eyes' brightness multiplier at `now`: 1, easing down to BREATH_DIM and back up.
+float idleBreath(unsigned long now) {
+  unsigned int t = now % (BREATH_BRIGHT_MS + 2UL * BREATH_FADE_MS);
+  if (t < BREATH_BRIGHT_MS) return 1;
+  float fade = t < BREATH_BRIGHT_MS + BREATH_FADE_MS ? (t - BREATH_BRIGHT_MS) / (float)BREATH_FADE_MS
+                                                     : 1 - (t - BREATH_BRIGHT_MS - BREATH_FADE_MS) / (float)BREATH_FADE_MS;
+  return 1 - (1 - BREATH_DIM) * ease(fade);
+}
+
 // How much of the spark ring pixel p (1-6) shows t ms into a spin that started at ring pixel `from`
 // (0-5) going `dir` round: full at the head, a tail fading over 2.5 pixels behind it, and the whole
 // spin fading in and out over 150 ms at its ends.
@@ -400,11 +413,11 @@ float sparkAt(unsigned long t, float from, float dir, uint8_t p) {
   return k * min(1.0, min(t / 150.0, (IDLE_SPIN_MS - t) / 150.0));
 }
 
-// `c` (0-255 each, scaled by MAX_BRIGHTNESS like the eye colors) mixed `k` (0..1) into r, g, b.
-void mixIn(float &r, float &g, float &b, const uint8_t *c, float k) {
-  r += (c[0] * MAX_BRIGHTNESS - r) * k;
-  g += (c[1] * MAX_BRIGHTNESS - g) * k;
-  b += (c[2] * MAX_BRIGHTNESS - b) * k;
+// `c` (0-255 each, scaled by MAX_BRIGHTNESS like the eye colors, and by `dim`) mixed `k` (0..1) into r, g, b.
+void mixIn(float &r, float &g, float &b, const uint8_t *c, float k, float dim = 1) {
+  r += (c[0] * MAX_BRIGHTNESS * dim - r) * k;
+  g += (c[1] * MAX_BRIGHTNESS * dim - g) * k;
+  b += (c[2] * MAX_BRIGHTNESS * dim - b) * k;
 }
 
 // Turns a color `degrees` round the color wheel, keeping its saturation and brightness.
@@ -436,6 +449,7 @@ void renderEyes(unsigned long now) {
   // Sparkle: a rainbow spinning around each jewel's ring (the two eyes half a turn apart),
   // the centers flashing white first, and a white twinkle on a random pixel about every third frame.
   uint8_t twinkle = random(EYE_PIXELS * 3);
+  float breath = state == IDLE ? idleBreath(now) : 1;
   for (uint8_t i = 0; i < EYE_PIXELS; i++) {
     // The per-pixel math takes a few ms: keep up with the serial input (64-byte buffer) halfway through.
     if (i == 7) readSerial();
@@ -449,7 +463,11 @@ void renderEyes(unsigned long now) {
     g *= b;
     bl *= b;
     if (state == IDLE) {
-      if (p == 0) mixIn(r, g, bl, PULSE_COLOR, idlePulse(now));
+      // The whole eye breathes, the purple center with it; a spark stays bright over a dim eye.
+      r *= breath;
+      g *= breath;
+      bl *= breath;
+      if (p == 0) mixIn(r, g, bl, PULSE_COLOR, idlePulse(now), breath);
       // The right eye spins in mirror image: from the mirrored pixel, the other way round.
       else if (spinning) {
         unsigned long st = now - spinAt;

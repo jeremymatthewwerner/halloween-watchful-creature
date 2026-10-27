@@ -26,6 +26,10 @@ import {
   lidEdge,
   pixelMotion,
   BLINK_MS,
+  BREATH_BRIGHT_MS,
+  BREATH_DIM,
+  BREATH_FADE_MS,
+  idleBreath,
   LivelyEyes,
   shiftHue,
   speakSpinRate,
@@ -327,6 +331,19 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(steady().frame(orange, "listening", 0, "glow", PULSE_MS / 2)[0]![0]![2]).toBe(0); // idle only
   });
 
+  it("breathes idle slowly: 5 s bright, 1 s down to about the sleeping glow, 1 s back up", () => {
+    expect(idleBreath(0)).toBe(1);
+    expect(idleBreath(BREATH_BRIGHT_MS - 1)).toBe(1);
+    expect(idleBreath(BREATH_BRIGHT_MS + BREATH_FADE_MS / 2)).toBeCloseTo((1 + BREATH_DIM) / 2);
+    expect(idleBreath(BREATH_BRIGHT_MS + BREATH_FADE_MS)).toBeCloseTo(BREATH_DIM);
+    expect(idleBreath(BREATH_BRIGHT_MS + 2 * BREATH_FADE_MS)).toBe(1); // and round again
+    // The whole idle eye dims, the purple center with it, but not the other states.
+    const dim = BREATH_BRIGHT_MS + BREATH_FADE_MS;
+    const [left] = steady().frame(orange, "idle", 0, "glow", dim);
+    for (const rgb of left!) expect(Math.max(...rgb)).toBeLessThan(255 * BREATH_DIM + 1);
+    expect(Math.max(...steady().frame(orange, "listening", 0, "glow", dim)[0]![0]!)).toBeGreaterThan(200);
+  });
+
   it("races a spark round the ring, a tail behind it, fading in and out", () => {
     const ring = (t: number, from: number, dir: number) => [1, 2, 3, 4, 5, 6].map((p) => sparkAt(t, from, dir, p));
     const head = (k: number[]) => k.indexOf(Math.max(...k));
@@ -381,6 +398,9 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(firmware).toContain(`IDLE_SPIN_TURNS = ${IDLE_SPIN_TURNS};`);
     expect(firmware).toContain(`SPARK_COLOR[3] = {${SPARK_COLOR.join(", ")}};`);
     expect(firmware).toContain(`PULSE_MS = ${PULSE_MS};`);
+    expect(firmware).toContain(`BREATH_BRIGHT_MS = ${BREATH_BRIGHT_MS};`);
+    expect(firmware).toContain(`BREATH_FADE_MS = ${BREATH_FADE_MS};`);
+    expect(firmware).toContain(`BREATH_DIM = ${BREATH_DIM};`);
     expect(firmware).toContain(`PULSE_COLOR[3] = {${PULSE_COLOR.join(", ")}};`);
     expect(firmware).toContain(`WHIRL_PEAK = ${WHIRL_PEAK};`);
     expect(firmware).toContain(`WHIRL_COOLDOWN_MS = ${WHIRL_COOLDOWN_MS};`);

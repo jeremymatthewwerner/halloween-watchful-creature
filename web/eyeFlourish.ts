@@ -177,6 +177,19 @@ export const PULSE_COLOR: Rgb = [60, 0, 90];
 /** How much of PULSE_COLOR shows in the idle center at `now`: 0 to 0.8 and back, every PULSE_MS. */
 export const idlePulse = (now: number) => 0.8 * Math.sin((Math.PI * now) / PULSE_MS) ** 2;
 
+/** Idle breathes slowly: bright for BREATH_BRIGHT_MS, then down to about the sleeping glow and back, BREATH_FADE_MS each way. */
+export const BREATH_BRIGHT_MS = 5000;
+export const BREATH_FADE_MS = 1000;
+export const BREATH_DIM = 0.06;
+
+/** The idle eyes' brightness multiplier at `now`: 1, easing down to BREATH_DIM and back up. */
+export function idleBreath(now: number): number {
+  const t = now % (BREATH_BRIGHT_MS + 2 * BREATH_FADE_MS);
+  if (t < BREATH_BRIGHT_MS) return 1;
+  const fade = t < BREATH_BRIGHT_MS + BREATH_FADE_MS ? (t - BREATH_BRIGHT_MS) / BREATH_FADE_MS : 1 - (t - BREATH_BRIGHT_MS - BREATH_FADE_MS) / BREATH_FADE_MS;
+  return 1 - (1 - BREATH_DIM) * ease(fade);
+}
+
 /**
  * How much of the spark ring pixel `p` (1-6) shows `t` ms into a spin that started at ring pixel
  * `from` (0-5) going `dir` (1 or -1 round the ring): full at the head, a tail fading over 2.5 pixels
@@ -202,7 +215,7 @@ export interface IdleSpin {
  * eyes blink (the first 1.5-4 s after the eyes settle into one of them): every 3-6 s while speaking,
  * every 4-8 s otherwise. Listening and thinking have motion enough. Speaking also whirls when the
  * voice jumps loud, and idle spins a spark round the rings every 3-7 s (the first 1-3 s in), from a
- * random pixel, a random way round.
+ * random pixel, a random way round. (Idle's slow breathing is idleBreath(), by the clock.)
  */
 export class LivelyEyes {
   private blinks = false;
@@ -294,7 +307,10 @@ export class JewelAnimator {
         const m = pixelMotion(state, style, level, now, eye, p, this.flicker[i], this.spin);
         let rgb = scale(shiftHue(color, m.hue), (m.b + (1 - m.b) * f.wide) * f.lid);
         if (state === "idle") {
-          if (p === 0) rgb = mix(rgb, PULSE_COLOR, idlePulse(now));
+          // The whole eye breathes, the purple center with it; a spark stays bright over a dim eye.
+          const breath = idleBreath(now);
+          rgb = scale(rgb, breath);
+          if (p === 0) rgb = mix(rgb, scale(PULSE_COLOR, breath), idlePulse(now));
           // The right eye spins in mirror image: from the mirrored pixel, the other way round.
           else if (lively.spin) {
             const { t: st, from, dir } = lively.spin;
