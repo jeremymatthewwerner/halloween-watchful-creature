@@ -8,7 +8,7 @@
 //   L <0-255>          voice loudness
 //   F <effect>         one-shot eye flourish over the current state, then back to normal:
 //                      sparkle (rainbow burst, 1.2 s) | gasp (double blink, then wide-eyed, 0.9 s)
-//                      | slowblink (slow, thoughtful blink, 1.4 s)
+//                      | slowblink (a blink: the lid comes down and goes back up, 0.375 s)
 // If no line arrives for 2 seconds (page closed, cable pulled) everything fails safe:
 // eyes dim to "sleeping", relay opens, jaw closes, and any flourish stops.
 //
@@ -42,15 +42,14 @@ const uint8_t SERVO_PIN = 9;
 const int JAW_CLOSED_DEG = 90;
 const int JAW_OPEN_DEG = 125;
 const unsigned long FAILSAFE_MS = 2000;
-// Blinks: a dark lid comes down over each eye and goes back up, purple every 3-6 s while speaking,
-// black every 4-8 s while idle or sleeping. And while speaking, a whirl (the ripple spins about 1.5
+// Blinks: a black lid comes down over each eye and goes back up, every 3-6 s while speaking and
+// every 4-8 s while idle or sleeping. And while speaking, a whirl (the ripple spins about 1.5
 // extra turns) when the voice jumps loud, at most every 5 s but at least every 9 s. Keep in sync
 // with LivelyEyes in web/eyeFlourish.ts.
 const unsigned int LID_DOWN_MS = 145;
 const unsigned int LID_SHUT_MS = 65;
 const unsigned int BLINK_MS = 375;  // down, shut, then up for the rest
-const uint8_t SPEAK_LID_COLOR[3] = {60, 0, 90};  // dark purple
-const uint8_t REST_LID_COLOR[3] = {0, 0, 0};
+const uint8_t LID_COLOR[3] = {0, 0, 0};
 const uint8_t EYE_TOP_PIXEL = 1;           // the ring pixel (1-6) at the top of each jewel as mounted
 const float LID_OPEN = 1.3;                // the lid's edge when open: just above the top pixel
 const unsigned int WHIRL_MS = 600;
@@ -64,13 +63,14 @@ enum EyeStyle { FLICKER, GLOW, BLINK };
 // One-shot eye animations (the F command). Keep timings in sync with web/eyeFlourish.ts.
 enum Flourish { FL_NONE, FL_SPARKLE, FL_GASP, FL_SLOWBLINK, FLOURISH_COUNT };
 const char *FLOURISH_NAMES[FLOURISH_COUNT] = {"", "sparkle", "gasp", "slowblink"};
-const unsigned int FLOURISH_MS[FLOURISH_COUNT] = {0, 1200, 900, 1400};
+const unsigned int FLOURISH_MS[FLOURISH_COUNT] = {0, 1200, 900, BLINK_MS};
 // What the playing flourish does to the eyes this frame.
 struct FlourishFrame {
   float lid;      // brightness multiplier: 0 = shut, 1 = normal
   float wide;     // 0..1: how far brightness is pushed toward full (wide-eyed)
   float sparkle;  // 0..1: how much of the sparkle shows over the normal look
   unsigned long t;  // ms since the flourish started
+  float edge;     // where a blinking lid's edge is (see lidEdge): LID_OPEN when there's none
 };
 // One NeoPixel's brightness (0..1) and hue shift (degrees from the state's color) this frame.
 struct Motion {
@@ -206,7 +206,6 @@ unsigned long lastRenderAt = 0;
 bool wasBlinking = false, wasSpeaking = false;
 float lastLevel = 0;
 unsigned long blinkAt = 0, nextBlinkAt = 0, whirlAt = 0, whirlBy = 0;
-const uint8_t *lidColor = REST_LID_COLOR;
 float whirlSpin = 0;             // the whirl's extra spin this frame (turns a second)
 float lidAt = LID_OPEN;          // where the lid's edge is this frame (see lidEdge)
 
@@ -239,7 +238,7 @@ float blinkLid(unsigned long t, unsigned long start, unsigned long end) {
 }
 
 FlourishFrame flourishFrame(unsigned long now) {
-  FlourishFrame f = {1, 0, 0, 0};
+  FlourishFrame f = {1, 0, 0, 0, LID_OPEN};
   if (flourish == FL_NONE) return f;
   f.t = now - flourishAt;
   if (f.t >= FLOURISH_MS[flourish]) {
@@ -251,10 +250,8 @@ FlourishFrame flourishFrame(unsigned long now) {
       f.lid = blinkLid(f.t, 0, 150) * blinkLid(f.t, 220, 370);
       if (f.t >= 370) f.wide = 1 - ease((f.t - 370) / 530.0);
       break;
-    case FL_SLOWBLINK:  // lids drift shut, rest a moment, drift open
-      if (f.t < 550) f.lid = 1 - ease(f.t / 550.0);
-      else if (f.t < 850) f.lid = 0;
-      else f.lid = ease((f.t - 850) / 550.0);
+    case FL_SLOWBLINK:  // a blink like the idle ones: the lid comes down from the top and goes back up
+      f.edge = lidEdge(f.t);
       break;
     case FL_SPARKLE:  // full burst, fading back to normal over the last 300 ms
       f.sparkle = f.t < 900 ? 1 : 1 - (f.t - 900) / 300.0;
@@ -339,7 +336,7 @@ float lidCover(float edge, uint8_t p) {
   return constrain((y - edge) / 0.6 + 0.5, 0.0, 1.0);
 }
 
-// Moves the blinks and whirls on to `now`: sets lidAt, lidColor and whirlSpin. The first blink
+// Moves the blinks and whirls on to `now`: sets lidAt and whirlSpin. The first blink
 // comes 1.5-4 s after the eyes settle into speaking, idle or sleeping.
 void livelyStep(unsigned long now) {
   bool speaking = state == SPEAKING;
@@ -352,7 +349,6 @@ void livelyStep(unsigned long now) {
   lastLevel = level;
   if (blinks && (long)(now - nextBlinkAt) >= 0) {
     blinkAt = now;
-    lidColor = speaking ? SPEAK_LID_COLOR : REST_LID_COLOR;
     nextBlinkAt = now + (speaking ? random(3000, 6000) : random(4000, 8000));
   }
   if (speaking && ((rising && now - whirlAt >= WHIRL_COOLDOWN_MS) || (long)(now - whirlBy) >= 0)) {
@@ -413,16 +409,16 @@ void renderEyes(unsigned long now) {
       g += ((uint8_t)(s >> 8) * MAX_BRIGHTNESS - g) * f.sparkle;
       bl += ((uint8_t)s * MAX_BRIGHTNESS - bl) * f.sparkle;
     }
-    float cover = lidCover(lidAt, p);  // a blink: the lid on top of everything
-    r += (lidColor[0] * MAX_BRIGHTNESS - r) * cover;
-    g += (lidColor[1] * MAX_BRIGHTNESS - g) * cover;
-    bl += (lidColor[2] * MAX_BRIGHTNESS - bl) * cover;
+    float cover = lidCover(min(lidAt, f.edge), p);  // a blink: the lid on top of everything
+    r += (LID_COLOR[0] * MAX_BRIGHTNESS - r) * cover;
+    g += (LID_COLOR[1] * MAX_BRIGHTNESS - g) * cover;
+    bl += (LID_COLOR[2] * MAX_BRIGHTNESS - bl) * cover;
     eyes.setPixelColor(i, (uint8_t)r, (uint8_t)g, (uint8_t)bl);
   }
   eyes.show();
 #else
   float base = stateBrightness(now);
-  float b = (base + (1 - base) * f.wide) * f.lid * (1 - lidCover(lidAt, 0));  // one LED: the lid just dims it
+  float b = (base + (1 - base) * f.wide) * f.lid * (1 - lidCover(min(lidAt, f.edge), 0));  // one LED: the lid just dims it
   for (uint8_t i = 0; i < 2; i++) {
     float e = b;
     // Plain LEDs can't do colors, so the sparkle is brightness only: the eyes twinkle, alternating.

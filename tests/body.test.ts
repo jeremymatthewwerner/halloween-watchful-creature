@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
 import { BODY_BAUD, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
-import type { EyePalette } from "../shared/types.ts";
+import type { BodyMessage, EyePalette } from "../shared/types.ts";
 import { BodyLink } from "../web/bodyLink.ts";
 import {
   FLOURISH_MS,
@@ -11,7 +11,8 @@ import {
   GREETING_FLOURISH,
   JEWEL_PIXELS,
   JewelAnimator,
-  SPEAK_LID_COLOR,
+  LID_COLOR,
+  LID_OPEN,
   LID_DOWN_MS,
   LID_SHUT_MS,
   lidCover,
@@ -19,7 +20,6 @@ import {
   pixelMotion,
   BLINK_MS,
   LivelyEyes,
-  REST_LID_COLOR,
   shiftHue,
   speakSpinRate,
   WHIRL_AT_LEAST_EVERY_MS,
@@ -141,8 +141,8 @@ describe("BodyController", () => {
 describe("eye flourishes (dashboard preview)", () => {
   it("returns to the plain state look once each flourish is over", () => {
     for (const effect of ["sparkle", "gasp", "slowblink"] as const) {
-      expect(flourishFrame(effect, FLOURISH_MS[effect])).toEqual({ lid: 1, wide: 0, sparkle: 0 });
-      expect(FLOURISH_MS[effect]).toBeGreaterThanOrEqual(500);
+      expect(flourishFrame(effect, FLOURISH_MS[effect])).toEqual({ lid: 1, wide: 0, sparkle: 0, edge: LID_OPEN });
+      expect(FLOURISH_MS[effect]).toBeGreaterThanOrEqual(300);
       expect(FLOURISH_MS[effect]).toBeLessThanOrEqual(1500);
     }
   });
@@ -154,10 +154,12 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(flourishFrame("gasp", 400)).toMatchObject({ lid: 1, wide: expect.closeTo(1, 1) });
   });
 
-  it("closes slowly for a thinking blink, rests, and opens", () => {
-    expect(flourishFrame("slowblink", 275).lid).toBeCloseTo(0.5);
-    expect(flourishFrame("slowblink", 700).lid).toBe(0);
-    expect(flourishFrame("slowblink", 1399).lid).toBeCloseTo(1, 2);
+  it("blinks for thinking like the idle blinks: a lid down from the top and back up, never fading all the LEDs", () => {
+    expect(FLOURISH_MS.slowblink).toBe(BLINK_MS);
+    for (let t = 0; t < BLINK_MS; t += 5) {
+      expect(flourishFrame("slowblink", t)).toMatchObject({ lid: 1, wide: 0, sparkle: 0, edge: lidEdge(t) });
+    }
+    expect(flourishFrame("slowblink", LID_DOWN_MS + LID_SHUT_MS / 2).edge).toBe(-LID_OPEN); // shut
   });
 
   const orange: [number, number, number] = [255, 106, 0];
@@ -184,9 +186,9 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(steady().frame(orange, "idle", 0, "glow", 1200, sparkle)).toEqual(steady().frame(orange, "idle", 0, "glow", 1200));
   });
 
-  it("dims every pixel when the lids close", () => {
-    for (const eye of steady().frame(orange, "speaking", 1, "flicker", 700, { effect: "slowblink", at: 0 })) {
-      for (const rgb of eye) expect(rgb).toEqual([0, 0, 0]);
+  it("covers every pixel when the lids close", () => {
+    for (const eye of steady().frame(orange, "speaking", 1, "flicker", LID_DOWN_MS + 10, { effect: "slowblink", at: 0 })) {
+      for (const rgb of eye) expect(rgb).toEqual(LID_COLOR);
     }
   });
 
@@ -242,12 +244,12 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(eyes.step(20_000, "listening", 0).lid).toBe(open);
   });
 
-  it("blinks a black lid, less often, while idle or sleeping", () => {
+  it("blinks less often while idle or sleeping", () => {
     for (const state of ["idle", "sleeping"] as const) {
       const eyes = new LivelyEyes(() => 0.5);
       eyes.step(0, state, 0);
       eyes.step(2750, state, 0); // the first blink, 1.5-4 s in
-      expect(eyes.step(2750 + LID_DOWN_MS, state, 0)).toMatchObject({ lid: -lidEdge(-1), lidColor: REST_LID_COLOR, whirl: 0 });
+      expect(eyes.step(2750 + LID_DOWN_MS, state, 0)).toEqual({ lid: -lidEdge(-1), whirl: 0 });
       eyes.step(2750 + BLINK_MS, state, 0);
       expect(eyes.step(8700, state, 0).lid).toBe(lidEdge(-1)); // the next one 4-8 s later: 6 s with this "random"
       eyes.step(8750, state, 0);
@@ -258,7 +260,7 @@ describe("eye flourishes (dashboard preview)", () => {
     eyes.step(0, "speaking", 0.3);
     eyes.step(2000, "idle", 0);
     eyes.step(2750, "speaking", 0.3);
-    expect(eyes.step(2750 + LID_DOWN_MS, "speaking", 0.3)).toMatchObject({ lidColor: SPEAK_LID_COLOR });
+    expect(eyes.step(2750 + LID_DOWN_MS, "speaking", 0.3).lid).toBe(-lidEdge(-1));
     // Thinking never blinks.
     const thinking = new LivelyEyes(() => 0.5);
     for (let t = 0; t < 20_000; t += 50) expect(thinking.step(t, "thinking", 0).lid).toBe(lidEdge(-1));
@@ -272,13 +274,13 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(lidCover(0, EYE_TOP_PIXEL)).toBe(1); // halfway: the top is covered...
     expect(lidCover(0, 0)).toBe(0.5); // ...the center half...
     expect(lidCover(0, bottom)).toBe(0); // ...the bottom not yet
-    // In the preview: the top pixel goes the lid's purple while the bottom keeps the eye color.
+    // In the preview: the top pixel goes black while the bottom keeps the eye color.
     const animator = new JewelAnimator(() => 0.5);
     let frame: number[][][] = [];
     for (let t = 0; t <= 2750 + LID_DOWN_MS / 2; t += 5) frame = animator.frame([255, 208, 0], "speaking", 0.5, "flicker", t);
-    expect(frame[0]![EYE_TOP_PIXEL]).toEqual(SPEAK_LID_COLOR);
-    expect(frame[1]![EYE_TOP_PIXEL]).toEqual(SPEAK_LID_COLOR);
-    expect(frame[0]![bottom]![1]).toBeGreaterThan(20); // still yellow (the lid has no green)
+    expect(frame[0]![EYE_TOP_PIXEL]).toEqual(LID_COLOR);
+    expect(frame[1]![EYE_TOP_PIXEL]).toEqual(LID_COLOR);
+    expect(frame[0]![bottom]![1]).toBeGreaterThan(20); // still yellow
   });
 
   it("whirls when the voice jumps loud, at most every 5 s, at least every 9 s", () => {
@@ -313,8 +315,7 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(firmware).toContain(`BLINK_MS = ${BLINK_MS};`);
     expect(firmware).toContain(`LID_DOWN_MS = ${LID_DOWN_MS};`);
     expect(firmware).toContain(`LID_SHUT_MS = ${LID_SHUT_MS};`);
-    expect(firmware).toContain(`SPEAK_LID_COLOR[3] = {${SPEAK_LID_COLOR.join(", ")}};`);
-    expect(firmware).toContain(`REST_LID_COLOR[3] = {${REST_LID_COLOR.join(", ")}};`);
+    expect(firmware).toContain(`LID_COLOR[3] = {${LID_COLOR.join(", ")}};`);
     expect(firmware).toContain(`EYE_TOP_PIXEL = ${EYE_TOP_PIXEL};`);
     expect(firmware).toContain(`WHIRL_MS = ${WHIRL_MS};`);
     expect(firmware).toContain(`WHIRL_PEAK = ${WHIRL_PEAK};`);
@@ -362,6 +363,33 @@ describe("BodyLink flourishes", () => {
     link.setState("idle", 10_100);
     link.setState("thinking", 10_200);
     expect(link.activeFlourish(10_200)?.effect).toBe("sparkle");
+  });
+});
+
+describe("BodyLink keep-alive", () => {
+  it("re-sends a steady state, so the server keeps the body awake instead of letting it fail safe to sleeping", () => {
+    let now = 0;
+    const sink = new Recorder();
+    const body = new BodyController(sink, ["eyes"], () => now);
+    const link = new BodyLink();
+    let sent = 0;
+    (link as unknown as { ws: unknown }).ws = {
+      readyState: WebSocket.OPEN,
+      send: (m: string) => {
+        sent++;
+        body.handle(JSON.parse(m) as BodyMessage);
+      },
+    };
+    // 20 s of idle with nobody talking, drawn at 60 fps, the server ticking every 500 ms.
+    for (; now <= 20_000; now += 16) {
+      link.setState("idle", now);
+      if (now % 500 < 16) body.tick();
+    }
+    sink.lines = [];
+    body.tick();
+    expect(sink.lines).toEqual(["S idle"]); // still heartbeating
+    expect(sent).toBeGreaterThanOrEqual(20);
+    expect(sent).toBeLessThanOrEqual(22); // about once a second, not every frame
   });
 });
 

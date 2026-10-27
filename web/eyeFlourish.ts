@@ -6,8 +6,36 @@ import type { GreetingKind } from "./engines/types.ts";
  * firmware/creature_body/creature_body.ino, so the preview shows what the pumpkin's eyes do.
  */
 
+const ease = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, x)));
+
+/** A blink: a dark lid comes down over each eye, stays shut a moment and goes back up. */
+export const LID_DOWN_MS = 145;
+export const LID_SHUT_MS = 65;
+export const BLINK_MS = 375;
+/** The lid's color, on the same 0-255 scale as the eye colors. */
+export const LID_COLOR: Rgb = [0, 0, 0];
+/** Which ring pixel (1-6) is at the top of each jewel as it's mounted: the lid comes down from it. */
+export const EYE_TOP_PIXEL = 1;
+/** Where the lid's edge sits when open: just above the top pixel (pixels sit from -1, bottom, to 1, top). */
+export const LID_OPEN = 1.3;
+
+/** Where the lid's edge is `t` ms into a blink: coming down, shut, then going up for the rest. */
+export function lidEdge(t: number): number {
+  if (t < 0 || t >= BLINK_MS) return LID_OPEN;
+  if (t < LID_DOWN_MS) return LID_OPEN - 2 * LID_OPEN * ease(t / LID_DOWN_MS);
+  const up = LID_DOWN_MS + LID_SHUT_MS;
+  if (t < up) return -LID_OPEN;
+  return -LID_OPEN + 2 * LID_OPEN * ease((t - up) / (BLINK_MS - up));
+}
+
+/** How much of pixel `p` (0 = center, 1-6 = ring) the lid covers with its edge at `edge`: 0..1, soft-edged. */
+export function lidCover(edge: number, p: number): number {
+  const y = p === 0 ? 0 : Math.cos((2 * Math.PI * (p - EYE_TOP_PIXEL)) / 6);
+  return Math.min(1, Math.max(0, (y - edge) / 0.6 + 0.5));
+}
+
 /** How long each flourish lasts (ms); keep in sync with FLOURISH_MS in the firmware. */
-export const FLOURISH_MS: Record<EyeFlourish, number> = { sparkle: 1200, gasp: 900, slowblink: 1400 };
+export const FLOURISH_MS: Record<EyeFlourish, number> = { sparkle: 1200, gasp: 900, slowblink: BLINK_MS };
 
 /** Which flourish greets which kind of greeting. */
 export const GREETING_FLOURISH: Record<GreetingKind, EyeFlourish> = {
@@ -29,13 +57,14 @@ export interface FlourishFrame {
   wide: number;
   /** 0..1: how much of the rainbow sparkle shows over the normal color. */
   sparkle: number;
+  /** Where a blinking lid's edge is (see lidEdge): LID_OPEN when there's none. */
+  edge: number;
 }
 
 type EyeStyle = CharacterInfo["eyeStyle"];
 
-const NONE: FlourishFrame = { lid: 1, wide: 0, sparkle: 0 };
+const NONE: FlourishFrame = { lid: 1, wide: 0, sparkle: 0, edge: LID_OPEN };
 
-const ease = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, x)));
 const blinkLid = (t: number, start: number, end: number) => (t < start || t >= end ? 1 : Math.abs((2 * (t - start)) / (end - start) - 1));
 
 /** What `effect` does to the eyes `t` ms after it started (nothing once it's over). */
@@ -43,11 +72,11 @@ export function flourishFrame(effect: EyeFlourish, t: number): FlourishFrame {
   if (t < 0 || t >= FLOURISH_MS[effect]) return NONE;
   switch (effect) {
     case "gasp":
-      return { lid: blinkLid(t, 0, 150) * blinkLid(t, 220, 370), wide: t >= 370 ? 1 - ease((t - 370) / 530) : 0, sparkle: 0 };
-    case "slowblink":
-      return { lid: t < 550 ? 1 - ease(t / 550) : t < 850 ? 0 : ease((t - 850) / 550), wide: 0, sparkle: 0 };
+      return { ...NONE, lid: blinkLid(t, 0, 150) * blinkLid(t, 220, 370), wide: t >= 370 ? 1 - ease((t - 370) / 530) : 0 };
+    case "slowblink": // a blink like the idle ones: the lid comes down from the top and goes back up
+      return { ...NONE, edge: lidEdge(t) };
     case "sparkle":
-      return { lid: 1, wide: 0, sparkle: t < 900 ? 1 : 1 - (t - 900) / 300 };
+      return { ...NONE, sparkle: t < 900 ? 1 : 1 - (t - 900) / 300 };
   }
 }
 
@@ -123,33 +152,6 @@ export function pixelMotion(
 /** How fast the speaking ripple goes round (turns a second): a lazy drift when quiet, quick when loud. */
 export const speakSpinRate = (level: number) => 0.4 + 2.6 * level;
 
-/** A blink: a dark lid comes down over each eye, stays shut a moment and goes back up. */
-export const LID_DOWN_MS = 145;
-export const LID_SHUT_MS = 65;
-export const BLINK_MS = 375;
-/** The lid's color while speaking: a dark purple, on the same 0-255 scale as the eye colors. */
-export const SPEAK_LID_COLOR: Rgb = [60, 0, 90];
-/** ...and while idle or sleeping: black. */
-export const REST_LID_COLOR: Rgb = [0, 0, 0];
-/** Which ring pixel (1-6) is at the top of each jewel as it's mounted: the lid comes down from it. */
-export const EYE_TOP_PIXEL = 1;
-/** Where the lid's edge sits when open: just above the top pixel (pixels sit from -1, bottom, to 1, top). */
-const LID_OPEN = 1.3;
-
-/** Where the lid's edge is `t` ms into a blink: coming down, shut, then going up for the rest. */
-export function lidEdge(t: number): number {
-  if (t < 0 || t >= BLINK_MS) return LID_OPEN;
-  if (t < LID_DOWN_MS) return LID_OPEN - 2 * LID_OPEN * ease(t / LID_DOWN_MS);
-  const up = LID_DOWN_MS + LID_SHUT_MS;
-  if (t < up) return -LID_OPEN;
-  return -LID_OPEN + 2 * LID_OPEN * ease((t - up) / (BLINK_MS - up));
-}
-
-/** How much of pixel `p` (0 = center, 1-6 = ring) the lid covers with its edge at `edge`: 0..1, soft-edged. */
-export function lidCover(edge: number, p: number): number {
-  const y = p === 0 ? 0 : Math.cos((2 * Math.PI * (p - EYE_TOP_PIXEL)) / 6);
-  return Math.min(1, Math.max(0, (y - edge) / 0.6 + 0.5));
-}
 /** A whirl: the speaking ripple spins about 1.5 extra turns in this long. */
 export const WHIRL_MS = 600;
 /** The voice jumping to this loud starts a whirl... */
@@ -164,9 +166,9 @@ export const whirlRate = (t: number) => (t >= 0 && t < WHIRL_MS ? 4 * Math.sin((
 
 /**
  * What keeps the eyes lively, the same as livelyStep() in the firmware. Speaking, idle and sleeping
- * eyes blink (the first 1.5-4 s after the eyes settle into one of them): a purple lid every 3-6 s while
- * speaking, a black one every 4-8 s otherwise. Listening and thinking have motion enough. Speaking
- * also whirls when the voice jumps loud.
+ * eyes blink (the first 1.5-4 s after the eyes settle into one of them): every 3-6 s while speaking,
+ * every 4-8 s otherwise. Listening and thinking have motion enough. Speaking also whirls when the
+ * voice jumps loud.
  */
 export class LivelyEyes {
   private blinks = false;
@@ -174,17 +176,15 @@ export class LivelyEyes {
   private lastLevel = 0;
   private blinkAt = -Infinity;
   private nextBlinkAt = Infinity;
-  private lidColor = REST_LID_COLOR;
   private whirlAt = -Infinity;
   private whirlBy = Infinity;
 
   constructor(private readonly random: () => number = Math.random) {}
 
   /**
-   * Moves on to `now`: where the lid's edge is (see lidEdge), the lid's color, and the whirl's extra
-   * spin (turns a second).
+   * Moves on to `now`: where the lid's edge is (see lidEdge) and the whirl's extra spin (turns a second).
    */
-  step(now: number, state: BodyState, level: number): { lid: number; lidColor: Rgb; whirl: number } {
+  step(now: number, state: BodyState, level: number): { lid: number; whirl: number } {
     const speaking = state === "speaking";
     const blinks = speaking || state === "idle" || state === "sleeping";
     if (blinks && !this.blinks) this.nextBlinkAt = now + 1500 + 2500 * this.random();
@@ -195,7 +195,6 @@ export class LivelyEyes {
     this.lastLevel = level;
     if (blinks && now >= this.nextBlinkAt) {
       this.blinkAt = now;
-      this.lidColor = speaking ? SPEAK_LID_COLOR : REST_LID_COLOR;
       this.nextBlinkAt = now + (speaking ? 3000 + 3000 * this.random() : 4000 + 4000 * this.random());
     }
     if (speaking && ((rising && now - this.whirlAt >= WHIRL_COOLDOWN_MS) || now >= this.whirlBy)) {
@@ -204,7 +203,6 @@ export class LivelyEyes {
     }
     return {
       lid: blinks ? lidEdge(now - this.blinkAt) : LID_OPEN,
-      lidColor: this.lidColor,
       whirl: speaking ? whirlRate(now - this.whirlAt) : 0,
     };
   }
@@ -251,7 +249,7 @@ export class JewelAnimator {
           const spark = i === twinkle || (p === 0 && t < 200) ? ([255, 255, 255] as Rgb) : hue(p * 60 + (t * 66 * 360) / 65536 + eye * 180);
           rgb = mix(rgb, spark, f.sparkle);
         }
-        return mix(rgb, lively.lidColor, lidCover(lively.lid, p));
+        return mix(rgb, LID_COLOR, lidCover(Math.min(lively.lid, f.edge), p));
       }),
     );
   }

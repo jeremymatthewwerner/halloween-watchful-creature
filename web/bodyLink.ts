@@ -3,6 +3,12 @@ import { FLOURISH_MS, type ActiveFlourish } from "./eyeFlourish.ts";
 
 /** At most one automatic thinking blink this often, so a flickery "thinking" state doesn't keep blinking. */
 const THINKING_BLINK_EVERY_MS = 5000;
+/**
+ * The state is re-sent this often even when it hasn't changed. The server only keeps the body awake
+ * for a few seconds after the page's last message, so without this a steady state (idle with nobody
+ * talking) let the Arduino's fail-safe drop the eyes to sleeping.
+ */
+const STATE_KEEPALIVE_MS = 1000;
 
 /** WebSocket to the local server, which forwards body commands to the Arduino. */
 export class BodyLink {
@@ -13,6 +19,7 @@ export class BodyLink {
   private lastLevel = 0;
   private flourishing: ActiveFlourish | null = null;
   private lastThinkingBlinkAt = -Infinity;
+  private lastStateSentAt = -Infinity;
 
   connect(): void {
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/body`);
@@ -29,11 +36,14 @@ export class BodyLink {
     this.raw({ type: "palette", eyes: character.eyes, eyeStyle: character.eyeStyle });
   }
 
-  /** Starting to think gets a slow blink, unless another flourish is playing. */
+  /** Starting to think gets a blink, unless another flourish is playing. */
   setState(state: BodyState, now = performance.now()): void {
-    if (state === this.state) return;
+    if (state === this.state) {
+      if (now - this.lastStateSentAt >= STATE_KEEPALIVE_MS) this.sendState(now);
+      return;
+    }
     this.state = state;
-    this.raw({ type: "state", state });
+    this.sendState(now);
     if (state === "thinking" && !this.activeFlourish(now) && now - this.lastThinkingBlinkAt >= THINKING_BLINK_EVERY_MS) {
       this.lastThinkingBlinkAt = now;
       this.flourish("slowblink", now);
@@ -59,6 +69,11 @@ export class BodyLink {
     this.lastLevelSentAt = now;
     this.lastLevel = level;
     this.raw({ type: "level", level });
+  }
+
+  private sendState(now: number): void {
+    this.lastStateSentAt = now;
+    this.raw({ type: "state", state: this.state });
   }
 
   private raw(msg: BodyMessage): void {
