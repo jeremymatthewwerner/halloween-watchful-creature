@@ -392,7 +392,7 @@ async function wake(
     }),
     prefs,
     log,
-    // Ambience only stirs the eyes (a slow blink), it doesn't pulse them like a voice.
+    // Ambience only stirs the eyes (a blink), it doesn't pulse them like a voice.
     onAmbience: () => {
       if (!body.activeFlourish(performance.now())) body.flourish("slowblink");
     },
