@@ -184,7 +184,8 @@ The voice below is each character's default; the dashboard's **Voice** picker an
 - Both go over a WebSocket to the server's `BodyController`, which:
   - auto-detects the Arduino;
   - replays the palette and state when the Arduino reconnects;
-  - heartbeats only while a dashboard is attached.
+  - heartbeats only while a dashboard is attached (the dashboard re-sends its state every second);
+  - with more than one dashboard open, follows only one (`BodyClients`): the newest awake one, or the newest if none is awake, so a forgotten tab can't fight over the eyes.
 - Serial line protocol (38400 baud; faster loses bytes while the NeoPixels update):
 
 | Command | Meaning |

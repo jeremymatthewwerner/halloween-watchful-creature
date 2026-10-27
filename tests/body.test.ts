@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
+import { BodyClients, BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
 import { BODY_BAUD, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { BodyMessage, BodyState, EyePalette } from "../shared/types.ts";
 import { BodyLink, deriveBodyState } from "../web/bodyLink.ts";
@@ -525,6 +525,76 @@ describe("BodyLink keep-alive", () => {
     expect(sink.lines).toEqual(["S idle"]); // still heartbeating
     expect(sent).toBeGreaterThanOrEqual(20);
     expect(sent).toBeLessThanOrEqual(22); // about once a second, not every frame
+  });
+});
+
+describe("BodyClients (more than one dashboard open)", () => {
+  const palette = (r: number): BodyMessage => ({ type: "palette", eyes: { ...eyes, idle: [r, 0, 0] }, eyeStyle: "flicker" });
+  const setup = () => {
+    const sent: BodyMessage[] = [];
+    const logs: string[] = [];
+    return { sent, logs, clients: new BodyClients({ handle: (m) => sent.push(m) }, (l) => logs.push(l)) };
+  };
+
+  it("passes everything through from a single dashboard", () => {
+    const { sent, clients } = setup();
+    const a = clients.connect();
+    sent.length = 0;
+    clients.handle(a, palette(1));
+    clients.handle(a, { type: "state", state: "idle" });
+    clients.handle(a, { type: "level", level: 0.5 });
+    expect(sent).toEqual([palette(1), { type: "state", state: "idle" }, { type: "level", level: 0.5 }]);
+  });
+
+  it("follows the awake dashboard, ignoring a forgotten sleeping one, even a newer one", () => {
+    const { sent, logs, clients } = setup();
+    const awake = clients.connect();
+    clients.handle(awake, palette(1));
+    clients.handle(awake, { type: "state", state: "idle" });
+    const forgotten = clients.connect();
+    clients.handle(forgotten, palette(2));
+    sent.length = 0;
+    for (let i = 0; i < 5; i++) {
+      clients.handle(forgotten, { type: "state", state: "sleeping" }); // its keep-alive
+      clients.handle(awake, { type: "state", state: "idle" });
+    }
+    expect(sent.every((m) => m.type === "state" && m.state === "idle")).toBe(true);
+    expect(logs).toEqual([]);
+  });
+
+  it("hands over to the newest awake dashboard, replaying its palette and state", () => {
+    const { sent, logs, clients } = setup();
+    const first = clients.connect();
+    clients.handle(first, palette(1));
+    clients.handle(first, { type: "state", state: "idle" });
+    const second = clients.connect();
+    clients.handle(second, palette(2));
+    sent.length = 0;
+    clients.handle(second, { type: "state", state: "listening" }); // woken: both awake, the newest wins
+    expect(sent).toEqual([palette(2), { type: "state", state: "listening" }, { type: "state", state: "listening" }]);
+    expect(logs).toEqual(["[body] 2 dashboards open: following the newest awake one"]);
+    sent.length = 0;
+    clients.handle(first, { type: "state", state: "speaking" });
+    expect(sent).toEqual([]); // not the leader any more
+    // The leader closes: back to the other, with its palette and state.
+    clients.disconnect(second);
+    expect(sent).toEqual([palette(1), { type: "state", state: "speaking" }]);
+  });
+
+  it("follows the newest dashboard when none is awake, and nobody once all are closed", () => {
+    const { sent, clients } = setup();
+    const a = clients.connect();
+    clients.handle(a, { type: "state", state: "sleeping" });
+    const b = clients.connect();
+    sent.length = 0;
+    clients.handle(a, { type: "level", level: 0.2 });
+    clients.handle(b, { type: "level", level: 0.3 });
+    expect(sent).toEqual([{ type: "level", level: 0.3 }]);
+    clients.disconnect(a);
+    clients.disconnect(b);
+    sent.length = 0;
+    clients.handle(a, { type: "state", state: "idle" }); // closed: ignored
+    expect(sent).toEqual([]);
   });
 });
 

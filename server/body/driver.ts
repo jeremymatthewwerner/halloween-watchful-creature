@@ -195,3 +195,58 @@ export class BodyController {
     this.timer = null;
   }
 }
+
+/**
+ * More than one dashboard can be open (a forgotten tab, a second laptop). Each keeps sending its
+ * state, so the eyes would flip between them. Only one drives the body: the newest awake one (any
+ * state but sleeping), or the newest if none is awake. When that changes, the new one's palette and
+ * state go to the body straight away.
+ */
+export class BodyClients {
+  private readonly clients = new Map<number, { state: BodyState; palette: BodyMessage | null }>();
+  private nextId = 0;
+  private leader: number | null = null;
+
+  constructor(
+    private readonly body: { handle(msg: BodyMessage): void },
+    private readonly log: (line: string) => void = () => {},
+  ) {}
+
+  /** A dashboard connected; returns its id for handle() and disconnect(). */
+  connect(): number {
+    const id = this.nextId++;
+    this.clients.set(id, { state: "sleeping", palette: null });
+    this.elect();
+    return id;
+  }
+
+  disconnect(id: number): void {
+    this.clients.delete(id);
+    this.elect();
+  }
+
+  handle(id: number, msg: BodyMessage): void {
+    const client = this.clients.get(id);
+    if (!client) return;
+    if (msg.type === "state") client.state = msg.state;
+    if (msg.type === "palette") client.palette = msg;
+    this.elect();
+    if (id === this.leader) this.body.handle(msg);
+  }
+
+  private elect(): void {
+    let best: number | null = null;
+    for (const [id, c] of this.clients) {
+      const bestAwake = best !== null && this.clients.get(best)!.state !== "sleeping";
+      const awake = c.state !== "sleeping";
+      if (best === null || (awake && !bestAwake) || (awake === bestAwake && id > best)) best = id;
+    }
+    if (best === this.leader) return;
+    this.leader = best;
+    if (best === null) return;
+    const c = this.clients.get(best)!;
+    if (this.clients.size > 1) this.log(`[body] ${this.clients.size} dashboards open: following the newest ${c.state === "sleeping" ? "one" : "awake one"}`);
+    if (c.palette) this.body.handle(c.palette);
+    this.body.handle({ type: "state", state: c.state });
+  }
+}
