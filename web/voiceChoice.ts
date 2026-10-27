@@ -24,7 +24,7 @@ export function savePickedVoice(storage: StorageLike | null, engine: EngineKind,
   }
 }
 
-/** The first part of a character's name ("Jacques O'Lantern, Pumpkin Critic" → "Jacques O'Lantern"). */
+/** The first part of a character's name ("Jacqueline O'Lantern, Pumpkin Critic" → "Jacqueline O'Lantern"). */
 export function shortName(name: string): string {
   return name.split(",")[0]!.trim() || name;
 }

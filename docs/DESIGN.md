@@ -86,7 +86,7 @@ person detector (5 fps, local) ─▶ VisitorTracker ─▶ sighted / arrived / 
 
 ### Offline mode (`web/offline.ts`, in the Director)
 The voice session can fail to start (`/api/session` error, no network) or be too slow. Instead of silence:
-- **A greeting waits 5 s** (`connectTimeoutMs`, counted from the arrival; the session started waking at the sighting) for the session to open. If it hasn't, a **recorded greeting** plays (`web/public/greeting/<character>/`, 16 costume-agnostic lines for Jacques) and the live greeting is **owed**. The connection carries on: if it opens, the live greeting follows once the clip has finished. A drop mid-visit that doesn't reconnect within 5 s also gets one recorded line (not one per retry); once back, it catches up silently.
+- **A greeting waits 5 s** (`connectTimeoutMs`, counted from the arrival; the session started waking at the sighting) for the session to open. If it hasn't, a **recorded greeting** plays (`web/public/greeting/<character>/`, 16 costume-agnostic lines for Jacqueline) and the live greeting is **owed**. The connection carries on: if it opens, the live greeting follows once the clip has finished. A drop mid-visit that doesn't reconnect within 5 s also gets one recorded line (not one per retry); once back, it catches up silently.
 - **The first failed start puts it offline.** Arrivals, returns and "grew" then get a recorded greeting at once, without asking the engine (so no vision call that would fail too).
 - **Clips:** never the same one twice in a row (`pickDifferent`, shared with lure mode), at most one per 20 s (`clipCooldownMs`), except the operator's Greet now. A recorded greeting counts as the creature talking, so ambience and call-outs wait.
 - **Retries** with backoff: 5 s, doubling to 60 s (`retryMinMs`, `retryMaxMs`), on ticks, sightings and arrivals; failures in flight are shared, so each is counted once. With visitors there, the first success gives the owed greeting live. With the porch empty, a background check opens a session and closes it at once when it works, so the next visitor gets the live voice.
@@ -159,16 +159,16 @@ Two seams in `web/main.ts` replace the camera frame (what vision sees) and the p
   - no personal questions;
   - reply in the visitor's language.
 - `characters/<id>.md` holds the persona and gimmick, with frontmatter for the voice, the realtime voice, the eye colors and style, and `games: on|off`.
-- **Jacques** talks kid-first: name the costume and its standout detail in plain words, a big silly verdict, at most one short food joke. His full food-critic routine is only for grown-ups who play along. He has no French accent or French words, never says "chef's kiss", and is told how to sound ("big, bouncy energy, like a children's TV host").
-- `games.md` holds optional trick-or-treat mini-games (a "trick" riddle, a roar or spooky-laugh contest, "guess what I am") and a small bank of riddles and jokes for 4–8-year-olds. A character opts in with `games: on` in its frontmatter (Jacques does). The rules: at most one game per visit, short, everyone wins, and candy never depends on a game.
+- **Jacqueline** talks kid-first: name the costume and its standout detail in plain words, a big silly verdict, at most one short food joke. Her full food-critic routine is only for grown-ups who play along. She has no French accent or French words, never says "chef's kiss", and is told how to sound ("big, bouncy energy, like a children's TV host").
+- `games.md` holds optional trick-or-treat mini-games (a "trick" riddle, a roar or spooky-laugh contest, "guess what I am") and a small bank of riddles and jokes for 4–8-year-olds. A character opts in with `games: on` in its frontmatter (Jacqueline does). The rules: at most one game per visit, short, everyone wins, and candy never depends on a game.
 - The server builds the instructions from `base.md`, then the persona, then `games.md` if the character opted in, then engine-specific notes on how sight works.
 - To add a character, add a file. It then shows up in the dashboard's character picker.
 
-The voice below is each character's default; the dashboard's **Voice** picker and `VOICE` in `.env` override it (see Operator controls). The owner currently runs Jacques with `ripple`.
+The voice below is each character's default; the dashboard's **Voice** picker and `VOICE` in `.env` override it (see Operator controls). The owner currently runs Jacqueline with her default, `gleam`.
 
 | id | Character | GPT-Live voice | Eyes |
 |---|---|---|---|
-| `pumpkin` | Jacques O'Lantern, Pumpkin Critic: reviews costumes like fine dishes | `meridian` | red-orange candle flicker |
+| `pumpkin` | Jacqueline O'Lantern, Pumpkin Critic: reviews costumes like fine dishes | `gleam` | red-orange candle flicker |
 | `reginald` | Sir Reginald Bonesworth, Skeleton Butler: announces guests at a ball | `vesper` | cool blue glow |
 | `raven` | Edgar the Raven, Rhyming Critic: rhyming couplets | `stone` | amber, blinks |
 

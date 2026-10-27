@@ -6,7 +6,7 @@
  * (web/public/lure/) and greetings for when the live voice is down (web/public/greeting/). The
  * clips are committed, so the app never needs this script (or a key) to play them. Clips whose
  * text hasn't changed are kept, so re-running only pays for new or edited lines. A full run costs
- * about a cent or two. They're read in a neutral voice (cedar); the server makes and caches a set in
+ * about a cent or two. They're read in marin, the pumpkin's feminine default; the server makes and caches a set in
  * the operator's chosen voice on top of these (POST /api/clips).
  */
 import "dotenv/config";

@@ -19,7 +19,7 @@ Halloween is 2026-10-31. We buy off-the-shelf parts wherever possible and write 
 | Person detection | A local MediaPipe person detector decides **when** to send a snapshot | The camera is "always watching" for free. We only pay to send a frame when someone walks up or asks. |
 | Characters | Pluggable persona files. **Pumpkin Critic first**, then Sir Reginald (skeleton) and Edgar the Raven. | One file per character. Switch from `.env` or the dashboard. |
 | Body | One USB Arduino with three modes: **eyes** (NeoPixel Jewels; plain LEDs until they arrive) → **jaw** (servo, skipped this year) → **relay** (animatronic, parked) | One kit covers everything, and it works with both Mac and Pi. |
-| Character | **Jacques talks kid-first**, no French, no chef talk; voice chosen in the dashboard | Testing showed kids need plain words and big verdicts; GPT-Live voices don't do accents reliably. |
+| Character | **Jacqueline talks kid-first**, no French, no chef talk; voice chosen in the dashboard | Testing showed kids need plain words and big verdicts; GPT-Live voices don't do accents reliably. |
 | Animatronic | Parked | No friendly store prop that can be triggered was confirmed, and props with built-in voices would talk over ours. |
 
 ## Milestones

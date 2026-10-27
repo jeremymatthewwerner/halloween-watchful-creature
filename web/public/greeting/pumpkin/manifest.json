@@ -1,7 +1,7 @@
 {
   "model": "gpt-4o-mini-tts",
-  "voice": "cedar",
-  "instructions": "You are Jacques O'Lantern, a big, bouncy, friendly talking pumpkin, like a favorite children's TV host. Greet trick-or-treaters who just walked up to the porch: delighted, warm and bursting with excitement, smiling the whole time. Never scary. Plain American English, no accent.",
+  "voice": "marin",
+  "instructions": "You are Jacqueline O'Lantern, a big, bouncy, friendly talking pumpkin, like a favorite children's TV host. Greet trick-or-treaters who just walked up to the porch: delighted, warm and bursting with excitement, smiling the whole time. Never scary. Plain American English, no accent.",
   "clips": [
     {
       "file": "01.mp3",
@@ -41,7 +41,7 @@
     },
     {
       "file": "10.mp3",
-      "text": "Hi there! I'm Jacques the pumpkin, and I love your costume!"
+      "text": "Hi there! I'm Jacqueline the pumpkin, and I love your costume!"
     },
     {
       "file": "11.mp3",

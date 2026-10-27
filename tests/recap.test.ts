@@ -198,11 +198,11 @@ describe("night recap stats", () => {
   });
 
   it("builds a page in the log's colors with the method explained and text escaped", () => {
-    const page = buildRecap({ day: DAY, logText: `${fixture()}18:59:00 note     Visitors arrived (1)\n18:59:01 server   [vision] arrived in 9 ms: <script>alert(1)</script>\n`, snapshots, name: "Jacques" });
+    const page = buildRecap({ day: DAY, logText: `${fixture()}18:59:00 note     Visitors arrived (1)\n18:59:01 server   [vision] arrived in 9 ms: <script>alert(1)</script>\n`, snapshots, name: "Jacqueline" });
     expect(page).toContain("#120a1c");
     expect(page).toContain("#ff7a1a");
     expect(page).toContain("How these are counted");
-    expect(page).toContain("Jacques's best lines");
+    expect(page).toContain("Jacqueline's best lines");
     expect(page).toContain("7:00–7:30 pm");
     expect(page).not.toContain("<script>");
     expect(page).toContain("Family only");
@@ -215,8 +215,8 @@ describe("night recap stats", () => {
 
   it("writes a headline with numbers and times only", () => {
     const r = buildRecapData({ day: DAY, logText: fixture(), snapshots });
-    expect(headline(r, "Jacques")).toBe("Jacques met 6 groups tonight (about 11 people), busiest 7:00–7:30 pm (4 groups). Awake 33 min.");
-    expect(shortName("Jacques O'Lantern, Pumpkin Critic")).toBe("Jacques");
+    expect(headline(r, "Jacqueline")).toBe("Jacqueline met 6 groups tonight (about 11 people), busiest 7:00–7:30 pm (4 groups). Awake 33 min.");
+    expect(shortName("Jacqueline O'Lantern, Pumpkin Critic")).toBe("Jacqueline");
     expect(shortName("Sir Reginald Bonesworth, Skeleton Butler")).toBe("Sir Reginald");
   });
 });
@@ -297,7 +297,7 @@ describe("end-of-night push", () => {
   function pusher(over: Partial<ConstructorParameters<typeof NightRecapPush>[0]> & { at?: Date } = {}) {
     let now = over.at ?? new Date(2026, 9, 31, 20, 0);
     const { sent, notifier } = fake();
-    const push = new NightRecapPush({ logDir: dir, notifier, atMinutes: null, sleepMs: 15 * 60_000, baseUrl: null, name: "Jacques", now: () => now, ...over });
+    const push = new NightRecapPush({ logDir: dir, notifier, atMinutes: null, sleepMs: 15 * 60_000, baseUrl: null, name: "Jacqueline", now: () => now, ...over });
     return { push, sent, advance: (ms: number) => (now = new Date(now.getTime() + ms)), set: (d: Date) => (now = d) };
   }
   beforeEach(() => {
@@ -320,7 +320,7 @@ describe("end-of-night push", () => {
     advance(5 * 60_000);
     expect(await push.tick()).toBe(true);
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.text).toBe("Jacques met 6 groups tonight (about 11 people), busiest 7:00–7:30 pm (4 groups). Awake 33 min.");
+    expect(sent[0]!.text).toBe("Jacqueline met 6 groups tonight (about 11 people), busiest 7:00–7:30 pm (4 groups). Awake 33 min.");
     advance(60_000);
     expect(await push.tick()).toBe(false);
     expect(await push.push(DAY)).toBe(false);
@@ -400,10 +400,10 @@ describe("end-of-night push", () => {
   it("ntfy gets the link as a Click header (ASCII only)", async () => {
     const post = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response("ok"));
     const ntfy = new NtfyNotifier("jacques-Xk3f9QpL2mVw7", "https://ntfy.sh", "", post as unknown as typeof fetch);
-    await ntfy.send({ title: "Tonight's recap", text: "Jacques met 6 groups tonight.", level: "warn", click: "http://192.168.1.5:8787/recap/2026-10-31" });
+    await ntfy.send({ title: "Tonight's recap", text: "Jacqueline met 6 groups tonight.", level: "warn", click: "http://192.168.1.5:8787/recap/2026-10-31" });
     const headers = post.mock.calls[0]![1]!.headers as Record<string, string>;
     expect(headers.Click).toBe("http://192.168.1.5:8787/recap/2026-10-31");
-    expect(headers.Title).toBe("Jacques: Tonight's recap");
+    expect(headers.Title).toBe("Jacqueline: Tonight's recap");
     await ntfy.send({ title: "x", text: "y", level: "warn", click: "javascript:alert(1)" });
     expect((post.mock.calls[1]![1]!.headers as Record<string, string>).Click).toBeUndefined();
   });

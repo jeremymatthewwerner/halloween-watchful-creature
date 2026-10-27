@@ -154,7 +154,7 @@ export function buildGallery({ day, logText, snapshots, retentionDays, expired =
   });
   const off =
     snapshots === null
-      ? `<p class="note off">📷 <strong>Snapshots are turned off</strong> (<code>SNAPSHOTS=off</code>), so no photos are saved. You can still read what the camera saw and what Jacques said.</p>`
+      ? `<p class="note off">📷 <strong>Snapshots are turned off</strong> (<code>SNAPSHOTS=off</code>), so no photos are saved. You can still read what the camera saw and what Jacqueline said.</p>`
       : "";
   const kept =
     retentionDays === undefined
@@ -162,7 +162,7 @@ export function buildGallery({ day, logText, snapshots, retentionDays, expired =
       : retentionDays > 0
         ? `they're deleted automatically after ${plural(retentionDays, "day")} (<code>SNAPSHOT_RETENTION_DAYS</code>)`
         : "they're kept until you delete them (the dashboard's 🗑️ button, or a day's folder in <code>logs/</code>)";
-  const empty = `<p class="empty">No costume snapshots on this day yet. They show up here after Jacques greets someone.</p>`;
+  const empty = `<p class="empty">No costume snapshots on this day yet. They show up here after Jacqueline greets someone.</p>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer">

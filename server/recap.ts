@@ -313,14 +313,14 @@ export function duration(seconds: number): string {
 }
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** "Jacques" from "Jacques O'Lantern, Pumpkin Critic"; "Sir Reginald" keeps the Sir. */
+/** "Jacqueline" from "Jacqueline O'Lantern, Pumpkin Critic"; "Sir Reginald" keeps the Sir. */
 export function shortName(name: string): string {
   const words = name.split(",")[0]!.trim().split(/\s+/);
   return (words[0] === "Sir" ? words.slice(0, 2) : words.slice(0, 1)).join(" ") || "The creature";
 }
 
 /** The push text: numbers and times only, nothing about any visitor. */
-export function headline(recap: Recap, name = "Jacques"): string {
+export function headline(recap: Recap, name = "Jacqueline"): string {
   const parts = [`${name} met ${plural(recap.groups.length, "group")} tonight (about ${plural(recap.people, "person", "people")})`];
   if (recap.busiest) parts.push(`busiest ${halfHourLabel(recap.busiest.start)} (${plural(recap.busiest.groups, "group")})`);
   return `${parts.join(", ")}.${recap.awakeSeconds >= 60 ? ` Awake ${duration(recap.awakeSeconds)}.` : ""}`;
@@ -339,7 +339,7 @@ function longDay(day: string): string {
 /** The recap page for one day. Family-only like the gallery: kids' photos, no sharing, no scripts. */
 export function buildRecap(opts: RecapOptions & { name?: string }): string {
   const r = buildRecapData(opts);
-  const name = opts.name ?? "Jacques";
+  const name = opts.name ?? "Jacqueline";
   const day = escapeHtml(r.day);
   const base = `/api/session-logs/${day}`;
   const peak = Math.max(1, ...r.halfHours.map((h) => h.groups));

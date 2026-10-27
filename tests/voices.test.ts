@@ -29,7 +29,7 @@ class FakeStorage implements StorageLike {
 const cfg = (env: string | null, character = "meridian") => ({
   engine: "live" as const,
   voice: { env, character },
-  character: { id: "pumpkin", name: "Jacques O'Lantern, Pumpkin Critic", voice: character, eyes: {} as never, eyeStyle: "flicker" as const },
+  character: { id: "pumpkin", name: "Jacqueline O'Lantern, Pumpkin Critic", voice: character, eyes: {} as never, eyeStyle: "flicker" as const },
 });
 
 describe("voice catalog", () => {
@@ -121,7 +121,7 @@ describe("dashboard voice pick", () => {
     expect(picked.fallback).toEqual({ voice: "ripple", source: "env" });
 
     const noEnv = voiceStatus(cfg(null), null, null);
-    expect(noEnv.summary).toBe("meridian, Jacques O'Lantern's default");
+    expect(noEnv.summary).toBe("meridian, Jacqueline O'Lantern's default");
     expect(voiceStatus(cfg("custom-voice"), null, null).envUnknown).toBe(true);
   });
 
@@ -138,7 +138,7 @@ describe("dashboard voice pick", () => {
     const status = voiceStatus(c, "gleam", "ripple");
     expect(voiceTags(c, status, "gleam")).toEqual(["current"]);
     expect(voiceTags(c, status, "ripple")).toEqual(["this session", "VOICE in .env"]);
-    expect(voiceTags(c, status, "meridian")).toEqual(["Jacques O'Lantern's default"]);
+    expect(voiceTags(c, status, "meridian")).toEqual(["Jacqueline O'Lantern's default"]);
     expect(shortName("Edgar the Raven, Rhyming Critic")).toBe("Edgar the Raven");
   });
 });
