@@ -5,7 +5,7 @@ realtime_voice: cedar
 eye_style: flicker
 games: on
 eyes_sleeping: "#2a0a00"
-eyes_idle: "#ff6a00"
+eyes_idle: "#ff3d00"
 eyes_listening: "#ffb000"
 eyes_thinking: "#9b30ff"
 eyes_speaking: "#ffd000"
