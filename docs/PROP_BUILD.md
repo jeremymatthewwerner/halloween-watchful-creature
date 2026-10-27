@@ -87,7 +87,7 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
 | Command | What should happen |
 |---|---|
 | `M eyes` | eyes mode turns on |
-| `S idle` | red-orange candle flicker, each LED flickering on its own, dimming to a glow and back every 7 s; the center breathes toward dark purple, a warm white spark races round the rings every few seconds, and a black blink every 4–8 s |
+| `S idle` | red-orange candle flicker, each LED flickering on its own; the center breathes toward dark purple, a warm white spark races round the rings every few seconds, and a black blink every 4–8 s |
 | `S thinking` | a purple comet spinning round each ring, the two eyes in mirror image |
 | `S listening` | a soft bright spot circling slowly round a steady center |
 | `S speaking` then `L 255` | bright speaking color with a warm ripple going round; it whirls fast once as it gets loud, and every few seconds a black lid comes down over the eyes and back up |
