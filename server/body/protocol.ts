@@ -9,7 +9,15 @@ import {
 } from "../../shared/types.ts";
 
 /**
- * Line protocol spoken to firmware/creature_body (115200 baud, "\n"-terminated):
+ * Serial speed; must match Serial.begin() in the firmware. Not 115200: while the firmware pushes a
+ * frame to the NeoPixels it has interrupts off for ~0.4 ms, and at 115200 the bytes arriving then are
+ * lost (about 1 command in 20 came through mangled). At 38400 a byte takes longer than that, so the
+ * UART holds it. The traffic is a few hundred bytes a second, so the slower link costs nothing.
+ */
+export const BODY_BAUD = 38400;
+
+/**
+ * Line protocol spoken to firmware/creature_body (BODY_BAUD, "\n"-terminated):
  *   M eyes,jaw,relay   enable body modes (any subset; "M none" disables all)
  *   P <state> r g b    eye color for a state (0-255 each)
  *   Y <style>          idle eye style: flicker | glow | blink

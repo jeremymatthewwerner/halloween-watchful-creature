@@ -82,7 +82,7 @@ Arduino D6 ──[330Ω]── Jewel #1 DIN      │ │
    - **The port** looks like `/dev/cu.usbmodem…`, or `/dev/cu.usbserial-…` / `cu.wchusbserial…` on clone boards. A USB-C hub can add a `usbmodem` port of its own; if the upload fails "not in sync", unplug the Arduino and see which port disappears.
    - **"Resource busy"?** Something else has the port open: Serial Monitor (a tab in the IDE's bottom panel), or a creature server still running (`npm run dev` / `npm start`, maybe from another Terminal window or app). Close or stop it, unplug the Arduino for 5 s, and upload again.
    - **Still "not in sync" on the right port?** Boards with an FTDI USB chip (port `cu.usbserial-…`) often have the older bootloader: choose **Arduino Duemilanove or Diecimila**, Processor **ATmega328P**.
-5. Test it in **Serial Monitor** (115200 baud, newline line ending). Type each of these and watch the eyes:
+5. Test it in **Serial Monitor** (38400 baud, newline line ending). Type each of these and watch the eyes:
 
 | Command | What should happen |
 |---|---|

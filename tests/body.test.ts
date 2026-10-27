@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
-import { encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
+import { BODY_BAUD, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { EyePalette } from "../shared/types.ts";
 import { BodyLink } from "../web/bodyLink.ts";
 import { FLOURISH_MS, flourishFrame, GREETING_FLOURISH, JEWEL_PIXELS, JewelAnimator, pixelMotion, shiftHue, speakSpinRate } from "../web/eyeFlourish.ts";
@@ -38,6 +39,11 @@ describe("body protocol", () => {
 
   it("rejects unknown states", () => {
     expect(() => encodeState("dancing" as never)).toThrow();
+  });
+
+  it("talks at the same speed as the firmware", () => {
+    const firmware = readFileSync(new URL("../firmware/creature_body/creature_body.ino", import.meta.url), "utf8");
+    expect(firmware).toContain(`Serial.begin(${BODY_BAUD});`);
   });
 
   it("encodes eye flourishes, rejecting unknown ones", () => {
