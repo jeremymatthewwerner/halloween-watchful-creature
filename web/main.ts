@@ -1,6 +1,6 @@
 import type { DashboardStatus, RemoteCommand } from "../shared/remote.ts";
 import type { BodyState, ClientConfig, ConversationLogRequest } from "../shared/types.ts";
-import { BodyLink } from "./bodyLink.ts";
+import { BodyLink, deriveBodyState } from "./bodyLink.ts";
 import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from "./devices.ts";
 import { Director } from "./director.ts";
 import { EveningMemory, browserStorage } from "./evening.ts";
@@ -564,16 +564,13 @@ async function wake(
     const liveSpeaking = live && meter.speaking(t);
     const clipSpeaking = !liveSpeaking && porchSounds.clipPlaying() && clipMeter.speaking(t);
     const level = liveSpeaking ? voiceLevel : clipLevel;
-    const state: BodyState =
-      liveSpeaking || clipSpeaking
-        ? "speaking"
-        : !live
-          ? "sleeping"
-          : engine.isThinking()
-            ? "thinking"
-            : t - engine.lastHeardAt() < 1500
-              ? "listening"
-              : "idle";
+    const state = deriveBodyState({
+      awake: director.autopilot,
+      live,
+      speaking: liveSpeaking || clipSpeaking,
+      thinking: engine.isThinking(),
+      sinceHeardMs: t - engine.lastHeardAt(),
+    });
     body.setState(state, t);
     body.setLevel(state === "speaking" ? level : 0, t);
     renderEyes(cfg, state, level, t, body.activeFlourish(t));

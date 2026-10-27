@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
 import { BODY_BAUD, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { BodyMessage, EyePalette } from "../shared/types.ts";
-import { BodyLink } from "../web/bodyLink.ts";
+import { BodyLink, deriveBodyState } from "../web/bodyLink.ts";
 import {
   FLOURISH_MS,
   flourishFrame,
@@ -427,6 +427,27 @@ describe("BodyLink flourishes", () => {
     link.setState("idle", 10_100);
     link.setState("thinking", 10_200);
     expect(link.activeFlourish(10_200)?.effect).toBe("sparkle");
+  });
+});
+
+describe("deriveBodyState", () => {
+  const quiet = { awake: true, live: true, speaking: false, thinking: false, sinceHeardMs: 10_000 };
+
+  it("is idle while awake with nobody around, even with the voice session asleep (autopilot waiting)", () => {
+    expect(deriveBodyState({ ...quiet, live: false })).toBe("idle");
+    expect(deriveBodyState(quiet)).toBe("idle");
+  });
+
+  it("sleeps only when the creature does (the kill switch)", () => {
+    expect(deriveBodyState({ ...quiet, awake: false, live: false })).toBe("sleeping");
+  });
+
+  it("speaks, thinks and listens as before", () => {
+    expect(deriveBodyState({ ...quiet, speaking: true, thinking: true })).toBe("speaking");
+    expect(deriveBodyState({ ...quiet, live: false, speaking: true })).toBe("speaking"); // a recorded clip
+    expect(deriveBodyState({ ...quiet, thinking: true, sinceHeardMs: 0 })).toBe("thinking");
+    expect(deriveBodyState({ ...quiet, sinceHeardMs: 1000 })).toBe("listening");
+    expect(deriveBodyState({ ...quiet, live: false, thinking: true })).toBe("idle"); // no session, nothing to wait on
   });
 });
 

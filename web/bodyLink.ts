@@ -10,6 +10,31 @@ const THINKING_BLINK_EVERY_MS = 5000;
  */
 const STATE_KEEPALIVE_MS = 1000;
 
+/** What the dashboard knows each frame that decides the body state. */
+export interface BodyStateInput {
+  /** The creature is awake: autopilot is on (not the kill switch). */
+  awake: boolean;
+  /** The (billed) voice session is open. Autopilot keeps it closed while nobody's around. */
+  live: boolean;
+  /** The voice, or a recorded clip, is audible. */
+  speaking: boolean;
+  /** Waiting on vision or the model. */
+  thinking: boolean;
+  /** How long since a visitor was last heard (ms). */
+  sinceHeardMs: number;
+}
+
+/**
+ * The body state for a frame. Awake but with the voice session asleep (autopilot waiting for
+ * visitors) is idle, not sleeping: the eyes only sleep when the creature does.
+ */
+export function deriveBodyState({ awake, live, speaking, thinking, sinceHeardMs }: BodyStateInput): BodyState {
+  if (speaking) return "speaking";
+  if (!live) return awake ? "idle" : "sleeping";
+  if (thinking) return "thinking";
+  return sinceHeardMs < 1500 ? "listening" : "idle";
+}
+
 /** WebSocket to the local server, which forwards body commands to the Arduino. */
 export class BodyLink {
   private ws: WebSocket | null = null;

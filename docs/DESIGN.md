@@ -175,7 +175,7 @@ The voice below is each character's default; the dashboard's **Voice** picker an
 ## Body (`server/body/`, `firmware/creature_body/`)
 
 - The browser derives one **body state** about 60×/s:
-  - `sleeping`: no session;
+  - `sleeping`: the creature is asleep (not woken, or the kill switch is on). Awake with the voice session closed (autopilot waiting for visitors) is `idle`;
   - `speaking`: the voice, or a recorded clip, is audible;
   - `thinking`: waiting on vision or the model;
   - `listening`: a visitor spoke within the last 1.5 s;
