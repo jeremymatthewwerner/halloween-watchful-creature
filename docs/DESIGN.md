@@ -185,7 +185,7 @@ The voice below is each character's default; the dashboard's **Voice** picker an
   - auto-detects the Arduino;
   - replays the palette and state when the Arduino reconnects;
   - heartbeats only while a dashboard is attached.
-- Serial line protocol (115200 baud):
+- Serial line protocol (38400 baud; faster loses bytes while the NeoPixels update):
 
 | Command | Meaning |
 |---|---|

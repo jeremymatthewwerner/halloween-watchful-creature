@@ -1,5 +1,5 @@
 import type { BodyMessage, BodyMode, BodyState, CharacterInfo, EyeFlourish, EyePalette } from "../../shared/types.ts";
-import { encodeEyeStyle, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "./protocol.ts";
+import { BODY_BAUD, encodeEyeStyle, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "./protocol.ts";
 
 /** Something that can carry protocol lines to the creature's body. */
 export interface LineSink {
@@ -52,7 +52,7 @@ export class SerialSink implements LineSink {
           setTimeout(connect, 3000);
           return;
         }
-        const port = new SerialPort({ path, baudRate: 115200 });
+        const port = new SerialPort({ path, baudRate: BODY_BAUD });
         const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
         this.port = port;
         this.ready = false;

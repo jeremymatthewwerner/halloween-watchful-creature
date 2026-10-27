@@ -371,7 +371,9 @@ void renderJaw() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  // 38400, not 115200: eyes.show() turns interrupts off for ~0.4 ms each frame, long enough to lose
+  // bytes at 115200. Keep in sync with BODY_BAUD in server/body/protocol.ts.
+  Serial.begin(38400);
   pinMode(RELAY_PIN, OUTPUT);
   setRelay(false);
   eyes.begin();
