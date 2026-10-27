@@ -67,7 +67,7 @@ export const LIVE_VOICES: VoiceCatalog = {
       undefined,
       "masculine",
       "natural",
-      "Native French: the only one that gave a real French accent (Jacques no longer speaks French).",
+      "Native French: the only one that gave a real French accent (the pumpkin no longer speaks French).",
     ),
     live("nira", "Hindi", undefined, "feminine", "natural"),
     live("harema", "Japanese", undefined, "feminine", "natural"),

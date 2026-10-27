@@ -9,16 +9,16 @@ interface KindInfo {
 
 export const ALERT_KINDS: Record<AlertKind, KindInfo> = {
   "camera-lost": { level: "error", title: "Camera stopped", push: "The camera stopped sending pictures. The dashboard is restarting it; check the USB cable if this keeps happening." },
-  "detector-failed": { level: "error", title: "Person detector failed", push: "The person detector stopped working, so Jacques can't see visitors arrive. The dashboard will reload to fix it." },
+  "detector-failed": { level: "error", title: "Person detector failed", push: "The person detector stopped working, so Jacqueline can't see visitors arrive. The dashboard will reload to fix it." },
   "arduino-disconnected": { level: "warn", title: "Arduino disconnected", push: "The Arduino (eyes) is disconnected. Check its USB cable." },
   "vision-errors": { level: "warn", title: "Vision errors piling up", push: "Several costume looks failed in a row. Check the internet connection and the OpenAI account." },
-  "voice-errors": { level: "error", title: "Voice session failing", push: "Jacques's voice session keeps failing to start. Check the internet connection and the OpenAI account." },
+  "voice-errors": { level: "error", title: "Voice session failing", push: "Jacqueline's voice session keeps failing to start. Check the internet connection and the OpenAI account." },
   "voice-offline": {
     level: "warn",
     title: "Voice offline: playing recorded greetings",
-    push: "Jacques can't reach his live voice (internet or OpenAI trouble), so he's playing recorded greetings. He keeps retrying and switches back by himself.",
+    push: "Jacqueline can't reach her live voice (internet or OpenAI trouble), so she's playing recorded greetings. She keeps retrying and switches back by herself.",
   },
-  "cost-cap": { level: "warn", title: "Daily cost cap reached", push: "The daily awake-time cap was reached, so Jacques went to sleep. Tap Wake on the remote to keep going tonight." },
+  "cost-cap": { level: "warn", title: "Daily cost cap reached", push: "The daily awake-time cap was reached, so Jacqueline went to sleep. Tap Wake on the remote to keep going tonight." },
   "watchdog-reload": { level: "warn", title: "Dashboard reloaded itself", push: "The dashboard hit trouble and reloaded itself to recover." },
   "needs-wake": { level: "error", title: "Dashboard needs a tap", push: "The dashboard reloaded but the browser blocks sound until someone clicks or taps the dashboard screen once." },
   "dashboard-offline": { level: "error", title: "Dashboard stopped responding", push: "The dashboard stopped checking in with the server. Check the computer by the door." },
@@ -149,7 +149,7 @@ export class NtfyNotifier implements Notifier {
 
   async send(message: { title: string; text: string; level: Alert["level"]; click?: string }): Promise<void> {
     const headers: Record<string, string> = {
-      Title: `Jacques: ${message.title}`.replace(/[^\x20-\x7e]/g, ""),
+      Title: `Jacqueline: ${message.title}`.replace(/[^\x20-\x7e]/g, ""),
       Priority: message.level === "error" ? "high" : "default",
       Tags: "jack_o_lantern",
     };

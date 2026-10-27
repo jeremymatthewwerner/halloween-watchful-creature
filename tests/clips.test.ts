@@ -25,7 +25,7 @@ afterEach(async () => {
 const manifestOf = (d: string) => JSON.parse(readFileSync(join(d, "manifest.json"), "utf8")) as ClipManifest;
 
 describe("clip lines", () => {
-  it("has short, varied, kid-friendly lure and greeting lines for Jacques", () => {
+  it("has short, varied, kid-friendly lure and greeting lines for Jacqueline", () => {
     const { lure, greeting } = CLIP_LINES.pumpkin!.lines;
     expect(lure.length).toBeGreaterThanOrEqual(10);
     expect(greeting.length).toBeGreaterThanOrEqual(10);
@@ -33,7 +33,7 @@ describe("clip lines", () => {
       expect(new Set(lines).size).toBe(lines.length);
       for (const line of lines) {
         expect(line.length).toBeLessThan(90);
-        // No French and no chef talk for Jacques (prompts/characters/pumpkin.md).
+        // No French and no chef talk for Jacqueline (prompts/characters/pumpkin.md).
         expect(line).not.toMatch(/bonjour|magnifique|chef|kiss/i);
       }
     }

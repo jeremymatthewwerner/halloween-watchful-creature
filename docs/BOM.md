@@ -19,7 +19,7 @@ Where to buy each item, with a store route from Burlingame: [SHOPPING_LIST.md](S
 | 7 | Outdoor extension cord (25 ft) and power strip | 1 | Core | $20–30 | Home Depot | Powers the hub and light |
 | 8 | Hollow foam or plastic craft pumpkin, 12–18" | 1 | Prop | $15–30 | Michaels, Target | Ours: 13" hollow plastic. Must fit one speaker inside |
 | 9 | Black tulle or speaker-grille fabric | 1 | Prop | $5 | Michaels | Hides the camera and speaker behind the carved mouth |
-| 10 | Critic costume: tall black top hat, round spectacles, bow tie | 1 set | Prop | $10–20 | Michaels, Spirit Halloween | Jacques O'Lantern's look |
+| 10 | Critic costume: tall black top hat, round spectacles, bow tie | 1 set | Prop | $10–20 | Michaels, Spirit Halloween | Jacqueline O'Lantern's look |
 | 11 | Hot glue, zip ties, gaffer tape, Velcro | — | Prop | $15 | Michaels, Home Depot | |
 | 12 | Arduino Uno starter kit (Elegoo "Most Complete" or similar) | 1 | Eyes/Jaw/Relay | $35–60 | Central Computers (call ahead), [Micro Center](https://www.microcenter.com/product/704602/elegoo-uno-r3-project-most-complete-starter-kit-with-tutorial-compatible-with-arduino-ide-(200-components)) | Includes the Uno, USB cable, breadboard, jumpers, **SG90 servo** and **5V relay** |
 | 13 | NeoPixel Jewel 7 RGB (Adafruit #2226; 4 ordered) | 3 | Eyes | $6 each | Central Computers (call), [Micro Center](https://www.microcenter.com/product/456218/adafruit-industries-neopixel-jewel-7-x-ws2812-5050-rgb-led-with-integrated-drivers), [Adafruit](https://www.adafruit.com/product/2226) | Two are eyes, one is a spare. Needs 3 short wires soldered on. |

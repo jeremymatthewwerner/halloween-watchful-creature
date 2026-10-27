@@ -16,8 +16,8 @@ import { describeRendition, renditionKey, ttsVoiceFor, type TtsRendition } from 
 
 export const TTS_MODEL = "gpt-4o-mini-tts";
 
-/** The voice the bundled sets are read in (a neutral fallback; the server matches the session voice). */
-export const BUNDLED_VOICE = "cedar";
+/** The voice the bundled sets are read in (the pumpkin is feminine; the server matches the session voice). */
+export const BUNDLED_VOICE = "marin";
 
 interface CharacterClips {
   /** How to perform each kind (gpt-4o-mini-tts follows these); the accent line is added after. */
@@ -25,8 +25,8 @@ interface CharacterClips {
   lines: Record<ClipKind, string[]>;
 }
 
-const JACQUES =
-  "You are Jacques O'Lantern, a big, bouncy, friendly talking pumpkin, like a favorite children's TV host. ";
+const JACQUELINE =
+  "You are Jacqueline O'Lantern, a big, bouncy, friendly talking pumpkin, like a favorite children's TV host. ";
 
 // Kid-friendly, short, plain words; no French, no chef talk (see prompts/characters/). The greetings
 // can't see the costume, so they praise it without naming it, and work for one visitor or a group.
@@ -34,10 +34,10 @@ export const CLIP_LINES: Record<string, CharacterClips> = {
   pumpkin: {
     perform: {
       lure:
-        JACQUES +
+        JACQUELINE +
         "Call out playfully to a kid across the yard: warm, excited, a little sneaky on 'psst', smiling the whole time. Never scary.",
       greeting:
-        JACQUES +
+        JACQUELINE +
         "Greet trick-or-treaters who just walked up to the porch: delighted, warm and bursting with excitement, smiling the whole time. Never scary.",
     },
     lines: {
@@ -67,7 +67,7 @@ export const CLIP_LINES: Record<string, CharacterClips> = {
         "Happy Halloween! You look fantastic tonight!",
         "Ooh! A costume this good deserves a big round of applause!",
         "Jumping jack-o'-lanterns! What a spectacular costume!",
-        "Hi there! I'm Jacques the pumpkin, and I love your costume!",
+        "Hi there! I'm Jacqueline the pumpkin, and I love your costume!",
         "Look who's here! Happy Halloween! What a super cool costume!",
         "Hooray, trick-or-treaters! Happy Halloween!",
         "Oh my gourd! That is one terrific costume!",

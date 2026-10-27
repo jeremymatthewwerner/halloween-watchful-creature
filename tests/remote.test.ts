@@ -189,7 +189,7 @@ describe("checkAccess", () => {
 
 describe("Remote routes (Hono middleware)", () => {
   const status: DashboardStatus = {
-    character: "Jacques",
+    character: "Jacqueline",
     woken: true,
     needsTap: false,
     autopilot: true,
@@ -274,7 +274,7 @@ describe("Remote routes (Hono middleware)", () => {
     const res = await call("/remote", "192.168.1.23");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-security-policy")).toContain("default-src 'none'");
-    expect(await res.text()).toContain("Jacques remote");
+    expect(await res.text()).toContain("Jacqueline remote");
   });
 
   it("relays commands only when the dashboard listens, and the heartbeat clears the offline alert", async () => {
@@ -285,7 +285,7 @@ describe("Remote routes (Hono middleware)", () => {
 
     const state = await call("/api/remote/state", "127.0.0.1", { method: "POST", body: JSON.stringify(status) });
     expect(state.status).toBe(200);
-    expect(remote.snapshot()).toMatchObject({ dashboardOnline: true, dashboard: { character: "Jacques" } });
+    expect(remote.snapshot()).toMatchObject({ dashboardOnline: true, dashboard: { character: "Jacqueline" } });
     c.advance(46_000);
     remote.tick();
     expect(remote.snapshot().dashboardOnline).toBe(false);
@@ -462,7 +462,7 @@ describe("NtfyNotifier", () => {
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe("The camera stopped.");
     const headers = init?.headers as Record<string, string>;
-    expect(headers.Title).toBe("Jacques: Camera stopped");
+    expect(headers.Title).toBe("Jacqueline: Camera stopped");
     expect(headers.Priority).toBe("high");
     for (const value of Object.values(headers)) expect(value).toMatch(/^[\x20-\x7e]*$/);
     expect(headers.Authorization).toBeUndefined();

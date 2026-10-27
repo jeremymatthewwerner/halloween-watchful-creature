@@ -21,7 +21,7 @@ describe("characters", () => {
     const c = loadCharacter("pumpkin");
     const live = buildInstructions(c, "live");
     expect(live).toContain("Compliment costumes only");
-    expect(live).toContain("Jacques O'Lantern");
+    expect(live).toContain("Jacqueline O'Lantern");
     expect(live).toContain("[CAMERA]");
     expect(buildInstructions(c, "realtime")).toContain('"look" tool');
   });
@@ -35,7 +35,7 @@ describe("characters", () => {
     expect(live).toContain("At most one game per visit");
     expect(live).toContain("Never block the candy");
     // Games sit after the persona and before the senses.
-    expect(live.indexOf("Jacques O'Lantern")).toBeLessThan(live.indexOf("# Trick-or-treat mini-games"));
+    expect(live.indexOf("Jacqueline O'Lantern")).toBeLessThan(live.indexOf("# Trick-or-treat mini-games"));
     expect(live.indexOf("# Trick-or-treat mini-games")).toBeLessThan(live.indexOf("# How your senses work"));
 
     const raven = loadCharacter("raven");
