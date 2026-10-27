@@ -81,14 +81,18 @@ type EyeStyle = CharacterInfo["eyeStyle"];
 
 const NONE: FlourishFrame = { lid: 1, wide: 0, sparkle: 0, edge: LID_OPEN };
 
-const blinkLid = (t: number, start: number, end: number) => (t < start || t >= end ? 1 : Math.abs((2 * (t - start)) / (end - start) - 1));
+/** A gasp's quick blinks: the same lid as a blink, sped up to this long. */
+export const GASP_BLINK_MS = 150;
+/** Where a gasp blink's lid edge is `t` ms after it starts (see lidEdge). */
+const gaspLid = (t: number) => lidEdge((t * BLINK_MS) / GASP_BLINK_MS);
 
 /** What `effect` does to the eyes `t` ms after it started (nothing once it's over). */
 export function flourishFrame(effect: EyeFlourish, t: number): FlourishFrame {
   if (t < 0 || t >= FLOURISH_MS[effect]) return NONE;
   switch (effect) {
     case "gasp":
-      return { ...NONE, lid: blinkLid(t, 0, 150) * blinkLid(t, 220, 370), wide: t >= 370 ? 1 - ease((t - 370) / 530) : 0 };
+      // Two quick lid blinks, then wide-eyed, easing back.
+      return { ...NONE, edge: Math.min(gaspLid(t), gaspLid(t - 220)), wide: t >= 370 ? 1 - ease((t - 370) / 530) : 0 };
     case "slowblink": // a blink like the idle ones: the lid comes down from the top and goes back up
       return { ...NONE, edge: lidEdge(t) };
     case "sparkle":

@@ -26,6 +26,7 @@ import {
   lidEdge,
   pixelMotion,
   BLINK_MS,
+  GASP_BLINK_MS,
   blinkGap,
   DOUBLE_BLINK_GAP_MS,
   DOUBLE_BLINK_ODDS,
@@ -159,11 +160,14 @@ describe("eye flourishes (dashboard preview)", () => {
     }
   });
 
-  it("gasps with two blinks, then goes wide-eyed", () => {
-    expect(flourishFrame("gasp", 75).lid).toBeCloseTo(0); // first blink shut
-    expect(flourishFrame("gasp", 185).lid).toBe(1); // open between blinks
-    expect(flourishFrame("gasp", 295).lid).toBeCloseTo(0); // second blink shut
-    expect(flourishFrame("gasp", 400)).toMatchObject({ lid: 1, wide: expect.closeTo(1, 1) });
+  it("gasps with two quick lid blinks, then goes wide-eyed", () => {
+    // Two quick lids, like the blinks but over GASP_BLINK_MS each, never dimming all the LEDs at once.
+    for (let t = 0; t < FLOURISH_MS.gasp; t += 5) expect(flourishFrame("gasp", t).lid).toBe(1);
+    expect(flourishFrame("gasp", 75).edge).toBe(-LID_OPEN); // first blink shut
+    expect(flourishFrame("gasp", 185).edge).toBe(LID_OPEN); // open between blinks
+    expect(flourishFrame("gasp", 295).edge).toBe(-LID_OPEN); // second blink shut
+    expect(flourishFrame("gasp", 400)).toMatchObject({ edge: LID_OPEN, wide: expect.closeTo(1, 1) });
+    expect(GASP_BLINK_MS).toBe(150);
   });
 
   it("blinks for thinking like the idle blinks: a lid down from the top and back up, never fading all the LEDs", () => {
@@ -413,6 +417,7 @@ describe("eye flourishes (dashboard preview)", () => {
   it("keeps the speaking blinks and whirls in step with the firmware", () => {
     const firmware = readFileSync(new URL("../firmware/creature_body/creature_body.ino", import.meta.url), "utf8");
     expect(firmware).toContain(`BLINK_MS = ${BLINK_MS};`);
+    expect(firmware).toContain(`GASP_BLINK_MS = ${GASP_BLINK_MS};`);
     expect(firmware).toContain(`SPEAK_BLINK_GAP[3] = {${SPEAK_BLINK_GAP.join(", ")}};`);
     expect(firmware).toContain(`REST_BLINK_GAP[3] = {${REST_BLINK_GAP.join(", ")}};`);
     expect(firmware).toContain(`DOUBLE_BLINK_ODDS = ${Math.round(1 / DOUBLE_BLINK_ODDS)};`);

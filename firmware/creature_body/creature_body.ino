@@ -250,10 +250,11 @@ float ease(float x) {
   return 0.5 - 0.5 * cos(PI * constrain(x, 0.0, 1.0));
 }
 
-// A quick blink between start and end ms: open (1) outside, shut (0) at the midpoint.
-float blinkLid(unsigned long t, unsigned long start, unsigned long end) {
-  if (t < start || t >= end) return 1;
-  return fabs(2.0 * (t - start) / (end - start) - 1);
+// A gasp's quick blinks: the same lid as a blink, sped up to GASP_BLINK_MS. Where its edge is t ms
+// after it starts (see lidEdge).
+const unsigned int GASP_BLINK_MS = 150;
+float gaspLid(float t) {
+  return lidEdge(t * BLINK_MS / GASP_BLINK_MS);
 }
 
 FlourishFrame flourishFrame(unsigned long now) {
@@ -265,8 +266,8 @@ FlourishFrame flourishFrame(unsigned long now) {
     return f;
   }
   switch (flourish) {
-    case FL_GASP:  // blink-blink, then wide-eyed, easing back
-      f.lid = blinkLid(f.t, 0, 150) * blinkLid(f.t, 220, 370);
+    case FL_GASP:  // two quick lid blinks, then wide-eyed, easing back
+      f.edge = min(gaspLid(f.t), gaspLid(f.t - 220.0));
       if (f.t >= 370) f.wide = 1 - ease((f.t - 370) / 530.0);
       break;
     case FL_SLOWBLINK:  // a blink like the idle ones: the lid comes down from the top and goes back up

@@ -11,7 +11,7 @@ export type BodyMode = "eyes" | "jaw" | "relay";
 
 /**
  * One-shot eye animations played over the current state, then back to normal:
- * a rainbow burst for a greeting, a quick double-blink gasp, a blink (despite its name, `slowblink` is now the same lid blink as idle).
+ * a rainbow burst for a greeting, a quick double-blink gasp (two fast lids), a blink (despite its name, `slowblink` is now the same lid blink as idle).
  */
 export type EyeFlourish = "sparkle" | "gasp" | "slowblink";
 
