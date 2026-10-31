@@ -3,7 +3,7 @@
  * change how the creature behaves until the operator turns them off. Kept DOM-free so it can be tested.
  */
 
-export type ModeId = "candyLow" | "candyOut" | "toddler" | "backIn5" | "lastCall";
+export type ModeId = "candyLow" | "candyOut" | "doorbell" | "toddler" | "backIn5" | "lastCall";
 
 export interface ModeInfo {
   id: ModeId;
@@ -20,7 +20,7 @@ export const MODES: readonly ModeInfo[] = [
     id: "candyLow",
     label: "🍬 Candy's low",
     rule: "The candy is almost gone. Ask everyone to take just one piece, so there's enough for the next kids. Keep it cheerful.",
-    excludes: ["candyOut"],
+    excludes: ["candyOut", "doorbell"],
   },
   {
     id: "candyOut",
@@ -28,7 +28,15 @@ export const MODES: readonly ModeInfo[] = [
     rule:
       "The candy is all gone. Don't tell anyone to take candy. Say sorry, kindly, that the candy ran out, " +
       "and still give them a big, happy costume compliment so they leave smiling.",
-    excludes: ["candyLow"],
+    excludes: ["candyLow", "doorbell"],
+  },
+  {
+    id: "doorbell",
+    label: "🔔 Ring the doorbell",
+    rule:
+      "There's no candy bowl out here right now: the candy is at the front door. Never tell anyone to take candy " +
+      'from a bowl. After the costume fun, tell them to ring the doorbell and shout "trick or treat!" to get their candy.',
+    excludes: ["candyLow", "candyOut"],
   },
   {
     id: "toddler",

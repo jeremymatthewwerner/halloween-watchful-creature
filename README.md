@@ -10,7 +10,7 @@ The first character is **Jacqueline O'Lantern, Pumpkin Critic**: a dapper pumpki
 - **Notices change:** new visitors, a second person joining, someone swapping in, and the same person back in a different hat (a playful remark), or back soon (silence) or after a while (a "welcome back").
 - **Doesn't repeat itself:** remembers what it said tonight across voice sessions, varies its openings and verdicts, and keeps running gags ("visitor number 50!", "the fourth dinosaur tonight!").
 - **Plays:** an occasional riddle for "trick", a roar contest, or "guess what I am".
-- **Lets you steer:** quick modes (Candy's low/out, Toddler mode, Back in 5, Last call), a spookiness dial, a voice picker, a kill switch and "make it say…", from the dashboard or **your phone**.
+- **Lets you steer:** quick modes (Candy's low/out, Ring the doorbell, Toddler mode, Back in 5, Last call), a spookiness dial, a voice picker, a kill switch and "make it say…", from the dashboard or **your phone**.
 - **Looks after itself:** a watchdog recovers a stuck camera or page, and alerts can **push to your phone**. If Wi-Fi or OpenAI goes down, it greets visitors with **recorded greetings** and switches back to its live voice by itself.
 - **Keeps a record:** a daily log with a snapshot of each greeting, a **costume gallery** for the family, and a **night recap** (groups, busiest half hour, top costumes, best lines), with one push to your phone when the night is over.
 - **Rehearsal mode:** test greetings with sample photos, without walking in and out of frame.
@@ -70,6 +70,7 @@ Then open **http://localhost:8787** in Chrome and click **Wake the creature**. F
 - **Quick modes:** one-tap buttons that change how the creature acts until you tap them again. A lit button (marked **ON**) is on. They're remembered for the evening, even if you reload the page, and are sent again each time a new voice session starts.
   - **🍬 Candy's low:** asks everyone to take just one piece.
   - **🚫 Candy's out:** says sorry, kindly, that the candy is gone, and still compliments costumes.
+  - **🔔 Ring the doorbell:** for nights the candy is handed out at the door instead of left in a bowl: sends visitors to ring the doorbell and say "trick or treat!". The recorded call-outs and greetings never mention a bowl, so they fit either way.
   - **🧸 Toddler mode:** extra gentle, nothing spooky, very short lines.
   - **⏳ Back in 5:** tells visitors the candy helpers will be back in a few minutes.
   - **🌙 Last call:** greets as usual, then says a warm goodnight.

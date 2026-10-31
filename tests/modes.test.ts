@@ -7,8 +7,15 @@ const memory = () => {
 };
 
 describe("operator quick modes", () => {
-  it("has the five quick buttons", () => {
-    expect(MODES.map((m) => m.label)).toEqual(["🍬 Candy's low", "🚫 Candy's out", "🧸 Toddler mode", "⏳ Back in 5", "🌙 Last call"]);
+  it("has the six quick buttons", () => {
+    expect(MODES.map((m) => m.label)).toEqual([
+      "🍬 Candy's low",
+      "🚫 Candy's out",
+      "🔔 Ring the doorbell",
+      "🧸 Toddler mode",
+      "⏳ Back in 5",
+      "🌙 Last call",
+    ]);
   });
 
   it("uses kid-first wording: simple, gentle, no French and no chef talk", () => {
@@ -27,6 +34,16 @@ describe("operator quick modes", () => {
     expect(active).toEqual(["candyOut", "toddler"]);
     expect(toggleMode(active, "toddler")).toEqual(["candyOut"]);
     expect(toggleMode(active, "toddler", true)).toEqual(["candyOut", "toddler"]);
+  });
+
+  it("sends visitors to the doorbell instead of a candy bowl, never together with the bowl modes", () => {
+    const rule = MODES.find((m) => m.id === "doorbell")!.rule;
+    expect(rule).toMatch(/ring the doorbell/);
+    expect(rule).toMatch(/Never tell anyone to take candy from a bowl/);
+    expect(toggleMode(["candyLow", "toddler"], "doorbell")).toEqual(["doorbell", "toddler"]);
+    expect(toggleMode(["doorbell"], "candyOut")).toEqual(["candyOut"]);
+    expect(toggleMode(["doorbell"], "candyLow")).toEqual(["candyLow"]);
+    expect(modeInstructions(["doorbell"])).toContain("ring the doorbell");
   });
 
   it("builds one set of standing instructions that replaces the earlier ones", () => {
