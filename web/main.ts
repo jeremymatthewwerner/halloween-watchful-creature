@@ -219,9 +219,9 @@ async function runCommand(cmd: RemoteCommand): Promise<string> {
       void awake.director.greetNow();
       return "Greeting whoever is there";
     case "say":
-      if (awake?.engine.status !== "open") throw new Error("Not awake yet: press Greet now first");
-      awake.engine.say(cmd.text);
+      if (!awake) throw new Error("Not woken yet: press Wake first");
       log(`(operator, phone) ${cmd.text}`);
+      if (!(await awake.director.say(cmd.text))) throw new Error("Couldn't start the voice session to say it");
       return "Saying it";
     case "mode":
       if (!isModeId(cmd.mode) || !modePanel) throw new Error("Unknown mode");
@@ -605,13 +605,9 @@ async function wake(
     e.preventDefault();
     const text = ui.sayInput.value.trim();
     if (!text) return;
-    if (engine.status !== "open") {
-      log("Not awake yet: press Greet now first");
-      return;
-    }
-    engine.say(text);
-    log(`(operator) ${text}`);
     ui.sayInput.value = "";
+    log(`(operator) ${text}${engine.status === "open" ? "" : " (waking the voice session to say it)"}`);
+    void director.say(text).then((said) => said || log("Couldn't start the voice session to say it"));
   });
   ui.cameraSelect.addEventListener("change", async () => {
     rememberChoice("camera", ui.cameraSelect);

@@ -318,6 +318,23 @@ describe("Director", () => {
     expect(engine.close).toHaveBeenCalledTimes(1);
   });
 
+  it("make it say wakes the voice session first, then says the line, and sleeps it again on an empty porch", async () => {
+    const { engine, director, advance } = setup();
+    expect(await director.say("Hi Margaret!")).toBe(true);
+    expect(engine.connect).toHaveBeenCalledTimes(1);
+    expect(engine.say).toHaveBeenCalledWith("Hi Margaret!");
+    expect(engine.mic).toBe(true);
+    advance(61_000);
+    await director.tick();
+    expect(engine.close).toHaveBeenCalledTimes(1);
+    // Already open: just says it.
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    engine.connect.mockClear();
+    expect(await director.say("One piece each!")).toBe(true);
+    expect(engine.connect).not.toHaveBeenCalled();
+    expect(engine.say).toHaveBeenLastCalledWith("One piece each!");
+  });
+
   it("greet now while visitors are there leaves the session open", async () => {
     const { engine, director, advance } = setup();
     await director.onVisitorEvent({ type: "arrived", count: 1 });
