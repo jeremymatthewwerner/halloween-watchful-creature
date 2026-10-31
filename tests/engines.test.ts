@@ -374,10 +374,10 @@ describe("LiveEngine", () => {
     expect(e.lastHeardAt()).toBeGreaterThan(0);
   });
 
-  it("operator lines become spoken instructions", () => {
+  it("speaks operator lines right away, as commentary (an instruction would only steer later turns)", () => {
     const e = new TestLive();
     e.say("One piece each!");
-    expect(e.sent[0]).toMatchObject({ type: "session.instructions.append", delegation_id: null });
+    expect(e.sent[0]).toMatchObject({ type: "session.commentary.append", delegation_id: null });
     expect(String(e.sent[0]!.content)).toContain("One piece each!");
   });
 
