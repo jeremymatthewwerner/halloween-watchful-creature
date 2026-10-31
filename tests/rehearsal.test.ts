@@ -69,7 +69,7 @@ function pipeline(images: RehearsalImage[] = [A, B]) {
   const capture = () => rehearsal.capture(realCapture);
   const director = new Director(
     { engine, capture, isSpeaking: () => false, now: () => Date.now(), log: (m) => logs.push(m) },
-    { idleCloseMs: 180_000, backgroundMs: 999_999, recheckCooldownMs: 10_000, sightingGraceMs: 15_000 },
+    { idleCloseMs: 180_000, backgroundMs: 999_999, recheckCooldownMs: 10_000, sightingGraceMs: 15_000, micGraceMs: 20_000 },
   );
   const tracker = new VisitorTracker({ minArea: 0.03 });
   const events: (VisitorEvent & { at: number })[] = [];

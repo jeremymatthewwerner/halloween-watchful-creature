@@ -431,7 +431,7 @@ async function wake(
         renderStatusPill(engine.status);
       },
     },
-    { idleCloseMs: cfg.idleCloseSeconds * 1000, backgroundMs: cfg.backgroundFrameSeconds * 1000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000 },
+    { idleCloseMs: cfg.idleCloseSeconds * 1000, backgroundMs: cfg.backgroundFrameSeconds * 1000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000, micGraceMs: 20_000 },
   );
   voices.attach(engine, () => director.visitorsPresent);
 

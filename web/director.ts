@@ -11,6 +11,11 @@ export interface DirectorOptions {
   recheckCooldownMs: number;
   /** A session woken early for a sighting closes after this long if nobody actually arrives. */
   sightingGraceMs: number;
+  /**
+   * The mic stays on this long after visitors "leave". The camera loses people who stand close, at
+   * the edge of the frame or in the dark, and muting at once meant she couldn't hear them.
+   */
+  micGraceMs: number;
   /** Offline mode's timings (web/offline.ts); the defaults if left out. */
   offline?: Partial<OfflineOptions>;
 }
@@ -59,6 +64,8 @@ export class Director {
   private present = false;
   /** While nobody's present: when to sleep the voice session (null: not scheduled). */
   private idleCloseAt: number | null = null;
+  /** After visitors left: when to mute the mic, if nobody's back by then (null: not scheduled). */
+  private muteAt: number | null = null;
   private lastObserveAt = 0;
   private lastRecheckAt = -Infinity;
   private connecting: Promise<boolean> | null = null;
@@ -102,6 +109,7 @@ export class Director {
       case "arrived":
         this.present = true;
         this.idleCloseAt = null;
+        this.muteAt = null;
         this.count = event.count;
         this.grows = 0;
         if (!this.autopilot) return;
@@ -126,6 +134,7 @@ export class Director {
       case "returned": {
         this.present = true;
         this.idleCloseAt = null;
+        this.muteAt = null;
         this.count = event.count;
         this.grows = 0;
         if (!this.autopilot) return;
@@ -158,7 +167,8 @@ export class Director {
         this.owed = null;
         this.catchUp = false;
         log("Visitors left");
-        if (this.autopilot) engine.setMicEnabled(false);
+        // Not muted yet: someone just out of frame may still be talking (see micGraceMs).
+        if (this.autopilot) this.muteAt = this.deps.now() + this.opts.micGraceMs;
         break;
     }
   }
@@ -168,6 +178,10 @@ export class Director {
     const { engine, now, log } = this.deps;
     if (!this.autopilot) return;
     const t = now();
+    if (!this.present && this.muteAt !== null && t >= this.muteAt) {
+      this.muteAt = null;
+      engine.setMicEnabled(false);
+    }
     if (this.present) {
       if (engine.status === "closed") {
         // The session expired, dropped mid-visit or never started: reconnect (on the retry schedule).
@@ -216,6 +230,7 @@ export class Director {
     this.autopilot = false;
     this.owed = null;
     this.catchUp = false;
+    this.muteAt = null;
     this.deps.recorded?.stop();
     this.deps.engine.setMicEnabled(false);
     await this.deps.engine.close();

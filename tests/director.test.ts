@@ -53,7 +53,7 @@ function setup() {
   const logs: string[] = [];
   const director = new Director(
     { engine, capture: () => "frame", isSpeaking: () => speaking, now: () => now, log: (m) => logs.push(m) },
-    { idleCloseMs: 60_000, backgroundMs: 10_000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000 },
+    { idleCloseMs: 60_000, backgroundMs: 10_000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000, micGraceMs: 20_000 },
   );
   return {
     engine,
@@ -115,18 +115,51 @@ describe("Director", () => {
     expect(engine.observe).toHaveBeenCalledTimes(1);
   });
 
-  it("mutes when visitors leave and sleeps the session after the idle timeout", async () => {
+  it("mutes a while after visitors leave, and sleeps the session after the idle timeout", async () => {
     const { engine, director, advance } = setup();
     await director.onVisitorEvent({ type: "arrived", count: 1 });
     await director.onVisitorEvent({ type: "left" });
+    // Still listening for a grace period: the camera loses people just out of frame.
+    expect(engine.mic).toBe(true);
+    advance(19_000);
+    await director.tick();
+    expect(engine.mic).toBe(true);
+    advance(1_000);
+    await director.tick();
     expect(engine.mic).toBe(false);
-    advance(59_000);
+    advance(39_000);
     await director.tick();
     expect(engine.close).not.toHaveBeenCalled();
     advance(2_000);
     await director.tick();
     expect(engine.close).toHaveBeenCalledTimes(1);
     expect(engine.status).toBe("closed");
+  });
+
+  it("keeps the mic on if visitors come back within the grace period", async () => {
+    const { engine, director, advance } = setup();
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    advance(10_000);
+    await director.tick();
+    await director.onVisitorEvent({ type: "returned", count: 1, awayMs: 10_000 });
+    for (let i = 0; i < 40; i++) {
+      advance(1_000);
+      await director.tick();
+      expect(engine.mic).toBe(true); // the pending mute was cancelled
+    }
+  });
+
+  it("the kill switch mutes at once, even during the grace period", async () => {
+    const { engine, director, advance } = setup();
+    await director.onVisitorEvent({ type: "arrived", count: 1 });
+    await director.onVisitorEvent({ type: "left" });
+    await director.sleep();
+    expect(engine.mic).toBe(false);
+    director.wake();
+    advance(30_000);
+    await director.tick();
+    expect(engine.mic).toBe(false); // nobody's here, so waking doesn't unmute
   });
 
   it("does not sleep if visitors come back before the timeout", async () => {
@@ -345,7 +378,7 @@ function setupOffline(clips = 16) {
       onOffline: (on, detail) => offline.push([on, detail]),
       wait: () => new Promise<void>((resolve) => pending.push(resolve)),
     },
-    { idleCloseMs: 60_000, backgroundMs: 10_000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000, offline: { clipCooldownMs: 20_000 } },
+    { idleCloseMs: 60_000, backgroundMs: 10_000, recheckCooldownMs: 10_000, sightingGraceMs: 15_000, micGraceMs: 20_000, offline: { clipCooldownMs: 20_000 } },
   );
   const timeout = () => {
     const fire = pending;
