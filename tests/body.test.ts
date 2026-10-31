@@ -1,6 +1,7 @@
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import { BodyClients, BodyController, pickArduinoPort, type LineSink } from "../server/body/driver.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { BodyClients, BodyController, SerialSink, pickArduinoPort, type LineSink, type SerialModule } from "../server/body/driver.ts";
 import { BODY_BAUD, encodeFlourish, encodeLevel, encodeModes, encodePalette, encodeState } from "../server/body/protocol.ts";
 import type { BodyMessage, BodyState, EyePalette } from "../shared/types.ts";
 import { BodyLink, deriveBodyState } from "../web/bodyLink.ts";
@@ -608,6 +609,97 @@ describe("BodyClients (more than one dashboard open)", () => {
     sent.length = 0;
     clients.handle(a, { type: "state", state: "idle" }); // closed: ignored
     expect(sent).toEqual([]);
+  });
+});
+
+describe("SerialSink reconnecting", () => {
+  afterEach(() => vi.useRealTimers());
+
+  /** A stand-in serialport module: each new port opens (or fails to) on the next tick. */
+  function fakeSerial(opts: { failOpen?: (n: number) => boolean } = {}) {
+    const ports: FakePort[] = [];
+    class FakePort extends EventEmitter {
+      isOpen = false;
+      written: string[] = [];
+      parser = new EventEmitter();
+      constructor() {
+        super();
+        ports.push(this);
+        const n = ports.length;
+        setTimeout(() => {
+          if (opts.failOpen?.(n)) this.emit("error", new Error("Error Resource temporarily unavailable Cannot lock port"));
+          else {
+            this.isOpen = true;
+            this.emit("open");
+          }
+        }, 0);
+      }
+      pipe<T>(): T {
+        return this.parser as unknown as T;
+      }
+      write(data: string) {
+        this.written.push(data);
+        return true;
+      }
+      close() {
+        this.unplug();
+      }
+      /** The USB cable comes out: a write error, then close. */
+      unplug() {
+        this.isOpen = false;
+        this.emit("error", new Error("ENXIO: no such device or address, write"));
+        this.emit("close");
+      }
+      ready() {
+        this.parser.emit("data", "READY creature_body 1\r");
+      }
+    }
+    const mod = {
+      SerialPort: Object.assign(FakePort, { list: async () => [{ path: "/dev/tty.usbserial-A5069RR4", vendorId: "0403" }] }),
+      ReadlineParser: EventEmitter,
+    } as unknown as SerialModule;
+    return { ports, load: async () => mod };
+  }
+
+  it("reconnects once after an unplug, even when error and close both fire, and talks to the new port", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { ports, load } = fakeSerial();
+    let replays = 0;
+    const sink = new SerialSink("auto", () => replays++, load);
+    await sink.start();
+    await vi.advanceTimersByTimeAsync(1);
+    ports[0]!.ready();
+    sink.write("S idle");
+    expect(ports[0]!.written).toEqual(["S idle\n"]);
+    ports[0]!.unplug();
+    ports[0]!.emit("close"); // a second close for the same unplug
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ports).toHaveLength(2); // one new port, not one per event
+    ports[1]!.ready();
+    expect(replays).toBe(2); // the board gets its modes and colors again
+    sink.write("F sparkle");
+    expect(ports[1]!.written).toEqual(["F sparkle\n"]);
+    sink.stop();
+  });
+
+  it("tries again when the port fails to open, and never keeps writing to the one that failed", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { ports, load } = fakeSerial({ failOpen: (n) => n === 1 });
+    let replays = 0;
+    const sink = new SerialSink("auto", () => replays++, load);
+    await sink.start();
+    await vi.advanceTimersByTimeAsync(3500);
+    expect(ports).toHaveLength(2);
+    ports[1]!.ready();
+    sink.write("M eyes");
+    expect(ports[1]!.written).toEqual(["M eyes\n"]);
+    expect(ports[0]!.written).toEqual([]);
+    expect(replays).toBe(1);
+    sink.stop();
   });
 });
 
