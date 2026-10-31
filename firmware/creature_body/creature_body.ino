@@ -55,7 +55,9 @@ const unsigned int SPEAK_BLINK_GAP[3] = {1200, 2500, 9000};  // min, mean over i
 const unsigned int REST_BLINK_GAP[3] = {2000, 3500, 12000};
 const uint8_t DOUBLE_BLINK_ODDS = 6;  // one blink in this many is a double
 const unsigned int DOUBLE_BLINK_GAP_MS = 120;
-const uint8_t EYE_TOP_PIXEL = 1;           // the ring pixel (1-6) at the top of each jewel as mounted
+// Where the top of each jewel is as mounted, counting ring pixels (1-6) clockwise from the front:
+// 2.5 is halfway between pixels 2 and 3, the pair at the top (pixel 1 at 9 o'clock).
+const float EYE_TOP_PIXEL = 2.5;
 const float LID_OPEN = 1.3;                // the lid's edge when open: just above the top pixel
 const unsigned int WHIRL_MS = 600;
 const float WHIRL_PEAK = 0.7;
@@ -304,7 +306,7 @@ float wrap(float x, float m) {
 //   idle:      every LED flickers on its own (flicker), a slow hue swirl (glow), or a blink;
 //              renderEyes() adds a purple pulse in the center and livelyStep()'s spinning spark
 Motion pixelMotion(unsigned long now, uint8_t eye, uint8_t p, float flick) {
-  float ring = p - 1.0;
+  float ring = p - EYE_TOP_PIXEL;  // round from the top, so the eyes mirror left to right
   float dir = eye == 0 ? 1 : -1;
   switch (state) {
     case SPEAKING: {
@@ -360,7 +362,7 @@ unsigned long blinkGap(const unsigned int *gap) {
 
 // How much of pixel p (0 = center, 1-6 = ring) the lid covers with its edge at `edge`: 0..1, soft-edged.
 float lidCover(float edge, uint8_t p) {
-  float y = p == 0 ? 0 : cos(TWO_PI * ((int)p - EYE_TOP_PIXEL) / 6.0);
+  float y = p == 0 ? 0 : cos(TWO_PI * (p - EYE_TOP_PIXEL) / 6.0);
   return constrain((y - edge) / 0.6 + 0.5, 0.0, 1.0);
 }
 
@@ -470,10 +472,10 @@ void renderEyes(unsigned long now) {
     bl *= b;
     if (state == IDLE) {
       if (p == 0) mixIn(r, g, bl, PULSE_COLOR, idlePulse(now));
-      // The right eye spins in mirror image: from the mirrored pixel, the other way round.
+      // The right eye spins in mirror image: from the pixel mirrored across the top, the other way round.
       else if (spinning) {
         unsigned long st = now - spinAt;
-        mixIn(r, g, bl, SPARK_COLOR, i < 7 ? sparkAt(st, spinFrom, spinDir, p) : sparkAt(st, (6 - spinFrom) % 6, -spinDir, p));
+        mixIn(r, g, bl, SPARK_COLOR, i < 7 ? sparkAt(st, spinFrom, spinDir, p) : sparkAt(st, wrap(2 * (EYE_TOP_PIXEL - 1) - spinFrom, 6), -spinDir, p));
       }
     }
     if (f.sparkle > 0) {

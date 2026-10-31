@@ -14,8 +14,12 @@ export const LID_SHUT_MS = 65;
 export const BLINK_MS = 375;
 /** The lid's color, on the same 0-255 scale as the eye colors. */
 export const LID_COLOR: Rgb = [0, 0, 0];
-/** Which ring pixel (1-6) is at the top of each jewel as it's mounted: the lid comes down from it. */
-export const EYE_TOP_PIXEL = 1;
+/**
+ * Where the top of each jewel is as it's mounted, counting ring pixels (1-6) clockwise from the
+ * front: 2.5 is halfway between pixels 2 and 3, the pair at the top (pixel 1 at 9 o'clock). The lid
+ * comes down from it, and the two eyes mirror each other across it.
+ */
+export const EYE_TOP_PIXEL = 2.5;
 /** Where the lid's edge sits when open: just above the top pixel (pixels sit from -1, bottom, to 1, top). */
 export const LID_OPEN = 1.3;
 
@@ -139,7 +143,7 @@ export function pixelMotion(
   flicker = 0.8,
   spin = 0,
 ): PixelMotion {
-  const ring = p - 1;
+  const ring = p - EYE_TOP_PIXEL; // round from the top, so the eyes mirror left to right
   const dir = eye === 0 ? 1 : -1;
   const wave = (periodMs: number) => Math.cos(2 * Math.PI * (ring / 6 - dir * phase(now, periodMs)));
   switch (state) {
@@ -325,10 +329,10 @@ export class JewelAnimator {
         let rgb = scale(shiftHue(color, m.hue), (m.b + (1 - m.b) * f.wide) * f.lid);
         if (state === "idle") {
           if (p === 0) rgb = mix(rgb, PULSE_COLOR, idlePulse(now));
-          // The right eye spins in mirror image: from the mirrored pixel, the other way round.
+          // The right eye spins in mirror image: from the pixel mirrored across the top, the other way round.
           else if (lively.spin) {
             const { t: st, from, dir } = lively.spin;
-            rgb = mix(rgb, SPARK_COLOR, eye === 0 ? sparkAt(st, from, dir, p) : sparkAt(st, wrap(-from, 6), -dir, p));
+            rgb = mix(rgb, SPARK_COLOR, eye === 0 ? sparkAt(st, from, dir, p) : sparkAt(st, wrap(2 * (EYE_TOP_PIXEL - 1) - from, 6), -dir, p));
           }
         }
         if (f.sparkle > 0) {
