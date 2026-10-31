@@ -53,6 +53,11 @@ export interface DashboardStatus {
   costToday: number | null;
   capReached: boolean;
   modes: { id: string; label: string; on: boolean }[];
+  /**
+   * The dashboard's tab is in the background (or its window covered): the browser throttles its
+   * timers, so check-ins slow to about one a minute. Absent from older dashboards.
+   */
+  hidden?: boolean;
   /** The result of the latest remote command, so the phone can show it. */
   lastCommand: { id: string; ok: boolean; message: string } | null;
 }

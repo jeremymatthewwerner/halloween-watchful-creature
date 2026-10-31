@@ -34,6 +34,12 @@ export interface RemoteOptions {
 
 /** No check-in for this long means the dashboard is frozen, crashed or closed. */
 export const DASHBOARD_STALE_MS = 45_000;
+/**
+ * A dashboard in a background tab gets its timers throttled (Chrome: about once a minute after five
+ * minutes hidden), so it's given this long, but only while its command stream is still connected:
+ * closing the tab or a crash drops the stream, and then the usual limit applies.
+ */
+export const HIDDEN_DASHBOARD_STALE_MS = 5 * 60_000;
 const ARDUINO_GRACE_MS = 15_000;
 const VISION_WINDOW_MS = 5 * 60_000;
 const VISION_FAILURES = 3;
@@ -242,8 +248,11 @@ export class Remote {
 
   tick(): void {
     const t = this.now();
-    if (this.lastStateAt !== null && t - this.lastStateAt > DASHBOARD_STALE_MS) {
-      if (!this.alerts.isOpen("dashboard-offline")) this.alerts.raise("dashboard-offline", `No check-in for ${Math.round((t - this.lastStateAt) / 1000)} s (frozen, crashed or closed).`);
+    this.alerts.flushLog();
+    const staleMs = this.dashboardStaleMs();
+    if (this.lastStateAt !== null && t - this.lastStateAt > staleMs) {
+      const why = staleMs === HIDDEN_DASHBOARD_STALE_MS ? "its tab is in the background: frozen, or the computer is asleep" : "frozen, crashed or closed";
+      if (!this.alerts.isOpen("dashboard-offline")) this.alerts.raise("dashboard-offline", `No check-in for ${Math.round((t - this.lastStateAt) / 1000)} s (${why}).`);
     } else if (this.lastStateAt === null && this.opts.production && t - this.startedAt > 3 * 60_000) {
       if (!this.alerts.isOpen("dashboard-offline")) this.alerts.raise("dashboard-offline", "The dashboard hasn't opened since the server started.");
     }
@@ -278,7 +287,7 @@ export class Remote {
     const today = this.opts.todayLogUrl();
     return {
       dashboard: this.dashboard,
-      dashboardOnline: this.lastStateAt !== null && t - this.lastStateAt <= DASHBOARD_STALE_MS,
+      dashboardOnline: this.lastStateAt !== null && t - this.lastStateAt <= this.dashboardStaleMs(),
       dashboardSeenAgo: this.lastStateAt === null ? null : Math.round((t - this.lastStateAt) / 1000),
       arduino: { enabled: this.opts.arduinoEnabled, connected: this.arduinoConnected, status: this.opts.bodyStatus() },
       alerts: this.alerts.alerts.slice(0, 15),
@@ -296,6 +305,11 @@ export class Remote {
     this.visionOkStreak = 0;
     this.visionFailures = [...this.visionFailures.filter((at) => t - at < VISION_WINDOW_MS), t];
     if (this.visionFailures.length >= VISION_FAILURES) this.alerts.raise("vision-errors", `${this.visionFailures.length} costume looks failed in the last 5 min (HTTP ${status}).`);
+  }
+
+  /** How long a silent dashboard is given: longer while it's a background tab that's still connected. */
+  private dashboardStaleMs(): number {
+    return this.dashboard?.hidden === true && this.commandListeners.size > 0 ? HIDDEN_DASHBOARD_STALE_MS : DASHBOARD_STALE_MS;
   }
 
   private clientOf(c: Context): string {

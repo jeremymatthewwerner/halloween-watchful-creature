@@ -39,11 +39,17 @@ export interface AlertCenterOptions {
   pushWindowMs?: number;
   /** Alerts kept for the screens. */
   keep?: number;
+  /**
+   * A problem that keeps coming and going is logged at most once per kind this often; the repeats
+   * in between are summed up by flushLog() (screens and pushes are unaffected).
+   */
+  logEveryMs?: number;
 }
 
 /**
  * Health alerts: the latest few for the dashboard and the phone, plus (optionally) a push to the
- * owner's phone. Repeats of a problem that's still going are folded into one alert with a count.
+ * owner's phone. Repeats of a problem that's still going are folded into one alert with a count,
+ * and one that flaps (raised, cleared, raised again…) gets a line in the log only now and then.
  */
 export class AlertCenter {
   private readonly now: () => number;
@@ -52,10 +58,16 @@ export class AlertCenter {
   private readonly maxPushes: number;
   private readonly pushWindowMs: number;
   private readonly keep: number;
+  private readonly logEveryMs: number;
   private list: Alert[] = [];
   private nextId = 1;
   private readonly lastPushAt = new Map<AlertKind, number>();
   private pushes: number[] = [];
+  private readonly lastLoggedAt = new Map<AlertKind, number>();
+  /** Raises not logged yet, per kind. */
+  private readonly unlogged = new Map<AlertKind, number>();
+  /** Open alerts whose raise wasn't logged, so their all-clear isn't either. */
+  private readonly quiet = new Set<number>();
   private readonly listeners = new Set<() => void>();
 
   constructor(opts: AlertCenterOptions = {}) {
@@ -65,6 +77,7 @@ export class AlertCenter {
     this.maxPushes = opts.maxPushes ?? 6;
     this.pushWindowMs = opts.pushWindowMs ?? 60 * 60_000;
     this.keep = opts.keep ?? 30;
+    this.logEveryMs = opts.logEveryMs ?? 10 * 60_000;
   }
 
   /** Newest first. */
@@ -84,9 +97,15 @@ export class AlertCenter {
       if (text) open.detail = text;
       this.list = [open, ...this.list.filter((a) => a !== open)];
     } else {
-      this.list.unshift({ id: this.nextId++, kind, level: info.level, title: info.title, detail: text, firstAt: t, at: t, count: 1, resolvedAt: null });
+      const alert: Alert = { id: this.nextId++, kind, level: info.level, title: info.title, detail: text, firstAt: t, at: t, count: 1, resolvedAt: null };
+      this.list.unshift(alert);
       this.list.length = Math.min(this.list.length, this.keep);
-      console.warn(`[alert] ${info.title}${text ? `: ${text}` : ""}`);
+      const last = this.lastLoggedAt.get(kind);
+      if (last === undefined || t - last >= this.logEveryMs) this.logRaise(alert, t);
+      else {
+        this.quiet.add(alert.id);
+        this.unlogged.set(kind, (this.unlogged.get(kind) ?? 0) + 1);
+      }
     }
     const pushed = this.maybePush(kind, t);
     this.changed();
@@ -99,8 +118,28 @@ export class AlertCenter {
     if (!open) return;
     open.resolvedAt = this.now();
     const text = detail.replace(/\s+/g, " ").trim().slice(0, 200);
-    console.log(`[alert] cleared: ${open.title}${text ? ` (${text})` : ""}`);
+    if (!this.quiet.delete(open.id)) console.log(`[alert] cleared: ${open.title}${text ? ` (${text})` : ""}`);
     this.changed();
+  }
+
+  /**
+   * Catches the log up on a problem that came and went too often to log each time, once its
+   * logEveryMs has passed: logs it if it's still open, or else how many more times it happened.
+   * Called every few seconds.
+   */
+  flushLog(): void {
+    const t = this.now();
+    for (const [kind, n] of this.unlogged) {
+      const last = this.lastLoggedAt.get(kind) ?? 0;
+      if (t - last < this.logEveryMs) continue;
+      const open = this.list.find((a) => a.kind === kind && a.resolvedAt === null);
+      if (open && this.quiet.delete(open.id)) this.logRaise(open, t, true);
+      else {
+        this.unlogged.delete(kind);
+        this.lastLoggedAt.set(kind, t);
+        console.log(`[alert] ${ALERT_KINDS[kind].title}: came and went ${n === 1 ? "once more" : `${n} more times`} in the last ${duration(t - last)}`);
+      }
+    }
   }
 
   isOpen(kind: AlertKind): boolean {
@@ -110,6 +149,18 @@ export class AlertCenter {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** The log line for a problem (`late`: one that's been open a while unlogged), noting the repeats that went unlogged. */
+  private logRaise(alert: Alert, t: number, late = false): void {
+    const others = (this.unlogged.get(alert.kind) ?? 0) - (late ? 1 : 0);
+    this.unlogged.delete(alert.kind);
+    this.lastLoggedAt.set(alert.kind, t);
+    const notes = [
+      ...(late ? [`for ${duration(t - alert.firstAt)} now`] : []),
+      ...(others > 0 ? [`it came and went ${times(others)} before that`] : []),
+    ];
+    console.warn(`[alert] ${alert.title}${alert.detail ? `: ${alert.detail}` : ""}${notes.length ? ` (${notes.join("; ")})` : ""}`);
   }
 
   private maybePush(kind: AlertKind, t: number): boolean {
@@ -129,6 +180,9 @@ export class AlertCenter {
     for (const listener of this.listeners) listener();
   }
 }
+
+const times = (n: number) => (n === 1 ? "once" : `${n} times`);
+const duration = (ms: number) => (ms < 90_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`);
 
 /** A topic name ntfy accepts; it's the only "password" for the topic, so it should be long and random. */
 export const NTFY_TOPIC = /^[A-Za-z0-9_-]{1,64}$/;
