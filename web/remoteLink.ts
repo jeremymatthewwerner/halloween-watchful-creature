@@ -2,7 +2,7 @@ import type { Alert, AlertKind, DashboardStatus, RemoteCommand } from "../shared
 
 /** What the phone remote can do to the dashboard; each returns the message shown on the phone. */
 export interface DashboardControls {
-  status(): Omit<DashboardStatus, "lastCommand">;
+  status(): Omit<DashboardStatus, "lastCommand" | "hidden">;
   run(command: RemoteCommand): Promise<string>;
 }
 
@@ -27,6 +27,9 @@ export class RemoteLink {
   start(): void {
     this.listen();
     setInterval(() => void this.beat(), HEARTBEAT_MS);
+    // Say so right away when the tab goes to the background (the server then expects slower
+    // check-ins) and when it comes back.
+    document.addEventListener("visibilitychange", () => void this.beat());
     // Reopen a command stream that went quiet (the server pings every 10 s).
     setInterval(() => {
       if (Date.now() - this.lastHeard > 25_000) this.listen();
@@ -49,7 +52,7 @@ export class RemoteLink {
     if (this.beating) return;
     this.beating = true;
     try {
-      const status: DashboardStatus = { ...this.controls.status(), lastCommand: this.lastCommand };
+      const status: DashboardStatus = { ...this.controls.status(), hidden: document.hidden, lastCommand: this.lastCommand };
       const res = await fetch("/api/remote/state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(status) });
       if (res.ok) this.onAlerts(((await res.json()) as { alerts: Alert[] }).alerts);
     } catch {

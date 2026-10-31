@@ -294,6 +294,60 @@ describe("Remote routes (Hono middleware)", () => {
     expect(remote.alerts.isOpen("dashboard-offline")).toBe(false);
   });
 
+  it("gives a background-tab dashboard longer, but only while its command stream is connected", async () => {
+    const { remote, call, clock: c } = setup();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const commands = (await call("/api/remote/commands", "127.0.0.1")).body!.getReader();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(remote.streamCounts().dashboards).toBe(1);
+      remote.dashboardCheckedIn({ ...status, hidden: true });
+
+      // Chrome throttles a hidden tab's timers to about once a minute: gaps like that are fine.
+      for (let i = 0; i < 4; i++) {
+        c.advance(70_000);
+        remote.tick();
+        expect(remote.alerts.isOpen("dashboard-offline")).toBe(false);
+        expect(remote.snapshot().dashboardOnline).toBe(true);
+      }
+      remote.dashboardCheckedIn({ ...status, hidden: true });
+      // Frozen for real: still alerts, just later.
+      c.advance(5 * 60_000 + 1000);
+      remote.tick();
+      expect(remote.alerts.isOpen("dashboard-offline")).toBe(true);
+      expect(remote.alerts.alerts[0]!.detail).toMatch(/background/);
+      remote.dashboardCheckedIn({ ...status, hidden: true });
+      expect(remote.alerts.isOpen("dashboard-offline")).toBe(false);
+
+      // The tab closed (or crashed): its stream drops, and the usual 45 s applies again.
+      await commands.cancel();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(remote.streamCounts().dashboards).toBe(0);
+      c.advance(46_000);
+      remote.tick();
+      expect(remote.alerts.isOpen("dashboard-offline")).toBe(true);
+      expect(remote.alerts.alerts[0]!.detail).toMatch(/frozen, crashed or closed/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a visible dashboard still gets 45 s, command stream or not", async () => {
+    const { remote, call, clock: c } = setup();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const commands = (await call("/api/remote/commands", "127.0.0.1")).body!.getReader();
+      await new Promise((r) => setTimeout(r, 10));
+      remote.dashboardCheckedIn({ ...status, hidden: false });
+      c.advance(46_000);
+      remote.tick();
+      expect(remote.alerts.isOpen("dashboard-offline")).toBe(true);
+      await commands.cancel();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("takes the dashboard's offline-mode alert and its all-clear", async () => {
     const { remote, call } = setup();
     const post = (body: unknown) => call("/api/remote/alert", "127.0.0.1", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -416,6 +470,80 @@ describe("AlertCenter", () => {
     c.advance(15 * 60_000);
     alerts.raise("voice-offline");
     expect(sent).toHaveLength(2);
+  });
+
+  it("logs a flapping problem about once per window instead of every time", () => {
+    const c = clock();
+    const lines: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((line: string) => void lines.push(line));
+    const log = vi.spyOn(console, "log").mockImplementation((line: string) => void lines.push(line));
+    try {
+      const alerts = new AlertCenter({ now: c.now, logEveryMs: 10 * 60_000 });
+      // Like the night of Oct 30: down a minute, back a minute, all night.
+      for (let i = 0; i < 8; i++) {
+        alerts.raise("dashboard-offline", "No check-in for 60 s");
+        c.advance(60_000);
+        alerts.resolve("dashboard-offline");
+        c.advance(60_000);
+        alerts.flushLog();
+      }
+      expect(alerts.alerts).toHaveLength(8); // the screens still show each one
+      expect(lines).toEqual([
+        "[alert] Dashboard stopped responding: No check-in for 60 s",
+        "[alert] cleared: Dashboard stopped responding",
+        "[alert] Dashboard stopped responding: came and went 4 more times in the last 10 min",
+      ]);
+      c.advance(5 * 60_000);
+      alerts.flushLog();
+      expect(lines[3]).toBe("[alert] Dashboard stopped responding: came and went 3 more times in the last 11 min");
+      alerts.flushLog();
+      expect(lines).toHaveLength(4);
+
+      // A raise after the window, before anything flushed, notes the repeats itself.
+      lines.length = 0;
+      const again = new AlertCenter({ now: c.now, logEveryMs: 10 * 60_000 });
+      again.raise("arduino-disconnected");
+      again.resolve("arduino-disconnected");
+      c.advance(60_000);
+      again.raise("arduino-disconnected");
+      again.resolve("arduino-disconnected");
+      c.advance(10 * 60_000);
+      again.raise("arduino-disconnected", "unplugged");
+      expect(lines).toEqual(["[alert] Arduino disconnected", "[alert] cleared: Arduino disconnected", "[alert] Arduino disconnected: unplugged (it came and went once before that)"]);
+    } finally {
+      warn.mockRestore();
+      log.mockRestore();
+    }
+  });
+
+  it("still logs a problem that stays open after flapping, once the window passes", () => {
+    const c = clock();
+    const lines: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((line: string) => void lines.push(line));
+    const log = vi.spyOn(console, "log").mockImplementation((line: string) => void lines.push(line));
+    try {
+      const alerts = new AlertCenter({ now: c.now, logEveryMs: 10 * 60_000 });
+      alerts.raise("dashboard-offline", "No check-in for 50 s");
+      c.advance(60_000);
+      alerts.resolve("dashboard-offline");
+      c.advance(60_000);
+      alerts.raise("dashboard-offline", "No check-in for 46 s"); // quiet: it just flapped
+      expect(lines).toHaveLength(2);
+      c.advance(7 * 60_000);
+      alerts.flushLog();
+      expect(lines).toHaveLength(2);
+      c.advance(60_000);
+      alerts.flushLog();
+      expect(lines[2]).toBe("[alert] Dashboard stopped responding: No check-in for 46 s (for 8 min now)");
+      alerts.resolve("dashboard-offline");
+      expect(lines[3]).toBe("[alert] cleared: Dashboard stopped responding");
+      // Other kinds are logged as usual meanwhile.
+      alerts.raise("camera-lost");
+      expect(lines[4]).toBe("[alert] Camera stopped");
+    } finally {
+      warn.mockRestore();
+      log.mockRestore();
+    }
   });
 
   it("caps pushes per hour across kinds", () => {

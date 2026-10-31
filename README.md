@@ -134,7 +134,7 @@ The dashboard watches itself and recovers:
 - **Camera frames stopped:** it restarts the camera; if frames don't come back within 20 s, it reloads the page.
 - **Person detector errors** (many in a row, or it failed to load): reloads.
 - **Voice session failing to start** 5 times in a row: alerts, and reloads if this computer is known to wake without a click (see below).
-- **Page frozen:** a frozen page can't fix itself. The dashboard checks in with the server every 2 s; after 45 s of silence the server raises an alert. On the Pi, `scripts/pi/kiosk.sh` also restarts Chromium when the dashboard has been silent for 90 s.
+- **Page frozen:** a frozen page can't fix itself. The dashboard checks in with the server every 2 s; after 45 s of silence the server raises an alert. A dashboard in a background tab (or a covered window) says so, since the browser then slows its check-ins to about one a minute; it gets 5 min instead, as long as it stays connected (closing the tab or a crash still alerts after 45 s). On the Pi, `scripts/pi/kiosk.sh` also restarts Chromium when the dashboard has been silent for 90 s.
 
 At most 3 automatic reloads per hour (never in the first minute after loading), then it only alerts. A page that was awake in the last 15 minutes wakes again by itself after a reload, with the kill switch as it was.
 
@@ -146,7 +146,7 @@ open -na "Google Chrome" --args --autoplay-policy=no-user-gesture-required "http
 The Pi kiosk already uses this flag. The setting only lasts while that Chrome window runs, so quit Chrome fully first.
 
 ### Alerts
-Alerts show on the dashboard and the remote: camera lost, person detector failed, Arduino disconnected, vision errors piling up, voice session failing, voice offline (playing recorded greetings), daily cost cap reached, the watchdog reloading the page, the dashboard needing a tap, and the dashboard not checking in. Repeats of a problem that's still going are counted, not listed again, and they're marked when they clear up by themselves.
+Alerts show on the dashboard and the remote: camera lost, person detector failed, Arduino disconnected, vision errors piling up, voice session failing, voice offline (playing recorded greetings), daily cost cap reached, the watchdog reloading the page, the dashboard needing a tap, and the dashboard not checking in. Repeats of a problem that's still going are counted, not listed again, and they're marked when they clear up by themselves. A problem that keeps coming and going gets one line in the day's log about every 10 min (with a count), not one per flap.
 
 **Push to your phone (optional), with [ntfy](https://ntfy.sh):**
 1. Install the **ntfy** app (iOS or Android).
