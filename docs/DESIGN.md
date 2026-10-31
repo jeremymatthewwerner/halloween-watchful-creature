@@ -40,7 +40,7 @@ Choose an engine with `ENGINE` in `.env`.
 | Greeting | `session.commentary.append` ("say this, in your own words") | image + `response.create` |
 | Fresh look on request | GPT-Live **delegates** to our client. We capture a frame, describe it, and reply on that delegation. | Model calls the `look` tool |
 | Silent background view | `session.thinking.append` | image item without a response |
-| Operator "say…" | `session.instructions.append` | system item + `response.create` |
+| Operator "say…" | `session.commentary.append` (spoken now) | system item + `response.create` |
 | Cost | $0.05 per minute of voice, plus vision tokens | tokens (audio + images) |
 
 Both engines implement the same `Engine` interface (`web/engines/types.ts`), so the rest of the app doesn't care which one is running.

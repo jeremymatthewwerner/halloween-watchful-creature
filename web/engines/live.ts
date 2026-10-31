@@ -98,6 +98,8 @@ const WELCOME_BACK_AFTER_MS = 45_000;
  * so camera frames go to the server's vision backend and come back as text:
  *  - greetings     → session.commentary.append (spoken, paraphrased in character)
  *  - background    → session.thinking.append (known, not spoken)
+ *  - operator lines ("Make it say…") → session.commentary.append (spoken now)
+ *  - operator modes → session.instructions.append (standing; steers later turns)
  *  - delegations   → a fresh look, returned with the delegation's id
  */
 export class LiveEngine extends WebRtcEngine implements Engine {
@@ -416,11 +418,12 @@ export class LiveEngine extends WebRtcEngine implements Engine {
     }
   }
 
+  /** An operator line: commentary, like a greeting, so it's spoken now (an instruction would only steer later turns). */
   say(text: string): void {
     this.append(
-      "session.instructions.append",
+      "session.commentary.append",
       null,
-      `Immediately say the following to the visitors, in your character's voice and style, then continue normally: "${text}"`,
+      `[OPERATOR] The family at the door wants you to say this to the visitors right now, in your own voice and style, then carry on: "${text}"`,
     );
   }
 
