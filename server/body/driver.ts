@@ -21,71 +21,117 @@ export class NullSink implements LineSink {
 
 const ARDUINO_VENDOR_IDS = new Set(["2341", "2a03", "1a86", "10c4", "0403", "239a"]);
 
+/** The parts of the serialport module SerialSink uses (a stand-in can be passed for tests). */
+export interface SerialModule {
+  SerialPort: {
+    new (opts: { path: string; baudRate: number }): SerialPortLike;
+    list(): Promise<{ path: string; vendorId?: string }[]>;
+  };
+  ReadlineParser: new (opts: { delimiter: string }) => NodeJS.ReadWriteStream;
+}
+
+interface SerialPortLike {
+  readonly isOpen: boolean;
+  pipe<T extends NodeJS.WritableStream>(dest: T): T;
+  on(event: "open" | "close", listener: () => void): unknown;
+  on(event: "error", listener: (err: Error) => void): unknown;
+  write(data: string): boolean;
+  close(cb?: () => void): void;
+}
+
 /** Drives the Arduino over USB serial, reconnecting if it's unplugged. */
 export class SerialSink implements LineSink {
   name = "serial (connecting)";
-  private port: { write(data: string): boolean; close(cb?: () => void): void; isOpen: boolean } | null = null;
+  /** The port in use, claimed as soon as it starts opening so nothing else opens it meanwhile. */
+  private port: SerialPortLike | null = null;
   private ready = false;
   private stopped = false;
+  private connecting = false;
+  /**
+   * The one pending reconnect. One unplug can fire both "error" and "close"; two tries racing for the
+   * port once left the sink holding the one that lost ("Cannot lock port"), so every line went nowhere.
+   */
+  private retry: ReturnType<typeof setTimeout> | null = null;
+  private mod: SerialModule | null = null;
 
   constructor(
     private readonly path: string,
     private readonly onReady: () => void,
+    private readonly load: () => Promise<SerialModule> = async () => (await import("serialport")) as unknown as SerialModule,
   ) {}
 
   async start(): Promise<void> {
-    let mod: typeof import("serialport");
     try {
-      mod = await import("serialport");
+      this.mod = await this.load();
     } catch {
       this.name = "serial (module unavailable: run npm install)";
       console.warn("[body] serialport module not installed; body control disabled");
       return;
     }
-    const { SerialPort, ReadlineParser } = mod;
-    const connect = async (): Promise<void> => {
-      if (this.stopped) return;
-      try {
-        const path = this.path === "auto" ? await findArduino(SerialPort) : this.path;
-        if (!path) {
-          this.name = "serial (no Arduino found)";
-          setTimeout(connect, 3000);
-          return;
-        }
-        const port = new SerialPort({ path, baudRate: BODY_BAUD });
-        const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
-        this.port = port;
-        this.ready = false;
-        this.name = `serial ${path}`;
-        // Opening the port resets most Arduinos; wait for READY (or 2.5 s) before sending.
-        const readyTimer = setTimeout(() => this.markReady(), 2500);
-        parser.on("data", (line: string) => {
-          const text = line.trim();
-          if (text.startsWith("READY")) {
-            clearTimeout(readyTimer);
-            this.markReady();
-          }
-          if (process.env.BODY_DEBUG && text) console.log(`[arduino] ${text}`);
-        });
-        port.on("close", () => {
-          this.port = null;
-          this.ready = false;
-          this.name = "serial (disconnected)";
-          setTimeout(connect, 3000);
-        });
-        port.on("error", (err: Error) => console.warn(`[body] serial error: ${err.message}`));
-        console.log(`[body] connected to ${path}`);
-      } catch (err) {
-        this.name = "serial (error)";
-        console.warn(`[body] ${(err as Error).message}`);
-        setTimeout(connect, 3000);
-      }
-    };
-    await connect();
+    await this.connect();
   }
 
-  private markReady(): void {
-    if (this.ready) return;
+  private retryIn(ms: number): void {
+    if (this.stopped || this.retry) return;
+    this.retry = setTimeout(() => {
+      this.retry = null;
+      void this.connect();
+    }, ms);
+  }
+
+  private async connect(): Promise<void> {
+    if (this.stopped || this.connecting || this.port || !this.mod) return;
+    const { SerialPort, ReadlineParser } = this.mod;
+    this.connecting = true;
+    try {
+      const path = this.path === "auto" ? pickArduinoPort(await SerialPort.list()) : this.path;
+      if (!path) {
+        this.name = "serial (no Arduino found)";
+        this.retryIn(3000);
+        return;
+      }
+      const port = new SerialPort({ path, baudRate: BODY_BAUD });
+      const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
+      this.port = port;
+      this.ready = false;
+      this.name = `serial ${path}`;
+      // Opening the port resets most Arduinos; wait for READY (or 2.5 s) before sending.
+      const readyTimer = setTimeout(() => this.markReady(port), 2500);
+      parser.on("data", (line: string) => {
+        const text = String(line).trim();
+        if (text.startsWith("READY")) {
+          clearTimeout(readyTimer);
+          this.markReady(port);
+        }
+        if (process.env.BODY_DEBUG && text) console.log(`[arduino] ${text}`);
+      });
+      // Lost (unplugged, or it never opened): let go of it and try again, once.
+      const lost = () => {
+        clearTimeout(readyTimer);
+        if (this.port !== port) return;
+        this.port = null;
+        this.ready = false;
+        this.name = "serial (disconnected)";
+        this.retryIn(3000);
+      };
+      port.on("open", () => console.log(`[body] connected to ${path}`));
+      port.on("close", lost);
+      port.on("error", (err: Error) => {
+        console.warn(`[body] serial error: ${err.message}`);
+        if (!port.isOpen) lost();
+      });
+    } catch (err) {
+      this.port = null;
+      this.name = "serial (error)";
+      console.warn(`[body] ${(err as Error).message}`);
+      this.retryIn(3000);
+    } finally {
+      this.connecting = false;
+    }
+  }
+
+  private markReady(port: SerialPortLike): void {
+    if (this.port !== port || this.ready) return;
     this.ready = true;
     this.onReady();
   }
@@ -96,12 +142,9 @@ export class SerialSink implements LineSink {
 
   stop(): void {
     this.stopped = true;
+    if (this.retry) clearTimeout(this.retry);
     this.port?.close();
   }
-}
-
-async function findArduino(SerialPort: typeof import("serialport").SerialPort): Promise<string | undefined> {
-  return pickArduinoPort(await SerialPort.list());
 }
 
 /**
