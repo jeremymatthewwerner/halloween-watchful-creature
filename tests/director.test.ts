@@ -322,7 +322,7 @@ describe("Director", () => {
     const { engine, director, advance } = setup();
     expect(await director.say("Hi Margaret!")).toBe(true);
     expect(engine.connect).toHaveBeenCalledTimes(1);
-    expect(engine.say).toHaveBeenCalledWith("Hi Margaret!");
+    expect(engine.say).toHaveBeenCalledWith("Hi Margaret!", { nobodyHere: true }); // nobody in view: told so
     expect(engine.mic).toBe(true);
     advance(61_000);
     await director.tick();
@@ -332,7 +332,7 @@ describe("Director", () => {
     engine.connect.mockClear();
     expect(await director.say("One piece each!")).toBe(true);
     expect(engine.connect).not.toHaveBeenCalled();
-    expect(engine.say).toHaveBeenLastCalledWith("One piece each!");
+    expect(engine.say).toHaveBeenLastCalledWith("One piece each!", { nobodyHere: false });
   });
 
   it("greet now while visitors are there leaves the session open", async () => {

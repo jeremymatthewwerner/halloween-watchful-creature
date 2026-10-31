@@ -1,6 +1,18 @@
 import type { VisionResult } from "../../shared/types.ts";
 import type { EngineDeps, EngineEvent, EngineStatus } from "./types.ts";
 
+/**
+ * An operator line ("Make it say…"), for the creature to say now in its own voice. With `nobodyHere` (the
+ * porch is empty, as when Say woke the session) it's told so, or it greets and compliments made-up visitors.
+ */
+export function operatorLine(text: string, nobodyHere: boolean): string {
+  return nobodyHere
+    ? `[OPERATOR] The family at the door wants you to say this out loud right now, in your own voice and style: "${text}" ` +
+        "Nobody is in front of you right now: the porch is empty. So don't greet, compliment or talk to anyone after " +
+        "it, and don't describe anyone: just say it, then go quiet until visitors come."
+    : `[OPERATOR] The family at the door wants you to say this to the visitors right now, in your own voice and style, then carry on: "${text}"`;
+}
+
 /** For a return we couldn't check against the last group: don't assume strangers, or the same people. */
 export const UNSURE_RETURN =
   "[CAMERA] Someone just walked up after the porch was empty for a bit, but your eyes aren't working right now, " +

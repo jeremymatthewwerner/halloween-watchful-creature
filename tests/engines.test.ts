@@ -379,6 +379,10 @@ describe("LiveEngine", () => {
     e.say("One piece each!");
     expect(e.sent[0]).toMatchObject({ type: "session.commentary.append", delegation_id: null });
     expect(String(e.sent[0]!.content)).toContain("One piece each!");
+    expect(String(e.sent[0]!.content)).not.toContain("Nobody is in front of you");
+    // To an empty porch (Say woke the session): told so, so it doesn't compliment made-up visitors after.
+    e.say("Happy Halloween!", { nobodyHere: true });
+    expect(String(e.sent[1]!.content)).toMatch(/Happy Halloween!.*Nobody is in front of you.*don't greet, compliment/s);
   });
 
   it("keeps operator modes as standing instructions and re-applies them to each new session", () => {

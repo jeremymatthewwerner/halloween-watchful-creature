@@ -1,5 +1,5 @@
 import { bigGroupNote, bigGroupPlan, isBigGroup } from "../bigGroup.ts";
-import { UNSURE_RETURN, WebRtcEngine } from "./base.ts";
+import { UNSURE_RETURN, WebRtcEngine, operatorLine } from "./base.ts";
 import type { Engine, GreetOptions, GreetReason } from "./types.ts";
 
 type ServerEvent = { type: string; [key: string]: unknown };
@@ -128,14 +128,14 @@ export class RealtimeEngine extends WebRtcEngine implements Engine {
     });
   }
 
-  say(text: string): void {
+  say(text: string, opts: { nobodyHere?: boolean } = {}): void {
     this.whenIdle(() => {
       this.send({
         type: "conversation.item.create",
         item: {
           type: "message",
           role: "system",
-          content: [{ type: "input_text", text: `Say the following to the visitors now, in your character's voice and style: "${text}"` }],
+          content: [{ type: "input_text", text: operatorLine(text, !!opts.nobodyHere) }],
         },
       });
       this.createResponse();

@@ -48,8 +48,8 @@ export interface Engine {
   observe(image: string): Promise<void>;
   /** Someone reappeared after a short gap: check whether they're someone new, and greet them if so. */
   recheck(image: string): Promise<void>;
-  /** Operator puppeteering: have the creature say this line, in character. */
-  say(text: string): void;
+  /** Operator puppeteering: have the creature say this line, in character (`nobodyHere`: to an empty porch). */
+  say(text: string, opts?: { nobodyHere?: boolean }): void;
   /**
    * Operator modes: standing instructions kept until changed. `standing` ("" for none) is re-sent
    * to every new voice session; `change`, if given, is sent now to an open session.

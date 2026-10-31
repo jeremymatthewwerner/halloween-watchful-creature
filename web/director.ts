@@ -234,7 +234,8 @@ export class Director {
     engine.setMicEnabled(true);
     if (!this.present) this.idleCloseAt = this.deps.now() + this.opts.idleCloseMs;
     if (!(await this.ensureOpen(true))) return false;
-    engine.say(text);
+    // Told when nobody's in view, or it compliments made-up visitors after the line.
+    engine.say(text, { nobodyHere: !this.present });
     return true;
   }
 
