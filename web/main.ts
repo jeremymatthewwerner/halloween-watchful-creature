@@ -4,7 +4,7 @@ import { BodyLink, deriveBodyState } from "./bodyLink.ts";
 import { describeError, resolveDevice, type DeviceInfo, type SavedDevice } from "./devices.ts";
 import { Director } from "./director.ts";
 import { EveningMemory, browserStorage } from "./evening.ts";
-import { GREETING_FLOURISH, JEWEL_PIXELS, JewelAnimator, TWINKLE_SLOTS, type ActiveFlourish } from "./eyeFlourish.ts";
+import { EYE_TOP_PIXEL, GREETING_FLOURISH, JEWEL_PIXELS, JewelAnimator, TWINKLE_SLOTS, type ActiveFlourish } from "./eyeFlourish.ts";
 import { startPorchSounds } from "./porchSounds.ts";
 import { followServerLog } from "./serverLog.ts";
 import { ModePanel } from "./modePanel.ts";
@@ -764,7 +764,7 @@ const jewels = [ui.eyeLeft, ui.eyeRight].map((board) =>
     const pixel = document.createElement("div");
     pixel.className = "pixel";
     if (p > 0) {
-      const angle = ((p - 1) * Math.PI) / 3;
+      const angle = ((p - EYE_TOP_PIXEL) * Math.PI) / 3; // turned like the real jewels
       pixel.style.left = `${50 + 34 * Math.sin(angle)}%`;
       pixel.style.top = `${50 - 34 * Math.cos(angle)}%`;
     }

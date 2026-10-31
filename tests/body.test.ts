@@ -180,6 +180,8 @@ describe("eye flourishes (dashboard preview)", () => {
 
   const orange: [number, number, number] = [255, 106, 0];
   const steady = () => new JewelAnimator(() => 0.5);
+  // Ring pixel p's mirror image across the top of the jewel (the other eye's matching pixel).
+  const mirror = (p: number) => ((((2 * EYE_TOP_PIXEL - p - 1) % 6) + 6) % 6) + 1;
 
   it("draws both jewels' 7 pixels in the state's color", () => {
     const [left, right] = steady().frame(orange, "idle", 0, "blink", PULSE_MS); // the center's purple pulse at rest
@@ -211,9 +213,11 @@ describe("eye flourishes (dashboard preview)", () => {
   it("spins a comet round the ring while thinking, the eyes in mirror image", () => {
     const ring = (eye: number, now: number) => [1, 2, 3, 4, 5, 6].map((p) => pixelMotion("thinking", "flicker", 0, now, eye, p).b);
     const head = (b: number[]) => b.indexOf(Math.max(...b)) + 1;
-    expect(head(ring(0, 0))).toBe(1);
-    expect(head(ring(0, 150))).toBe(2); // a sixth of the 900 ms turn later, one pixel on
-    expect(head(ring(1, 150))).toBe(6); // the other eye goes the other way
+    expect(head(ring(0, 150))).toBe((head(ring(0, 0)) % 6) + 1); // a sixth of the 900 ms turn later, one pixel on
+    // The other eye goes the other way: each pixel matches its mirror image across the top.
+    for (const now of [0, 150, 400]) {
+      for (let p = 1; p <= 6; p++) expect(ring(1, now)[mirror(p) - 1]).toBeCloseTo(ring(0, now)[p - 1]!);
+    }
     // The tail fades behind the head and drifts in hue.
     const b = ring(0, 150);
     expect(b[0]).toBeGreaterThan(b[5]!);
@@ -224,22 +228,29 @@ describe("eye flourishes (dashboard preview)", () => {
     expect(pixelMotion("speaking", "flicker", 0, 0, 0, 0).b).toBeCloseTo(0.1);
     expect(pixelMotion("speaking", "flicker", 1, 0, 0, 0).b).toBeCloseTo(1);
     const ring = [1, 2, 3, 4, 5, 6].map((p) => pixelMotion("speaking", "flicker", 1, 0, 0, p));
-    expect(Math.max(...ring.map((m) => m.b)) - Math.min(...ring.map((m) => m.b))).toBeCloseTo(0.7);
+    const range = Math.max(...ring.map((m) => m.b)) - Math.min(...ring.map((m) => m.b));
+    expect(range).toBeGreaterThan(0.6); // 0.7 with the ripple's crest on a pixel, a little less between two
+    expect(range).toBeLessThanOrEqual(0.7 + 1e-9);
     expect(new Set(ring.map((m) => Math.round(m.hue))).size).toBeGreaterThan(2);
   });
 
   it("spins the speaking ripple faster the louder the voice", () => {
     expect(speakSpinRate(1)).toBeGreaterThan(5 * speakSpinRate(0));
-    // Where the ripple's brightest ring pixel is after `ms` of speaking at `level`, in 16 ms frames.
+    // How far round (in pixels from the top) the ripple's crest is after `ms` of speaking at `level`,
+    // in 16 ms frames: the brightness-weighted average direction of the ring.
     const peakAfter = (level: number, ms: number) => {
       const animator = steady();
       let frame: number[][][] = [];
       for (let t = 0; t <= ms; t += 16) frame = animator.frame([255, 208, 0], "speaking", level, "flicker", t);
       const ring = frame[0]!.slice(1).map((rgb) => Math.max(...rgb));
-      return ring.indexOf(Math.max(...ring));
+      const min = Math.min(...ring);
+      const angle = (i: number) => (2 * Math.PI * (i + 1 - EYE_TOP_PIXEL)) / 6;
+      const x = ring.reduce((sum, b, i) => sum + (b - min) * Math.cos(angle(i)), 0);
+      const y = ring.reduce((sum, b, i) => sum + (b - min) * Math.sin(angle(i)), 0);
+      return (((6 * Math.atan2(y, x)) / (2 * Math.PI)) % 6 + 6) % 6;
     };
-    expect(peakAfter(0, 240)).toBe(1); // quiet: barely a pixel in 240 ms
-    expect(peakAfter(0.65, 240)).toBe(3); // louder (but no whirl): half a turn (3 pixels)
+    expect(peakAfter(0, 240)).toBeCloseTo(0.58, 0); // quiet: barely a pixel in 240 ms
+    expect(peakAfter(0.65, 240)).toBeCloseTo(3, 0); // louder (but no whirl): half a turn (3 pixels)
   });
 
   it("blinks now and then while speaking: a lid comes down and goes back up", () => {
@@ -318,21 +329,22 @@ describe("eye flourishes (dashboard preview)", () => {
   });
 
   it("covers the eye from the top down", () => {
-    const bottom = ((EYE_TOP_PIXEL + 2) % 6) + 1;
+    const top = Math.floor(EYE_TOP_PIXEL); // one of the top pair
+    const bottom = ((top + 2) % 6) + 1;
     const all = [0, 1, 2, 3, 4, 5, 6];
     expect(all.map((p) => lidCover(lidEdge(-1), p))).toEqual(all.map(() => 0)); // open
     expect(all.map((p) => lidCover(lidEdge(LID_DOWN_MS), p))).toEqual(all.map(() => 1)); // shut
-    expect(lidCover(0, EYE_TOP_PIXEL)).toBe(1); // halfway: the top is covered...
+    expect(lidCover(0, top)).toBe(1); // halfway: the top is covered...
     expect(lidCover(0, 0)).toBe(0.5); // ...the center half...
     expect(lidCover(0, bottom)).toBe(0); // ...the bottom not yet
     // In the preview: the top pixel goes black while the bottom keeps the eye color.
     const animator = new JewelAnimator(() => 0.5);
     let frame: number[][][] = [];
     for (let t = 0; t <= 2750 + LID_DOWN_MS / 2; t += 5) frame = animator.frame([255, 208, 0], "speaking", 0.5, "flicker", t);
-    expect(frame[0]![EYE_TOP_PIXEL]).toEqual(LID_COLOR);
+    expect(frame[0]![top]).toEqual(LID_COLOR);
     expect(frame[0]![bottom]![1]).toBeGreaterThan(20); // still yellow
     // The right eye is 30 ms behind with this "random": its lid not yet all the way over the top pixel.
-    expect(frame[1]![EYE_TOP_PIXEL]![1]).toBeGreaterThan(0);
+    expect(frame[1]![top]![1]).toBeGreaterThan(0);
   });
 
   it("whirls when the voice jumps loud, at most every 5 s, at least every 9 s", () => {
@@ -410,12 +422,13 @@ describe("eye flourishes (dashboard preview)", () => {
     for (let t = 0; t <= 2000 + 150; t += 10) frame = animator.frame(orange, "idle", 0, "glow", t);
     // From ring pixel 3 with this "random"; 150 ms in, it has barely moved: nearly all spark.
     for (const [k, c] of SPARK_COLOR.entries()) expect(Math.abs(frame[0]![4]![k]! - c)).toBeLessThan(15);
-    expect(frame[1]![4]).toEqual(frame[0]![4]); // ring pixel 3 mirrors to itself
+    expect(frame[1]![mirror(4)]).toEqual(frame[0]![4]); // the right eye's spark starts at the mirrored pixel
     expect(frame[0]![2]![2]).toBeCloseTo(0); // pixels away from the spark keep the plain orange
   });
 
   it("keeps the speaking blinks and whirls in step with the firmware", () => {
     const firmware = readFileSync(new URL("../firmware/creature_body/creature_body.ino", import.meta.url), "utf8");
+    expect(firmware).toContain(`EYE_TOP_PIXEL = ${EYE_TOP_PIXEL};`);
     expect(firmware).toContain(`BLINK_MS = ${BLINK_MS};`);
     expect(firmware).toContain(`GASP_BLINK_MS = ${GASP_BLINK_MS};`);
     expect(firmware).toContain(`SPEAK_BLINK_GAP[3] = {${SPEAK_BLINK_GAP.join(", ")}};`);
