@@ -337,12 +337,22 @@ async function wake(
   // Saved devices are found by id, else by name (ids can change when gear is re-plugged), else the default.
   // Device names are only visible once the mic is allowed, so open it first, then switch if needed.
   const savedMic = saved("mic");
-  let mic = await openMic(savedMic.id ?? undefined);
+  // A saved id can be stale after a re-plug (exact then fails): open the default, and switch below.
+  let mic = await openMic(savedMic.id ?? undefined).catch(() => openMic());
   const devices = await navigator.mediaDevices.enumerateDevices();
   const micDevice = pickDevice(devices, "audioinput", "mic", "microphone");
   if (micDevice && micDevice.deviceId !== mic.getAudioTracks()[0]?.getSettings().deviceId) {
     mic.getTracks().forEach((t) => t.stop());
-    mic = await openMic(micDevice.deviceId);
+    mic = await openMic(micDevice.deviceId).catch((err) => {
+      log(`Couldn't open the microphone "${micDevice.label}" (${describeError(err)}): using the default`);
+      return openMic();
+    });
+  }
+  // Say which mic it really is: a browser can hand back another one than asked for.
+  const heard = mic.getAudioTracks()[0];
+  log(`Listening through: ${heard?.label || "an unnamed microphone"}`);
+  if (micDevice && heard?.label && heard.label !== micDevice.label) {
+    log(`That's not the microphone in Settings ("${micDevice.label}")`);
   }
 
   const camera = new Camera(ui.video);
@@ -696,7 +706,8 @@ function pickDevice(devices: readonly DeviceInfo[], kind: MediaDeviceKind, slot:
 function openMic(deviceId?: string): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
     audio: {
-      deviceId: deviceId ? { ideal: deviceId } : undefined,
+      // exact, not ideal: with ideal a browser may quietly use the Mac's built-in mic instead.
+      deviceId: deviceId ? { exact: deviceId } : undefined,
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
