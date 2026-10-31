@@ -65,6 +65,7 @@ const ui = {
   characterSelect: $<HTMLSelectElement>("character-select"),
   cameraSelect: $<HTMLSelectElement>("camera-select"),
   micSelect: $<HTMLSelectElement>("mic-select"),
+  micBoost: $<HTMLSelectElement>("mic-boost"),
   speakerSelect: $<HTMLSelectElement>("speaker-select"),
   minArea: $<HTMLInputElement>("min-area"),
   minAreaValue: $<HTMLSpanElement>("min-area-value"),
@@ -337,13 +338,24 @@ async function wake(
   // Saved devices are found by id, else by name (ids can change when gear is re-plugged), else the default.
   // Device names are only visible once the mic is allowed, so open it first, then switch if needed.
   const savedMic = saved("mic");
-  let mic = await openMic(savedMic.id ?? undefined);
+  // A saved id can be stale after a re-plug (exact then fails): open the default, and switch below.
+  let mic = await openMic(savedMic.id ?? undefined).catch(() => openMic());
   const devices = await navigator.mediaDevices.enumerateDevices();
   const micDevice = pickDevice(devices, "audioinput", "mic", "microphone");
   if (micDevice && micDevice.deviceId !== mic.getAudioTracks()[0]?.getSettings().deviceId) {
     mic.getTracks().forEach((t) => t.stop());
-    mic = await openMic(micDevice.deviceId);
+    mic = await openMic(micDevice.deviceId).catch((err) => {
+      log(`Couldn't open the microphone "${micDevice.label}" (${describeError(err)}): using the default`);
+      return openMic();
+    });
   }
+  // Say which mic it really is: a browser can hand back another one than asked for.
+  const heard = mic.getAudioTracks()[0];
+  log(`Listening through: ${heard?.label || "an unnamed microphone"}`);
+  if (micDevice && heard?.label && heard.label !== micDevice.label) {
+    log(`That's not the microphone in Settings ("${micDevice.label}")`);
+  }
+  mic = boostMic(mic, micBoost());
 
   const camera = new Camera(ui.video);
   const cameraDevice = pickDevice(devices, "videoinput", "camera", "camera");
@@ -617,6 +629,11 @@ async function wake(
     rememberChoice("mic", ui.micSelect);
     location.reload();
   });
+  ui.micBoost.value = String(micBoost());
+  ui.micBoost.addEventListener("change", () => {
+    prefs.set("micBoost", ui.micBoost.value);
+    location.reload();
+  });
   ui.speakerSelect.addEventListener("change", () => {
     rememberChoice("speaker", ui.speakerSelect);
     void setSpeaker(ui.speakerSelect.value);
@@ -693,13 +710,40 @@ function pickDevice(devices: readonly DeviceInfo[], kind: MediaDeviceKind, slot:
   return device;
 }
 
+/** Settings' mic boost: how many times louder the mic goes to the voice session (1: as it comes). */
+function micBoost(): number {
+  const boost = Number(prefs.get("micBoost"));
+  return [2, 4, 8].includes(boost) ? boost : 1;
+}
+
+/**
+ * The mic made `boost` times louder (after the browser's echo cancelling), for a mic that hears
+ * visitors faintly, like a webcam set back inside the pumpkin. Boost 1 is the mic itself.
+ */
+function boostMic(mic: MediaStream, boost: number): MediaStream {
+  if (boost === 1) return mic;
+  const ctx = new AudioContext();
+  const gain = ctx.createGain();
+  gain.gain.value = boost;
+  const out = ctx.createMediaStreamDestination();
+  ctx.createMediaStreamSource(mic).connect(gain).connect(out);
+  // A context started without a click is paused (silent): start it with the next click on the page.
+  const resume = () => void ctx.resume();
+  resume();
+  if (ctx.state !== "running") document.addEventListener("pointerdown", resume, { once: true });
+  log(`Mic boost: ${boost}× louder`);
+  return out.stream;
+}
+
 function openMic(deviceId?: string): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
     audio: {
-      deviceId: deviceId ? { ideal: deviceId } : undefined,
+      // exact, not ideal: with ideal a browser may quietly use the Mac's built-in mic instead.
+      deviceId: deviceId ? { exact: deviceId } : undefined,
       echoCancellation: true,
       noiseSuppression: true,
-      autoGainControl: true,
+      // With a mic boost on, the boost sets the level: Chrome's own gain control keeps turning the mic down.
+      autoGainControl: micBoost() === 1,
     },
   });
 }
