@@ -225,6 +225,19 @@ export class Director {
     await this.greetOrRecord({ reason: "manual" }, true);
   }
 
+  /**
+   * Operator "Make it say…": says `text` now, waking the voice session first if it's asleep (on an
+   * empty porch it sleeps again after the idle timeout, like Greet now). False if it couldn't connect.
+   */
+  async say(text: string): Promise<boolean> {
+    const { engine } = this.deps;
+    engine.setMicEnabled(true);
+    if (!this.present) this.idleCloseAt = this.deps.now() + this.opts.idleCloseMs;
+    if (!(await this.ensureOpen(true))) return false;
+    engine.say(text);
+    return true;
+  }
+
   /** Kill switch: stop talking, close the session and stay asleep until re-enabled. */
   async sleep(): Promise<void> {
     this.autopilot = false;
