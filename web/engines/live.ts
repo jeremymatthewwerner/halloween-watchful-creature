@@ -1,5 +1,5 @@
 import { bigGroupNote, bigGroupPlan, groupSize, isBigGroup } from "../bigGroup.ts";
-import { UNSURE_RETURN, WebRtcEngine, withTimeout } from "./base.ts";
+import { UNSURE_RETURN, WebRtcEngine, operatorLine, withTimeout } from "./base.ts";
 import type { Engine, GreetOptions, GreetReason } from "./types.ts";
 import { Variety } from "./variety.ts";
 
@@ -419,12 +419,8 @@ export class LiveEngine extends WebRtcEngine implements Engine {
   }
 
   /** An operator line: commentary, like a greeting, so it's spoken now (an instruction would only steer later turns). */
-  say(text: string): void {
-    this.append(
-      "session.commentary.append",
-      null,
-      `[OPERATOR] The family at the door wants you to say this to the visitors right now, in your own voice and style, then carry on: "${text}"`,
-    );
+  say(text: string, opts: { nobodyHere?: boolean } = {}): void {
+    this.append("session.commentary.append", null, operatorLine(text, !!opts.nobodyHere));
   }
 
   setStanding(standing: string, change?: string): void {
